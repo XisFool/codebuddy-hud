@@ -30,8 +30,111 @@ function buildStatusLineCommand(platform, hudBin, nodeExe) {
 // `node` silently resolves to nothing and the HUD renders blank. `%` is
 // batch-escaped to `%%` — cmd.exe collapses it back to a literal percent at
 // parse time, so a node install under a %-containing directory still resolves.
+function resolveShortPath(p) {
+  if (process.platform === 'win32' && /[^\x00-\x7F]/.test(p)) {
+    try {
+      const { execSync } = require('child_process');
+      const out = execSync(`for %I in ("${p}") do @echo %~sI`, {
+        shell: process.env.ComSpec || 'cmd.exe',
+        windowsHide: true,
+      }).toString().trim();
+      if (out && fs.existsSync(out)) return out;
+    } catch {}
+  }
+  return p;
+}
+
 function buildCmdShimContent(nodeExe) {
-  return '@echo off\r\n"' + String(nodeExe).replace(/%/g, '%%') + '" "%~dp0codebuddy-hud.js" %*\r\n';
+  const shortNode = resolveShortPath(String(nodeExe));
+  const prefix = (process.platform === 'win32' && /[^\x00-\x7F]/.test(shortNode)) ? '@chcp 65001 >nul\r\n' : '';
+  return prefix + '@echo off\r\n"' + shortNode.replace(/%/g, '%%') + '" "%~dp0codebuddy-hud.js" %*\r\n';
+}
+
+function stripJsonComments(text) {
+  let out = '';
+  let inString = false;
+  let inSingleComment = false;
+  let inMultiComment = false;
+  let escape = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const next = text[i + 1];
+
+    if (inSingleComment) {
+      if (ch === '\n' || ch === '\r') {
+        inSingleComment = false;
+        out += ch;
+      }
+      continue;
+    }
+
+    if (inMultiComment) {
+      if (ch === '*' && next === '/') {
+        inMultiComment = false;
+        i++;
+      }
+      continue;
+    }
+
+    if (inString) {
+      out += ch;
+      if (escape) {
+        escape = false;
+      } else if (ch === '\\') {
+        escape = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '/' && next === '/') {
+      inSingleComment = true;
+      i++;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      inMultiComment = true;
+      i++;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      continue;
+    }
+    out += ch;
+  }
+
+  return out.replace(/,\s*([}\]])/g, '$1');
+}
+
+function parseSettingsJson(raw) {
+  let cleaned = raw;
+  if (cleaned.charCodeAt(0) === 0xFEFF) {
+    cleaned = cleaned.slice(1);
+  }
+  cleaned = stripJsonComments(cleaned).trim();
+  if (!cleaned) return {};
+  return JSON.parse(cleaned);
+}
+
+function atomicWriteFile(targetPath, content) {
+  const dir = path.dirname(targetPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  const tmpPath = `${targetPath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    fs.writeFileSync(tmpPath, content);
+    fs.renameSync(tmpPath, targetPath);
+  } catch (err) {
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {}
+    throw err;
+  }
 }
 
 function isSettingsObject(value) {
@@ -49,11 +152,40 @@ function setup(options) {
   const platform = opts.platform || process.platform;
 
   let settings = {};
-  try {
-    const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    if (isSettingsObject(parsed)) settings = parsed;
-  } catch {
-    // file doesn't exist or is invalid — start fresh
+  const fileExists = fs.existsSync(settingsPath);
+  if (fileExists) {
+    let rawSettings = '';
+    try {
+      rawSettings = fs.readFileSync(settingsPath, 'utf8');
+    } catch (err) {
+      console.error(`Error: Could not read settings file: ${sanitizeTerminalText(err && err.message, 160)}`);
+      throw err;
+    }
+
+    // Unconditional backup of existing configuration before any modification
+    const backupPath = settingsPath + '.bak.codebuddy-hud';
+    if (!fs.existsSync(backupPath)) {
+      try {
+        fs.writeFileSync(backupPath, rawSettings);
+        console.log(`Backed up existing settings to: ${sanitizeTerminalText(backupPath, 512)}`);
+      } catch (err) {
+        console.error(`Warning: could not create backup: ${sanitizeTerminalText(err && err.message, 160)}`);
+      }
+    }
+
+    if (rawSettings.trim().length > 0) {
+      try {
+        const parsed = parseSettingsJson(rawSettings);
+        if (!isSettingsObject(parsed)) {
+          throw new Error('settings.json root must be a JSON object');
+        }
+        settings = parsed;
+      } catch (err) {
+        console.error(`Error: Failed to parse ${sanitizeTerminalText(settingsPath, 512)}: ${sanitizeTerminalText(err && err.message, 160)}`);
+        console.error('Setup aborted to prevent overwriting invalid configuration.');
+        throw err;
+      }
+    }
   }
 
   if (opts.theme) {
@@ -62,24 +194,6 @@ function setup(options) {
       saveUserTheme(opts.theme);
     } catch {
       // ignore
-    }
-  }
-
-
-  // Backup existing statusLine
-  if (settings.statusLine) {
-    const backupPath = settingsPath + '.bak.codebuddy-hud';
-    // Keep the first pre-install snapshot intact. Re-running setup is common
-    // after a Node upgrade; overwriting this file with our own statusLine
-    // would make a later uninstall restore the generated configuration rather
-    // than the user's original settings.
-    if (!fs.existsSync(backupPath)) {
-      try {
-        fs.writeFileSync(backupPath, JSON.stringify(settings, null, 2));
-        console.log(`Backed up existing settings to: ${sanitizeTerminalText(backupPath, 512)}`);
-      } catch (err) {
-        console.error(`Warning: could not create backup: ${sanitizeTerminalText(err && err.message, 160)}`);
-      }
     }
   }
 
@@ -92,7 +206,8 @@ function setup(options) {
       fs.writeFileSync(cmdShim, shimContent);
       console.log(`Created Windows shim: ${sanitizeTerminalText(cmdShim, 512)}`);
     } catch (err) {
-      console.error(`Warning: could not create .cmd shim: ${sanitizeTerminalText(err && err.message, 160)}`);
+      console.error(`Error: could not create .cmd shim: ${sanitizeTerminalText(err && err.message, 160)}`);
+      throw err;
     }
   } else {
     // The command runs `node <file>`, so the executable bit is not required;
@@ -111,12 +226,7 @@ function setup(options) {
     padding: 0,
   };
 
-  const settingsDir = path.dirname(settingsPath);
-  if (!fs.existsSync(settingsDir)) {
-    fs.mkdirSync(settingsDir, { recursive: true });
-  }
-
-  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+  atomicWriteFile(settingsPath, JSON.stringify(settings, null, 2));
   console.log(`\nStatusLine configured in: ${sanitizeTerminalText(settingsPath, 512)}`);
   console.log(`Command: ${sanitizeTerminalText(command, 1024)}`);
   console.log('\ncodebuddy-cli-hud setup complete.');

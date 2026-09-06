@@ -23,24 +23,28 @@ const LOG_MAX_BYTES = 1024 * 1024;
 // console.error the same way).
 process.stdout.on('error', () => {});
 process.stderr.on('error', () => {});
+process.on('uncaughtException', (err) => {
+  logError(err);
+  process.exitCode = 0;
+});
 
 function logError(err) {
   try {
     const logPath = getErrorLogPath();
     const ts = new Date().toISOString();
-    const msg = `[${ts}] ${err && err.stack ? err.stack : String(err)}\n`;
+    const msg = `[${ts}] ${err && err.message ? err.message : String(err)}\n`;
     // Rotate: a repeating error at the host's ~300ms cadence would otherwise
     // grow the log without bound (~288k lines/day). Over the cap, restart the
     // log with just the current entry (recent errors matter most).
     try {
       if (fs.statSync(logPath).size > LOG_MAX_BYTES) {
-        fs.writeFileSync(logPath, msg);
+        fs.writeFileSync(logPath, msg, { mode: 0o600 });
         return;
       }
     } catch {
       // missing file — fall through to append
     }
-    fs.appendFileSync(logPath, msg);
+    fs.appendFileSync(logPath, msg, { mode: 0o600 });
   } catch {
     // silently fail — never block exit
   }
@@ -187,14 +191,14 @@ if (args.includes('--setup')) {
       process.stdin.destroy();
       return;
     }
-    stdinChunks.push(chunk.toString());
+    stdinChunks.push(chunk);
   });
 
   process.stdin.on('end', () => {
     if (!handled) {
       handled = true;
       clearTimeout(timer);
-      handleRender(stdinChunks.join(''));
+      handleRender(Buffer.concat(stdinChunks).toString('utf8'));
     }
   });
 

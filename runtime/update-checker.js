@@ -123,27 +123,35 @@ function readUpdateStatus(options = {}) {
 
 function writeUpdateStatus(status) {
   const filePath = getUpdateStatusPath();
+  const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
   try {
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(status, null, 2));
+    fs.writeFileSync(tmpPath, JSON.stringify(status, null, 2));
+    fs.renameSync(tmpPath, filePath);
     _cachedStatusPath = filePath;
     _cachedStatus = status;
   } catch {
-    // best-effort
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {}
   }
 }
 
 function fetchRemotePackageJson(url) {
   return new Promise((resolve, reject) => {
+    let timer = null;
     const client = url.startsWith('https') ? https : http;
     const req = client.get(url, { headers: { 'User-Agent': 'codebuddy-hud-update-checker' } }, (res) => {
       if (res.statusCode !== 200) {
+        res.resume();
+        if (timer) clearTimeout(timer);
         return reject(new Error(`HTTP ${res.statusCode}`));
       }
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => {
+        if (timer) clearTimeout(timer);
         try {
           const body = Buffer.concat(chunks).toString('utf8');
           resolve(JSON.parse(body));
@@ -152,10 +160,14 @@ function fetchRemotePackageJson(url) {
         }
       });
     });
-    req.on('error', reject);
-    req.setTimeout(8000, () => {
-      req.destroy(new Error('Request timeout'));
+    req.on('error', (err) => {
+      if (timer) clearTimeout(timer);
+      reject(err);
     });
+    timer = setTimeout(() => {
+      req.destroy(new Error('Request timeout'));
+    }, 8000);
+    if (timer.unref) timer.unref();
   });
 }
 
@@ -179,20 +191,15 @@ async function checkForUpdates(options) {
       latestVersion = remotePkg.version;
       updateAvailable = compareVersions(latestVersion, localVersion) > 0;
     }
-  } catch (err) {
-    // network failure: preserve existing update state if valid, just refresh lastCheck
-    if (currentStatus) {
-      currentStatus.lastCheck = now;
-      writeUpdateStatus(currentStatus);
-      return currentStatus;
-    }
+  } catch {
+    // Fail silently on network errors
   }
 
   const newStatus = {
-    updateAvailable,
-    latestVersion,
-    localVersion,
     lastCheck: now,
+    latestVersion,
+    currentVersion: localVersion,
+    updateAvailable,
   };
 
   writeUpdateStatus(newStatus);
@@ -220,6 +227,7 @@ function spawnBackgroundUpdateCheck() {
       stdio: 'ignore',
       windowsHide: true,
     });
+    child.on('error', () => {});
     child.unref();
   } catch {
     // Fail silently, never crash main process
@@ -227,6 +235,8 @@ function spawnBackgroundUpdateCheck() {
 }
 
 if (require.main === module) {
+  const exitTimer = setTimeout(() => process.exit(0), 15000);
+  if (exitTimer.unref) exitTimer.unref();
   if (process.argv.includes('--run-check')) {
     checkForUpdates({ force: true })
       .then(() => process.exit(0))

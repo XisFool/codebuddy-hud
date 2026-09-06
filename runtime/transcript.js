@@ -92,31 +92,32 @@ function scanBackwards(fd, size, tailBytes) {
   const resultIds = new Set();
   let end = size;
   let totalRead = 0;
-  let carry = '';
+  let carryBuffer = Buffer.alloc(0);
 
   while (end > 0 && totalRead < MAX_TOTAL_BYTES) {
     const len = Math.min(tailBytes, end);
     const start = end - len;
     const buf = Buffer.alloc(len);
-    fs.readSync(fd, buf, 0, len, start);
-    totalRead += len;
+    const bytesRead = fs.readSync(fd, buf, 0, len, start);
+    totalRead += bytesRead;
 
-    const combined = buf.toString('utf8') + carry;
-    carry = '';
+    const chunk = bytesRead === buf.length ? buf : buf.subarray(0, bytesRead);
+    const combinedBuf = Buffer.concat([chunk, carryBuffer]);
+    carryBuffer = Buffer.alloc(0);
 
     let text;
     if (start > 0) {
-      const nl = combined.indexOf('\n');
+      const nl = combinedBuf.indexOf(0x0a);
       if (nl === -1) {
         // the whole window belongs to one line that started earlier
-        carry = combined;
+        carryBuffer = combinedBuf;
         end = start;
         continue;
       }
-      carry = combined.slice(0, nl);
-      text = combined.slice(nl + 1);
+      carryBuffer = combinedBuf.subarray(0, nl);
+      text = combinedBuf.subarray(nl + 1).toString('utf8');
     } else {
-      text = combined;
+      text = combinedBuf.toString('utf8');
     }
 
     const { calls, resultIds: ids } = collectCompleteLines(text);
@@ -241,31 +242,32 @@ function collectUsageBackwards(transcriptPath, opts, limit, stopOnUserTurn) {
 
     let end = size;
     let totalRead = 0;
-    let carry = '';
+    let carryBuffer = Buffer.alloc(0);
     let scanned = 0;
 
     while (end > 0 && totalRead < MAX_TOTAL_BYTES && scanned < maxLines) {
       const len = Math.min(tailBytes, end);
       const start = end - len;
       const buf = Buffer.alloc(len);
-      fs.readSync(fd, buf, 0, len, start);
-      totalRead += len;
+      const bytesRead = fs.readSync(fd, buf, 0, len, start);
+      totalRead += bytesRead;
 
-      const combined = buf.toString('utf8') + carry;
-      carry = '';
+      const chunk = bytesRead === buf.length ? buf : buf.subarray(0, bytesRead);
+      const combinedBuf = Buffer.concat([chunk, carryBuffer]);
+      carryBuffer = Buffer.alloc(0);
 
       let text;
       if (start > 0) {
-        const nl = combined.indexOf('\n');
+        const nl = combinedBuf.indexOf(0x0a);
         if (nl === -1) {
-          carry = combined;
+          carryBuffer = combinedBuf;
           end = start;
           continue;
         }
-        carry = combined.slice(0, nl);
-        text = combined.slice(nl + 1);
+        carryBuffer = combinedBuf.subarray(0, nl);
+        text = combinedBuf.subarray(nl + 1).toString('utf8');
       } else {
-        text = combined;
+        text = combinedBuf.toString('utf8');
       }
 
       const lines = text.split('\n');
@@ -316,32 +318,7 @@ function getRecentUsageMetrics(transcriptPath, opts) {
 // Aggregate every API call in the current conversation turn:
 // sum(hit) / sum(prompt) and credits across the turn's calls.
 function getTurnUsageMetrics(transcriptPath, opts) {
-  const collected = collectUsageBackwards(transcriptPath, opts, Infinity, true);
-  if (collected.length === 0) return null;
-  let hitTokens = 0;
-  let promptTokens = 0;
-  let callCount = 0;
-  let credits = 0;
-  let creditCallCount = 0;
-  for (const m of collected) {
-    if (Number.isFinite(m.hitTokens) && Number.isFinite(m.promptTokens)) {
-      hitTokens += m.hitTokens;
-      promptTokens += m.promptTokens;
-      callCount++;
-    }
-    if (Number.isFinite(m.credit)) {
-      credits += m.credit;
-      creditCallCount++;
-    }
-  }
-  return {
-    hitTokens,
-    promptTokens,
-    callCount,
-    credits: creditCallCount > 0 ? credits : null,
-    creditCallCount,
-    source: 'turn',
-  };
+  return getTurnMetricsAndActivity(transcriptPath, opts).turnUsage;
 }
 
 const SESSION_STATE_VERSION = 5;
@@ -372,8 +349,8 @@ function readHeadHash(fd, size) {
   const length = Math.min(size, SESSION_HEAD_BYTES);
   if (length <= 0) return hashBuffer(Buffer.alloc(0));
   const buffer = Buffer.alloc(length);
-  fs.readSync(fd, buffer, 0, length, 0);
-  return hashBuffer(buffer);
+  const bytesRead = fs.readSync(fd, buffer, 0, length, 0);
+  return hashBuffer(bytesRead === buffer.length ? buffer : buffer.subarray(0, bytesRead));
 }
 
 // Some network and mounted filesystems expose coarse or delayed mtime/ctime
@@ -416,8 +393,9 @@ function readSessionState(statePath, resolved, identity, size, headHash, fd) {
     const checkpointStart = Math.max(0, state.offset - SESSION_HEAD_BYTES);
     const checkpointLength = state.offset - checkpointStart;
     const checkpoint = Buffer.alloc(checkpointLength);
-    if (checkpointLength > 0) fs.readSync(fd, checkpoint, 0, checkpointLength, checkpointStart);
-    if (state.checkpointHash !== hashBuffer(checkpoint)) return null;
+    const cpBytesRead = checkpointLength > 0 ? fs.readSync(fd, checkpoint, 0, checkpointLength, checkpointStart) : 0;
+    const actualCheckpoint = cpBytesRead === checkpoint.length ? checkpoint : checkpoint.subarray(0, cpBytesRead);
+    if (state.checkpointHash !== hashBuffer(actualCheckpoint)) return null;
     return state;
   } catch {
     return null;
@@ -472,7 +450,7 @@ function getSessionUsageMetrics(transcriptPath, opts) {
     const size = stat.size;
     const identity = statIdentity(stat);
     const headHash = readHeadHash(fd, size);
-    const smallFileHash = readSmallFileHash(fd, size);
+    let smallFileHash = null;
     let cached = readSessionState(statePath, resolved, identity, size, headHash, fd);
 
     // A normal append changes mtime/ctime, so timestamps cannot be part of
@@ -485,9 +463,11 @@ function getSessionUsageMetrics(transcriptPath, opts) {
           || getStatTimestampNs(highResolutionStat, 'ctime') !== cached.sourceCtimeNs)))) {
       cached = null;
     }
-    if (cached && size === cached.sourceSize && smallFileHash !== null
-        && smallFileHash !== cached.sourceContentHash) {
-      cached = null;
+    if (cached && size === cached.sourceSize && cached.sourceContentHash !== null) {
+      smallFileHash = readSmallFileHash(fd, size);
+      if (smallFileHash !== null && smallFileHash !== cached.sourceContentHash) {
+        cached = null;
+      }
     }
 
     const offset = cached ? cached.offset : 0;
@@ -519,7 +499,14 @@ function getSessionUsageMetrics(transcriptPath, opts) {
         }
       };
 
+      const scanStartTime = Date.now();
+      let hitDeadline = false;
+
       while (cursor < size) {
+        if (Date.now() - scanStartTime > 100) {
+          hitDeadline = true;
+          break;
+        }
         const chunkStart = cursor;
         const length = Math.min(SESSION_READ_CHUNK_BYTES, size - cursor);
         const chunk = Buffer.alloc(length);
@@ -556,15 +543,17 @@ function getSessionUsageMetrics(transcriptPath, opts) {
 
       // Accept a complete final JSON object without a newline. An incomplete
       // tail stays uncommitted and will be retried when the writer completes it.
-      if (pendingLength > 0) {
-        const tail = Buffer.concat(pendingChunks, pendingLength);
-        if (countCreditLine(tail)) {
-          processedOffset = size;
+      if (!hitDeadline) {
+        if (pendingLength > 0) {
+          const tail = Buffer.concat(pendingChunks, pendingLength);
+          if (countCreditLine(tail)) {
+            processedOffset = size;
+          } else {
+            processedOffset = pendingStart;
+          }
         } else {
-          processedOffset = pendingStart;
+          processedOffset = size;
         }
-      } else {
-        processedOffset = size;
       }
     } else if (size < offset) {
       // Defensive reset; readSessionState normally rejects this state already.
@@ -576,7 +565,14 @@ function getSessionUsageMetrics(transcriptPath, opts) {
     const checkpointStart = Math.max(0, processedOffset - SESSION_HEAD_BYTES);
     const checkpointLength = processedOffset - checkpointStart;
     const checkpoint = Buffer.alloc(checkpointLength);
-    if (checkpointLength > 0) fs.readSync(fd, checkpoint, 0, checkpointLength, checkpointStart);
+    const cpBytesRead = checkpointLength > 0 ? fs.readSync(fd, checkpoint, 0, checkpointLength, checkpointStart) : 0;
+    const actualCheckpoint = cpBytesRead === checkpoint.length ? checkpoint : checkpoint.subarray(0, cpBytesRead);
+
+    const willWrite = !cached || processedOffset !== offset || size === 0;
+    if (willWrite && smallFileHash === null && size <= SMALL_SESSION_VERIFY_BYTES) {
+      smallFileHash = readSmallFileHash(fd, size);
+    }
+
     const state = {
       version: SESSION_STATE_VERSION,
       path: resolved,
@@ -585,14 +581,14 @@ function getSessionUsageMetrics(transcriptPath, opts) {
       offset: processedOffset,
       credits: total,
       creditCallCount: calls,
-      checkpointHash: hashBuffer(checkpoint),
+      checkpointHash: hashBuffer(actualCheckpoint),
       sourceSize: size,
       sourceMtimeNs: getStatTimestampNs(highResolutionStat, 'mtime'),
       sourceCtimeNs: getStatTimestampNs(highResolutionStat, 'ctime'),
       sourceContentHash: smallFileHash,
       updatedAt: Date.now(),
     };
-    if (!cached || processedOffset !== offset || size === 0) writeSessionState(statePath, state);
+    if (willWrite) writeSessionState(statePath, state);
 
     return {
       credits: calls > 0 ? total : null,
@@ -646,9 +642,10 @@ function getRecentToolActivity(transcriptPath, opts) {
   }
 }
 
-function getTurnToolActivity(transcriptPath, opts) {
+function getTurnMetricsAndActivity(transcriptPath, opts) {
+  const emptyResult = { turnUsage: null, toolActivity: null };
   const options = opts || {};
-  if (!transcriptPath || typeof transcriptPath !== 'string' || transcriptPath.includes('\0')) return null;
+  if (!transcriptPath || typeof transcriptPath !== 'string' || transcriptPath.includes('\0')) return emptyResult;
 
   let resolved = transcriptPath;
   if (!path.isAbsolute(resolved) && typeof options.cwd === 'string' && options.cwd) {
@@ -663,13 +660,14 @@ function getTurnToolActivity(transcriptPath, opts) {
   try {
     fd = fs.openSync(resolved, 'r');
     const size = fs.fstatSync(fd).size;
-    if (size <= 0) return null;
+    if (size <= 0) return emptyResult;
 
+    const usageCollected = [];
     const calls = [];
     const resultIds = new Set();
     let end = size;
     let totalRead = 0;
-    let carry = '';
+    let carryBuffer = Buffer.alloc(0);
     let scanned = 0;
     let hitUserBoundary = false;
 
@@ -677,24 +675,25 @@ function getTurnToolActivity(transcriptPath, opts) {
       const len = Math.min(tailBytes, end);
       const start = end - len;
       const buf = Buffer.alloc(len);
-      fs.readSync(fd, buf, 0, len, start);
-      totalRead += len;
+      const bytesRead = fs.readSync(fd, buf, 0, len, start);
+      totalRead += bytesRead;
 
-      const combined = buf.toString('utf8') + carry;
-      carry = '';
+      const chunk = bytesRead === buf.length ? buf : buf.subarray(0, bytesRead);
+      const combinedBuf = Buffer.concat([chunk, carryBuffer]);
+      carryBuffer = Buffer.alloc(0);
 
       let text;
       if (start > 0) {
-        const nl = combined.indexOf('\n');
+        const nl = combinedBuf.indexOf(0x0a);
         if (nl === -1) {
-          carry = combined;
+          carryBuffer = combinedBuf;
           end = start;
           continue;
         }
-        carry = combined.slice(0, nl);
-        text = combined.slice(nl + 1);
+        carryBuffer = combinedBuf.subarray(0, nl);
+        text = combinedBuf.subarray(nl + 1).toString('utf8');
       } else {
-        text = combined;
+        text = combinedBuf.toString('utf8');
       }
 
       const lines = text.split('\n');
@@ -709,53 +708,88 @@ function getTurnToolActivity(transcriptPath, opts) {
           continue;
         }
 
-        if ((calls.length > 0 || resultIds.size > 0) &&
-            ((entry.type === 'message' && entry.role === 'user') || (entry.type === 'user'))) {
+        const isUserBoundary = (entry.type === 'message' && entry.role === 'user') || (entry.type === 'user');
+        if (isUserBoundary && (usageCollected.length > 0 || calls.length > 0 || resultIds.size > 0)) {
           hitUserBoundary = true;
           break;
         }
 
+        const metrics = extractUsageMetrics(entry);
+        if (metrics) {
+          usageCollected.push(metrics);
+        }
         scanEntry(entry, calls, resultIds);
       }
       end = start;
     }
 
-    if (calls.length === 0) return null;
-
-    let active = null;
-    const completedMap = new Map();
-    let totalCompleted = 0;
-
-    for (const call of calls) {
-      const isCompleted = resultIds.has(call.id);
-      const toolName = sanitizeTerminalText(String(call.name || 'tool'), 16);
-      if (!isCompleted) {
-        if (!active) {
-          const args = parseArguments(call.arguments);
-          active = {
-            tool: toolName,
-            detail: sanitizeTerminalText(extractDetail(args), 24),
-          };
+    let turnUsage = null;
+    if (usageCollected.length > 0) {
+      let hitTokens = 0;
+      let promptTokens = 0;
+      let callCount = 0;
+      let credits = 0;
+      let creditCallCount = 0;
+      for (const m of usageCollected) {
+        if (Number.isFinite(m.hitTokens) && Number.isFinite(m.promptTokens)) {
+          hitTokens += m.hitTokens;
+          promptTokens += m.promptTokens;
+          callCount++;
         }
-      } else {
-        completedMap.set(toolName, (completedMap.get(toolName) || 0) + 1);
-        totalCompleted++;
+        if (Number.isFinite(m.credit)) {
+          credits += m.credit;
+          creditCallCount++;
+        }
+      }
+      turnUsage = {
+        hitTokens,
+        promptTokens,
+        callCount,
+        credits: creditCallCount > 0 ? credits : null,
+        creditCallCount,
+        source: 'turn',
+      };
+    }
+
+    let toolActivity = null;
+    if (calls.length > 0) {
+      let active = null;
+      const completedMap = new Map();
+      let totalCompleted = 0;
+
+      for (const call of calls) {
+        const isCompleted = resultIds.has(call.id);
+        const toolName = sanitizeTerminalText(String(call.name || 'tool'), 16);
+        if (!isCompleted) {
+          if (!active) {
+            const args = parseArguments(call.arguments);
+            active = {
+              tool: toolName,
+              detail: sanitizeTerminalText(extractDetail(args), 24),
+            };
+          }
+        } else {
+          completedMap.set(toolName, (completedMap.get(toolName) || 0) + 1);
+          totalCompleted++;
+        }
+      }
+
+      const completed = Array.from(completedMap.entries())
+        .map(([tool, count]) => ({ tool, count }))
+        .sort((a, b) => b.count - a.count);
+
+      if (active || completed.length > 0) {
+        toolActivity = {
+          active,
+          completed,
+          totalCompleted,
+        };
       }
     }
 
-    const completed = Array.from(completedMap.entries())
-      .map(([tool, count]) => ({ tool, count }))
-      .sort((a, b) => b.count - a.count);
-
-    if (!active && completed.length === 0) return null;
-
-    return {
-      active,
-      completed,
-      totalCompleted,
-    };
+    return { turnUsage, toolActivity };
   } catch {
-    return null;
+    return emptyResult;
   } finally {
     if (fd !== null) {
       try { fs.closeSync(fd); } catch { /* already closed */ }
@@ -763,9 +797,14 @@ function getTurnToolActivity(transcriptPath, opts) {
   }
 }
 
+function getTurnToolActivity(transcriptPath, opts) {
+  return getTurnMetricsAndActivity(transcriptPath, opts).toolActivity;
+}
+
 module.exports = {
   getRecentToolActivity,
   getTurnToolActivity,
+  getTurnMetricsAndActivity,
   getRecentUsageMetrics,
   getTurnUsageMetrics,
   getSessionUsageMetrics,

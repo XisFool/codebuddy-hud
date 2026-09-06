@@ -9,7 +9,7 @@ const { selectGlyphs, supportsUnicode } = require('./encoding');
 const { extractTokenData, extractDiffStats, extractCostData, extractAgentData } = require('./parser');
 const { getGitStatus } = require('./git');
 const { resolveEffortLevel, resolveCreditSpend } = require('./model-info');
-const { getRecentToolActivity, getTurnToolActivity, getTurnUsageMetrics, getSessionUsageMetrics } = require('./transcript');
+const { getRecentToolActivity, getTurnToolActivity, getTurnUsageMetrics, getSessionUsageMetrics, getTurnMetricsAndActivity } = require('./transcript');
 const { getLogicalSessionCostData } = require('./session-stats');
 const { readUpdateStatus } = require('./update-checker');
 
@@ -38,16 +38,24 @@ function renderHUD(cbData, config) {
   const themeModel = theme.model || themePrimary;
   const themeBranch = theme.gitBranch || themePrimary;
 
-  // The tail scan supplies the current-turn cache badge. Session credits use a
-  // separate incremental offset scan and do not reread already-counted bytes.
+  // The tail scan supplies the current-turn cache badge and recent tool activity.
   const needsTurnUsage = Boolean(cbData.transcript_path) && (
     (tokenData && disp.showCacheHitRate !== false)
     || disp.showCost !== false
   );
-  const turnUsage = needsTurnUsage ? getTurnUsageMetrics(cbData.transcript_path, {
-    cwd,
-    tailBytes: disp.toolActivityTailBytes,
-  }) : null;
+  const needsToolActivity = Boolean(cbData.transcript_path) && disp.showToolActivity !== false;
+
+  let turnUsage = null;
+  let turnActivity = null;
+  if (needsTurnUsage || needsToolActivity) {
+    const combined = getTurnMetricsAndActivity(cbData.transcript_path, {
+      cwd,
+      tailBytes: disp.toolActivityTailBytes,
+    });
+    turnUsage = combined.turnUsage;
+    turnActivity = combined.toolActivity;
+  }
+
   const sessionUsage = (cbData.transcript_path && disp.showCost !== false)
     ? getSessionUsageMetrics(cbData.transcript_path, {
       cwd,
@@ -190,7 +198,7 @@ function renderHUD(cbData, config) {
   line4Parts.push(renderAgentLine(agentData, config, glyphs));
   if (disp.showToolActivity !== false) {
     const tailBytes = disp.toolActivityTailBytes;
-    const activity = getTurnToolActivity(cbData.transcript_path, { cwd, tailBytes })
+    const activity = turnActivity
       || getRecentToolActivity(cbData.transcript_path, { cwd, tailBytes });
     line4Parts.push(renderToolActivity(activity, glyphs));
   }
