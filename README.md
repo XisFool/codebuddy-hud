@@ -8,7 +8,7 @@
 >
 > 不需要 `npm install`，不会因为 HUD 出错而中断 CodeBuddy。仅在后台发起匿名轻量版本更新检查（24h/次，静默），不收集或上传任何代码与会话数据。
 
-[GitHub 项目](https://github.com/XisFool/codebuddy-hud) · [安装](#安装) · [主题换肤](#主题换肤) · [验证](#验证) · [诊断](#诊断) · [卸载](#卸载)
+[GitHub 项目](https://github.com/XisFool/codebuddy-hud) · [最新稳定版](https://github.com/XisFool/codebuddy-hud/releases/latest) · [安装](#安装) · [主题换肤](#主题换肤) · [验证](#验证) · [诊断](#诊断) · [卸载](#卸载)
 
 ---
 
@@ -41,13 +41,15 @@ Token 250.1k (in: 249k · out: 1.1k)  │  249k/1M [███░░░░░░�
 
 ### Windows (PowerShell)
 ```powershell
-irm https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/XisFool/codebuddy-hud/v0.1.0/scripts/install.ps1 | iex
 ```
 
 ### Linux / macOS (Bash)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/v0.1.0/scripts/install.sh | bash
 ```
+
+安装器会解析 [Latest Release](https://github.com/XisFool/codebuddy-hud/releases/latest) 并从其不可变 tag 下载运行时文件。若需固定到特定版本，可在执行安装命令前设置 `CODEBUDDY_HUD_VERSION`，例如 `v0.1.0`。
 
 ---
 
@@ -311,6 +313,8 @@ Credits 是当前 `transcript_path` 对应会话的**累计实际消费**：它�
 | `CODEBUDDY_SETTINGS_PATH` | 直接指定 `settings.json`，优先级高于 `CODEBUDDY_HOME`。 |
 | `CODEBUDDY_HUD_FORCE_ASCII` | 设为 `1` 时强制使用 ASCII 字符，禁用 Unicode 图标与进度条。 |
 | `CODEBUDDY_HUD_FORCE_UNICODE` | 设为 `1` 时强制开启 Unicode 图标与进度条。 |
+| `CODEBUDDY_HUD_VERSION` | 安装时固定下载的 Release tag，例如 `v0.1.0`。 |
+| `CODEBUDDY_HUD_RAW_BASE` | 安装时覆盖运行时下载源，仅用于镜像或测试。 |
 
 PowerShell：
 
@@ -330,7 +334,7 @@ node runtime/bin/codebuddy-hud.js --setup
 
 ## 隐私、兼容性与限制
 
-- 仅在后台发起匿名轻量版本更新检查（每 24 小时最多一次，静默 HTTPS 拉取 `package.json` 版本号），不收集或上传任何代码、会话或用户数据。不读取 transcript 以外的会话内容。
+- 仅在后台发起匿名轻量版本更新检查（每 24 小时最多一次，静默 HTTPS 查询 Latest Release），不收集或上传任何代码、会话或用户数据。不读取 transcript 以外的会话内容。
 - 所有输出到终端的外部文本都会经过 `sanitizeTerminalText()`；ANSI/OSC 注入、控制字符和 bidi/RTL 控制字符会被移除。
 - Credits checkpoint 和会话基线只保存在本机 CodeBuddy 根目录。缓存损坏、文件截断或状态不可写时会自动降级，不会中断 HUD。
 - Windows、Linux、macOS、WSL 均有运行时支持；宿主 v2.146.0 的 Windows 引号限制见安装说明。

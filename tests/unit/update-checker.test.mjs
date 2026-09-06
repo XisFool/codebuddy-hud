@@ -13,6 +13,7 @@ const {
   getLocalVersion,
   readUpdateStatus,
   writeUpdateStatus,
+  getReleaseVersion,
   checkForUpdates,
   spawnBackgroundUpdateCheck,
 } = require('../../runtime/update-checker.js');
@@ -43,6 +44,12 @@ describe('update-checker', () => {
     const ver = getLocalVersion();
     assert.equal(typeof ver, 'string');
     assert.match(ver, /^\d+\.\d+\.\d+/);
+  });
+
+  test('reads versions from GitHub release tags before legacy package overrides', () => {
+    assert.equal(getReleaseVersion({ tag_name: 'v0.2.0', version: '9.9.9' }), 'v0.2.0');
+    assert.equal(getReleaseVersion({ version: '0.1.1' }), '0.1.1');
+    assert.equal(getReleaseVersion({}), null);
   });
 
   test('readUpdateStatus and writeUpdateStatus correctly manage state file', () => {

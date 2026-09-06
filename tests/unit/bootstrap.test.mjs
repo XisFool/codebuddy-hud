@@ -4,7 +4,12 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { getTargetDir, checkNodeVersion } = require('../../scripts/bootstrap.js');
+const {
+  getTargetDir,
+  checkNodeVersion,
+  rawBaseForTag,
+  resolveRemoteRawBase,
+} = require('../../scripts/bootstrap.js');
 
 describe('bootstrap installer', () => {
   test('checkNodeVersion runs cleanly on current node', () => {
@@ -23,6 +28,18 @@ describe('bootstrap installer', () => {
       if (originalEnv === undefined) delete process.env.CODEBUDDY_HUD_DIR;
       else process.env.CODEBUDDY_HUD_DIR = originalEnv;
     }
+  });
+
+  test('uses immutable release tags for remote download sources', async () => {
+    assert.equal(
+      rawBaseForTag('v0.1.0'),
+      'https://raw.githubusercontent.com/XisFool/codebuddy-hud/v0.1.0'
+    );
+    assert.throws(() => rawBaseForTag('master'));
+    assert.equal(
+      await resolveRemoteRawBase({ fetchLatestRelease: async () => ({ tag_name: 'v0.2.0' }) }),
+      'https://raw.githubusercontent.com/XisFool/codebuddy-hud/v0.2.0'
+    );
   });
 
   test('install copies local repo files and configures statusline in isolated environment', async () => {

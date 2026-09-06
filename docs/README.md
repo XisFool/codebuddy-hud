@@ -8,6 +8,8 @@
 | [架构说明](architecture.md) | 英文数据流、遥测扫描、会话基线与运行约束 |
 | [中文架构说明](architecture_zh.md) | 相同核心行为的中文说明 |
 | [模块参考](module-reference.md) | 模块职责、公开接口与状态结构 |
+| [发布规范](../AGENTS.md#发布流程) | 版本、变更记录、tag 与 GitHub Release 验证 |
+| [变更记录](../CHANGELOG.md) | 已发布版本的变更摘要 |
 | [2026-09-06 复核记录](audit-report-2026-09-06.md) | 当日回归、修复依据与尚存限制 |
 | [早期审计交接](audit-handoff-report.md) | 2026-09-02/03 的历史决策，不代表当前验收状态 |
 

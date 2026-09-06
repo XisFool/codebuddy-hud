@@ -6,7 +6,9 @@ const os = require('os');
 const https = require('https');
 const http = require('http');
 
-const REPO_RAW_BASE = process.env.CODEBUDDY_HUD_RAW_BASE || 'https://raw.githubusercontent.com/XisFool/codebuddy-hud/master';
+const REPO_RAW_ROOT = 'https://raw.githubusercontent.com/XisFool/codebuddy-hud';
+const LATEST_RELEASE_URL = process.env.CODEBUDDY_HUD_LATEST_RELEASE_URL ||
+  'https://api.github.com/repos/XisFool/codebuddy-hud/releases/latest';
 
 const RUNTIME_FILES = [
   'package.json',
@@ -78,6 +80,34 @@ function fetchUrl(url, redirectCount = 0) {
   });
 }
 
+function rawBaseForTag(tag) {
+  const normalized = typeof tag === 'string' ? tag.trim() : '';
+  if (!/^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(normalized)) {
+    throw new Error(`Invalid release tag: ${tag}`);
+  }
+  return `${REPO_RAW_ROOT}/${encodeURIComponent(normalized)}`;
+}
+
+async function fetchLatestRelease() {
+  const body = await fetchUrl(LATEST_RELEASE_URL);
+  try {
+    return JSON.parse(body.toString('utf8'));
+  } catch {
+    throw new Error('Latest release response was not valid JSON');
+  }
+}
+
+async function resolveRemoteRawBase(options = {}) {
+  if (process.env.CODEBUDDY_HUD_RAW_BASE) {
+    return process.env.CODEBUDDY_HUD_RAW_BASE.replace(/\/+$/, '');
+  }
+  if (process.env.CODEBUDDY_HUD_VERSION) {
+    return rawBaseForTag(process.env.CODEBUDDY_HUD_VERSION);
+  }
+  const release = await (options.fetchLatestRelease || fetchLatestRelease)();
+  return rawBaseForTag(release?.tag_name);
+}
+
 function copyDirRecursiveSync(srcDir, destDir) {
   fs.mkdirSync(destDir, { recursive: true });
   const entries = fs.readdirSync(srcDir, { withFileTypes: true });
@@ -128,9 +158,10 @@ async function install() {
         }
       }
     } else {
-      console.log('  Mode: Remote download from GitHub');
+      const remoteRawBase = await resolveRemoteRawBase();
+      console.log(`  Mode: Remote download from GitHub (${remoteRawBase})`);
       for (const relPath of RUNTIME_FILES) {
-        const fileUrl = `${REPO_RAW_BASE}/${relPath}`;
+        const fileUrl = `${remoteRawBase}/${relPath}`;
         process.stdout.write(`  ↓ Fetching ${relPath}...`);
         const content = await fetchUrl(fileUrl);
         const destPath = path.join(tmpDir, relPath);
@@ -196,4 +227,10 @@ if (require.main === module) {
   install();
 }
 
-module.exports = { install, getTargetDir, checkNodeVersion };
+module.exports = {
+  install,
+  getTargetDir,
+  checkNodeVersion,
+  rawBaseForTag,
+  resolveRemoteRawBase,
+};

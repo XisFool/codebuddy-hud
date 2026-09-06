@@ -27,6 +27,8 @@
 18. [`runtime/theme-selector.js` — 交互式终端主题选择器](#18-runtimetheme-selectorjs--交互式主题选择器)
 19. [`runtime/uninstall.js` — 卸载还原与状态深度清理器](#19-runtimeuninstalljs--卸载还原与深度清理)
 20. [`scripts/bootstrap.js` — 跨平台原子安装引导程序](#20-scriptsbootstrapjs--跨平台原子安装引导)
+21. [`scripts/verify-display.js` — 看板端到端验证](#21-scriptsverify-displayjs--看板端到端验证)
+22. [`skills/hud-config/SKILL.md` — HUD 配置技能](#22-skillshud-configskillmd--hud-配置技能)
 
 ---
 
@@ -447,9 +449,23 @@ export function uninstall(options?: object): void;
 
 ## 20. `scripts/bootstrap.js` — 跨平台原子安装引导
 
-**职责：** 支持本地与 GitHub Raw 远程安装，通过临时目录 `.tmp-<pid>` + 原子重命名完成无缝安装覆盖。
+**职责：** 支持本地与 GitHub Raw 远程安装，通过临时目录 `.tmp-<pid>` + 原子重命名完成无缝安装覆盖。默认从 GitHub Latest Release 读取 `tag_name`，再从对应不可变 tag 下载；`CODEBUDDY_HUD_VERSION` 可固定 tag。
 
 ### 核心函数
 - `install(options?: object): Promise<void>`: 核心安装入口，支持本地复制与远端下载，通过临时目录 + 原子重命名完成安装。
 - `getTargetDir(): string`: 返回运行时目标安装目录路径（受 `CODEBUDDY_HUD_DIR` 环境变量影响）。
 - `checkNodeVersion(): void`: 校验当前 Node.js 版本 ≥18，不满足时抛出错误。
+- `rawBaseForTag(tag: string): string`: 返回指定 Release tag 的 GitHub Raw 基础地址。
+- `resolveRemoteRawBase(options?: object): Promise<string>`: 解析 `CODEBUDDY_HUD_RAW_BASE`、`CODEBUDDY_HUD_VERSION` 或 Latest Release 后的下载源。
+
+---
+
+## 21. `scripts/verify-display.js` — 看板端到端验证
+
+**职责：** 执行 `npm run verify` 的 11 个 CLI、payload 与边界场景，验证看板行数、命令形态与容错契约。
+
+---
+
+## 22. `skills/hud-config/SKILL.md` — HUD 配置技能
+
+**职责：** 为 AI Agent 提供主题、图标与显示项配置的交互式引导，并将选择写入项目或全局 `codebuddy-hud.config.json`。
