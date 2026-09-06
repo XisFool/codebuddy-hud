@@ -43,6 +43,7 @@ function parseGitStatusOutput(out) {
 const _nonGitDirs = new Map();
 
 function findGitInfo(cwd) {
+  if (!cwd || typeof cwd !== 'string' || cwd.includes('\0')) return null;
   try {
     let current = path.resolve(cwd);
     const now = Date.now();

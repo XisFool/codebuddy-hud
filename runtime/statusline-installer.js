@@ -44,11 +44,15 @@ function resolveShortPath(p) {
   return p;
 }
 
-function buildCmdShimContent(nodeExe) {
+function buildCmdShimContent(nodeExe, hudBin) {
   const shortNode = resolveShortPath(String(nodeExe));
-  const prefix = (process.platform === 'win32' && /[^\x00-\x7F]/.test(shortNode)) ? '@chcp 65001 >nul\r\n' : '';
+  const rawNode = String(nodeExe);
+  const rawHud = hudBin ? String(hudBin) : '';
+  const hasNonAscii = /[^\x00-\x7F]/.test(rawNode) || /[^\x00-\x7F]/.test(shortNode) || /[^\x00-\x7F]/.test(rawHud);
+  const prefix = (process.platform === 'win32' && hasNonAscii) ? '@chcp 65001 >nul\r\n' : '';
   return prefix + '@echo off\r\n"' + shortNode.replace(/%/g, '%%') + '" "%~dp0codebuddy-hud.js" %*\r\n';
 }
+
 
 function stripJsonComments(text) {
   let out = '';
@@ -201,9 +205,9 @@ function setup(options) {
   let command;
   if (platform === 'win32') {
     const cmdShim = hudBin.replace(/\.js$/, '.cmd');
-    const shimContent = buildCmdShimContent(nodeExe);
+    const shimContent = buildCmdShimContent(nodeExe, hudBin);
     try {
-      fs.writeFileSync(cmdShim, shimContent);
+      fs.writeFileSync(cmdShim, shimContent, 'utf8');
       console.log(`Created Windows shim: ${sanitizeTerminalText(cmdShim, 512)}`);
     } catch (err) {
       console.error(`Error: could not create .cmd shim: ${sanitizeTerminalText(err && err.message, 160)}`);
@@ -232,4 +236,5 @@ function setup(options) {
   console.log('\ncodebuddy-cli-hud setup complete.');
 }
 
-module.exports = { setup, buildStatusLineCommand, buildCmdShimContent };
+module.exports = { setup, buildStatusLineCommand, buildCmdShimContent, parseSettingsJson, isSettingsObject };
+

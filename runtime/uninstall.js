@@ -13,6 +13,8 @@ const {
   getUpdateStatusPath,
 } = require('./paths');
 const { sanitizeTerminalText } = require('./sanitize');
+const { parseSettingsJson, isSettingsObject } = require('./statusline-installer');
+
 
 function atomicWriteFile(targetPath, content) {
   const dir = path.dirname(targetPath);
@@ -50,35 +52,62 @@ function uninstall(options) {
   // Restore backup or remove statusLine precisely
   try {
     if (fs.existsSync(settingsPath)) {
-      let settings = {};
+      let rawSettings = '';
       try {
-        settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-      } catch {}
-
-      if (fs.existsSync(backupPath)) {
-        try {
-          const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
-          if (backup && typeof backup === 'object' && backup.statusLine) {
-            settings.statusLine = backup.statusLine;
-          } else {
-            delete settings.statusLine;
-          }
-          fs.unlinkSync(backupPath);
-          cleaned.push(`Restored settings from backup: ${sanitizeTerminalText(backupPath, 512)}`);
-        } catch {
-          if (settings.statusLine && typeof settings.statusLine.command === 'string' && settings.statusLine.command.includes('codebuddy-hud')) {
-            delete settings.statusLine;
-          }
-          try { fs.unlinkSync(backupPath); } catch {}
-        }
-      } else {
-        if (settings.statusLine && typeof settings.statusLine.command === 'string' && settings.statusLine.command.includes('codebuddy-hud')) {
-          delete settings.statusLine;
-          cleaned.push('Removed statusLine from settings.json');
-        }
+        rawSettings = fs.readFileSync(settingsPath, 'utf8');
+      } catch (err) {
+        cleaned.push(`Warning: could not read settings.json: ${sanitizeTerminalText(err && err.message, 160)}`);
       }
 
-      atomicWriteFile(settingsPath, JSON.stringify(settings, null, 2));
+      let settings = null;
+      if (rawSettings && rawSettings.trim().length > 0) {
+        try {
+          const parsed = parseSettingsJson(rawSettings);
+          if (isSettingsObject(parsed)) {
+            settings = parsed;
+          } else {
+            cleaned.push('Warning: settings.json root is not an object, aborting modification');
+          }
+        } catch (err) {
+          cleaned.push(`Warning: could not parse settings.json, aborting modification: ${sanitizeTerminalText(err && err.message, 160)}`);
+        }
+      } else if (rawSettings.trim().length === 0) {
+        settings = {};
+      }
+
+      if (settings !== null) {
+        let modified = false;
+        if (fs.existsSync(backupPath)) {
+          try {
+            const backupRaw = fs.readFileSync(backupPath, 'utf8');
+            const backup = parseSettingsJson(backupRaw);
+            if (isSettingsObject(backup) && backup.statusLine) {
+              settings.statusLine = backup.statusLine;
+            } else {
+              delete settings.statusLine;
+            }
+            try { fs.unlinkSync(backupPath); } catch {}
+            cleaned.push(`Restored settings from backup: ${sanitizeTerminalText(backupPath, 512)}`);
+            modified = true;
+          } catch {
+            if (settings.statusLine && typeof settings.statusLine.command === 'string' && settings.statusLine.command.includes('codebuddy-hud')) {
+              delete settings.statusLine;
+              modified = true;
+            }
+            try { fs.unlinkSync(backupPath); } catch {}
+          }
+        } else {
+          if (settings.statusLine && typeof settings.statusLine.command === 'string' && settings.statusLine.command.includes('codebuddy-hud')) {
+            delete settings.statusLine;
+            cleaned.push('Removed statusLine from settings.json');
+            modified = true;
+          }
+        }
+
+        if (modified) {
+          atomicWriteFile(settingsPath, JSON.stringify(settings, null, 2));
+        }
+      }
     }
   } catch {
     cleaned.push('Warning: could not modify settings.json');

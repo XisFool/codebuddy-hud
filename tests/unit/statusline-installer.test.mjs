@@ -256,3 +256,44 @@ test('generated Windows shim runs through cmd.exe from a special-character path'
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
+
+test('buildCmdShimContent includes @chcp 65001 when hudBin contains non-ASCII characters', () => {
+  const shim = buildCmdShimContent('C:\\Program Files\\nodejs\\node.exe', 'C:\\Users\\谢文灿\\codebuddy-hud.js');
+  if (process.platform === 'win32') {
+    assert.ok(shim.startsWith('@chcp 65001 >nul\r\n@echo off\r\n'));
+  }
+  assert.ok(shim.includes('%~dp0codebuddy-hud.js'));
+});
+
+test('uninstall preserves JSONC settings with comments and trailing commas without wiping', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-uninst-jsonc-'));
+  const settingsPath = path.join(tempRoot, 'settings.json');
+  const jsoncContent = '\ufeff{\n  // User comments\n  "model": "deepseek-v4",\n  "statusLine": {\n    "command": "node runtime/bin/codebuddy-hud.js"\n  },\n  /* trailing comma */\n}\n';
+  fs.writeFileSync(settingsPath, jsoncContent, 'utf8');
+
+  try {
+    uninstall({ settingsPath, platform: 'win32' });
+    const contentAfter = fs.readFileSync(settingsPath, 'utf8');
+    const parsed = JSON.parse(contentAfter);
+    assert.equal(parsed.model, 'deepseek-v4');
+    assert.equal(parsed.statusLine, undefined);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('uninstall aborts and preserves original file if settings.json is corrupt syntax', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-uninst-corrupt-'));
+  const settingsPath = path.join(tempRoot, 'settings.json');
+  const corruptContent = '{ not valid json at all ...';
+  fs.writeFileSync(settingsPath, corruptContent, 'utf8');
+
+  try {
+    uninstall({ settingsPath, platform: 'win32' });
+    const contentAfter = fs.readFileSync(settingsPath, 'utf8');
+    assert.equal(contentAfter, corruptContent, 'corrupted file must not be overwritten or wiped to {}');
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+

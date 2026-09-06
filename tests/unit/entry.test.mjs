@@ -144,6 +144,37 @@ test('--doctor and --doctor --json exit 0', async () => {
   assert.equal(docJson.err, '');
 });
 
+test('timeout path correctly reconstructs multi-byte UTF-8 split across chunks without corruption', async () => {
+  const fullPayload = JSON.stringify({
+    model: { display_name: '测试模型·极速版', id: 'test-model' },
+    cwd: 'D:/code_sum/Github/codebuddy-cli-hud',
+    context_window: { context_window_size: 1000000, used_percentage: 18, current_usage: { input_tokens: 170219, output_tokens: 4600 } },
+  });
+  const buf = Buffer.from(fullPayload, 'utf8');
+  const splitIndex = buf.indexOf(0xe6) + 1;
+  const chunk1 = buf.subarray(0, splitIndex);
+  const chunk2 = buf.subarray(splitIndex);
+
+  await new Promise((resolve) => {
+    const child = spawn(process.execPath, [BIN], { stdio: ['pipe', 'pipe', 'pipe'], env: TEST_ENV });
+    let out = '', err = '';
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.on('data', (d) => { err += d; });
+    child.stdin.write(chunk1);
+    child.stdin.write(chunk2);
+    // Intentionally keep stdin open to trigger 800ms timeout
+    child.on('close', (code) => {
+      assert.equal(code, 0);
+      assert.ok(out.length > 0, 'output should render properly even under timeout');
+      const plain = out.replace(/\x1b\[[0-9;]*m/g, '');
+      assert.match(plain, /测试模型/);
+      assert.equal(err, '');
+      resolve();
+    });
+  });
+});
+
+
 after(() => {
   fs.rmSync(TEST_HOME, { recursive: true, force: true });
 });
