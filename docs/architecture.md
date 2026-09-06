@@ -1,7 +1,7 @@
 # CodeBuddy HUD System Architecture
 
 > **Target Version:** `v0.1.0+`  
-> **Host Compatibility:** CodeBuddy Code CLI (`>= 2.90.0`)  
+> **Host Compatibility:** CodeBuddy Code CLI; v2.146.0 has the Windows quoting and three-line display limits described below.
 > **Engine Baseline:** Pure Node.js Standard Library (`>= 18.0.0`, Zero npm dependencies)
 
 ---
@@ -13,7 +13,7 @@
 ### Core Architectural Invariants:
 1. **Zero External Dependencies**: Implemented strictly using Node.js built-in standard libraries (`fs`, `path`, `os`, `crypto`, `child_process`, `readline`, `https`). No `node_modules` installation is required.
 2. **Statusline Host Contract**:
-   - **Hard Execution Timeout**: $\le 1500\text{ms}$ total (with an internal stdin read timeout of $800\text{ms}$).
+   - **Execution Budget**: $\le 1500\text{ms}$ total, with an internal stdin read timeout of $800\text{ms}$. Timers cannot preempt synchronous filesystem calls or JSON parsing.
    - **Constant Zero Exit Code**: The process must **always** terminate with `process.exitCode = 0`. Uncaught runtime exceptions are redirected to `~/.codebuddy/codebuddy-hud-error.log` (capped at 1MB with auto-rotation) to prevent host terminal disruption.
    - **Output Height Boundary**: Strictly $\le 4$ ANSI-formatted terminal lines. Unused or empty lines are dynamically pruned.
 3. **Truthful & Non-Fabricated Telemetry**: Prompt Cache hit percentages and cumulative Credit expenditures are extracted directly from authentic session `transcript.jsonl` records, gracefully degrading to `cache --` when telemetry is absent.
@@ -52,8 +52,8 @@
 graph TD
     Entry["runtime/bin/codebuddy-hud.js"] --> Parser["runtime/parser.js"]
     Entry --> Config["runtime/config.js"]
-    Entry --> Transcript["runtime/transcript.js"]
-    Entry --> SessionStats["runtime/session-stats.js"]
+    Renderer --> Transcript["runtime/transcript.js"]
+    Renderer --> SessionStats["runtime/session-stats.js"]
     Entry --> Renderer["runtime/renderer.js"]
     Entry --> Doctor["runtime/doctor.js"]
     Entry --> UpdateChecker["runtime/update-checker.js"]
@@ -78,18 +78,20 @@ graph TD
     Doctor --> Git
     Installer --> Paths
     Uninstall --> Paths
+    Installer --> SettingsFile["runtime/settings-file.js"]
+    Uninstall --> SettingsFile
 ```
 
 ---
 
 ## 4. Execution Flow per Agent Step
 
-The CodeBuddy Code host invokes HUD approximately every **$300\text{ms}$** (or upon token streaming bursts). The end-to-end lifecycle executes as follows:
+CodeBuddy Code v2.146.0 triggers HUD on session, result, settings and related events, with approximately 300ms debounce. Idle sessions do not refresh periodically. Failed commands clear the displayed HUD and do not schedule automatic retries.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Host as CodeBuddy Host (~300ms)
+    actor Host as CodeBuddy Host (event-driven)
     participant Entry as codebuddy-hud.js
     participant Stdin as Stdin Pipe
     participant Engine as Subsystems (Parser, Config, Transcript, Stats)
@@ -107,10 +109,10 @@ sequenceDiagram
     alt stdin closes normally or 800ms timer fires
         Entry->>Stdin: process.stdin.destroy() (Release libuv handle)
         Entry->>Engine: parseCodeBuddyInput(rawStdin)
-        Entry->>Engine: loadConfig() & getGitStatus()
-        Entry->>Engine: getSessionUsageMetrics() & getTurnUsageMetrics()
-        Entry->>Engine: getLogicalSessionCostData()
-        Entry->>Renderer: renderHUD(cbData, config, telemetry)
+        Entry->>Engine: loadConfig(cwd)
+        Entry->>Renderer: renderHUD(cbData, config)
+        Renderer->>Engine: getGitStatus() & getLogicalSessionCostData()
+        Renderer->>Engine: getSessionUsageMetrics() & getTurnMetricsAndActivity()
         Renderer-->>Entry: formatted ≤4 ANSI lines
         Entry->>Host: stdout.write(renderedOutput)
     else Pipe broken (EPIPE / early close)
@@ -132,14 +134,15 @@ sequenceDiagram
 ### 5.1 Reverse Sliding-Window Transcript Scanning (`transcript.js`)
 - **Problem**: Comprehensive telemetry (Prompt Cache hits, exact credit billing, tool names) is only recorded in the host's `transcript.jsonl`. However, transcript files can exceed hundreds of megabytes during long coding sessions.
 - **Scanning Algorithm**:
-  1. **Tail Seeking**: Opens the file descriptor and reads backwards from `EOF` in fixed $16\\text{KB}$ sliding chunks (default `tailBytes: 16384`, capped at $256\\text{KB}$ total scan window).
+  1. **Tail Seeking**: `getTurnMetricsAndActivity()` shares one reverse scan for turn usage and tool activity. It reads from `EOF` in 16KB chunks by default (`tailBytes: 16384`), capped at a 256KB total scan window. Session Credits use a separate forward checkpoint scan.
   2. **Straddle Line Reconstruction**: When a sliding chunk boundary cuts across a JSON line, the trailing fragment is buffered and prepended to the preceding chunk to assemble valid JSON.
   3. **Turn Boundary Termination**: The scanner traverses backwards, aggregating API usage blocks until it encounters an entry with `role: 'user'`. This guarantees metrics reflect the **current turn aggregation**, not isolated burst steps.
   4. **Field Priority Resolution**:
      ```
-     Prompt Cache Hits = rawUsage.prompt_cache_hit_tokens
-                      || usage.inputTokensDetails[].cached_tokens
-                      || cache_read_input_tokens
+     With valid rawUsage.prompt_tokens:
+       prompt_cache_hit_tokens -> prompt_tokens_details.cached_tokens -> cached_tokens -> 0
+     Otherwise, with valid usage.inputTokens:
+       sum(usage.inputTokensDetails[].cached_tokens)
      ```
 
 ### 5.2 Session Baseline Tracking & `/clear` Detection (`session-stats.js`)
@@ -147,22 +150,22 @@ sequenceDiagram
 - **State Machine**:
   1. Persists logical session baselines in `~/.codebuddy/codebuddy-hud-session-state/<hash>.json`.
   2. Detects a clear boundary if:
-     - The current `input_tokens` drops to $\le 2048$ while previous total input was $\ge 8192$ (absolute threshold, not percentage);
+     - Current `input_tokens` drops to $\le 2048$ while previous current input was $\ge 8192$, or cumulative `total_input_tokens` decreases;
      - Current `session_id` changes for the same transcript path;
-     - Lines added/removed drop below previous baseline numbers.
+     - Lines added/removed or duration counters drop below their stored baselines (the cost baseline then resets to zero).
   3. Subtracts the established baseline from raw host stats to display accurate turn-relative diffs and elapsed durations.
 
 ### 5.3 Incremental SHA-256 Checkpointing for Credits (`transcript.js`)
-- **Problem**: Summing full session credit costs across thousands of JSONL lines on every $300\text{ms}$ trigger causes severe CPU throttling.
+- **Problem**: Recomputing full-session credits on every event repeats parsing of existing records, especially in long transcripts.
 - **Checkpoint Algorithm**:
   1. Hashes the transcript absolute path with SHA-256 to isolate state: `~/.codebuddy/codebuddy-hud-usage-state/<sha256>.json`.
   2. Stores checkpoint state (version 5): `{ version, path, identity: { dev, ino, birthtimeMs }, headHash, offset, credits, creditCallCount, checkpointHash, sourceSize, sourceMtimeNs, sourceCtimeNs, sourceContentHash, updatedAt }`.
-  3. On subsequent invocations, reads strictly from `offset` to `EOF` (sub-millisecond parsing).
+  3. Parses appended records from `offset`, retaining small identity/checkpoint verification reads. The chunk loop has a 100ms budget; an incomplete scan saves its progress and returns `complete: false` with no exposed credits total. The renderer hides Credits instead of falling back to payload credits. A partial trailing JSONL record remains uncommitted until complete.
   4. **Rewrite & Truncation Guard**: If current `file.size < state.offset`, the state machine detects in-place rewrite or truncation, resets `offset = 0`, and seamlessly rebuilds the checkpoint.
 
 ### 5.4 Background Update Stampede Prevention (`update-checker.js`)
-- **Vulnerability**: At $300\text{ms}$ invocation rates, an asynchronous HTTP fetch (taking $1\sim 3$ seconds) causes $10\sim 20$ concurrent Node background processes to spawn before the first check writes back to disk (**Process Stampede / Fork Bomb**).
-- **Pre-Locking Solution**:
+- **Repeated Launches**: Event bursts can start another HUD while an update request is pending. Writing `lastCheck` before spawn throttles subsequent invocations; it is not a cross-process mutex.
+- **Timestamp Reservation**:
   ```javascript
   // Persist placeholder lock before spawning to block concurrent triggers
   writeUpdateStatus({
@@ -176,6 +179,7 @@ sequenceDiagram
   });
   child.unref();
   ```
+  Network failures preserve the last valid update result and refresh `lastCheck`. The request has an 8s timer; the detached CLI checker also has a 15s exit fallback.
 
 ### 5.5 Multi-Layer Configuration & Theme Engine (`config.js`)
 - **Precedence Hierarchy** (5 layers, merged via `deepMerge` in `loadConfig`):
@@ -187,13 +191,15 @@ sequenceDiagram
           → Theme Resolution (resolveTheme based on merged config)
   ```
   Note: `--theme <name>` is a persistent write operation (saves to user config), not a runtime argument overlay.
-- **Security Guard**: `deepMerge()` explicitly strips `__proto__`, `constructor`, and `prototype` keys with a maximum recursion depth cap of 64 to prevent Prototype Pollution attacks.
+- **Security Guard**: `deepMerge()` skips `__proto__` and caps recursion at 64. Config files are read directly on each load; effort fallback uses a small process-local cache keyed by resolved settings path, with no persisted effort cache.
 
 ### 5.6 4-Line Adaptive Layout & Pruning (`renderer.js`)
 - **Line 1 (Identity & Status)**: Model Display Name · Reasoning Effort Icon · Git Branch & Dirty (`*`) · Workspace Name · Permission Mode · Version Badge.
 - **Line 2 (Tokens & Context)**: Total Tokens (In/Out breakdown) · Progress Bar (`[███░░░░░░░]`) · Percentage Used · Turn Cache Hit Badge.
 - **Line 3 (Diff & Cost & Latency)**: `Δ +Added -Removed` · Actual Credits · Total Duration · API Duration. (Omitted if all are zero).
 - **Line 4 (Agents & Tool Activity)**: Active Agents · Task Queue · Completed Count · Aggregated Tool Call Badges (`✓ Edit ×3`). (Omitted if empty).
+
+CodeBuddy Code v2.146.0 retains only the first three stdout lines. This host restriction does not change the HUD's own four-line output contract.
 
 ---
 
@@ -215,13 +221,13 @@ sequenceDiagram
 
 | Failure Event | Root Cause | System Degradation Behavior | Exit Code |
 | :--- | :--- | :--- | :---: |
-| **Empty Stdin** | Windows host timing quirk / early hook trigger | Falls back to mock or empty payload gracefully; renders minimal line. | `0` |
+| **Empty Stdin** | Early hook trigger / absent payload | Handles empty input without inventing telemetry. | `0` |
 | **Stdin Hang** | Host pipe remains open without sending EOF | $800\text{ms}$ timeout timer fires, forcibly closes stdin and renders collected input. | `0` |
 | **EPIPE Error** | Host kills statusline process while stdout writing | `process.stdout.on('error', () => {})` swallows error cleanly. | `0` |
 | **Missing Transcript** | First turn / remote headless session | Omits Line 4 tool activity and falls back to payload-supplied token counts. | `0` |
 | **Corrupt JSONL / State** | Process killed mid-write | Checkpoint discarded; resets byte offset to 0 and rebuilds from start. | `0` |
-| **Readonly Filesystem** | Permission restricted container | State writes fail silently inside try/catch; telemetry computed purely in memory. | `0` |
-| **Git Timeout** | Huge mono-repo / NFS lag | 200ms timeout threshold aborts git probe and renders without branch tag. | `0` |
+| **Readonly Filesystem** | Permission restricted container | State writes fail silently; incomplete Credits scans remain hidden and may restart on later invocations. | `0` |
+| **Git Timeout** | Huge mono-repo / NFS lag | Falls back to a directly readable branch with `dirty: null`, otherwise omits it. | `0` |
 | **Network Failure** | Offline / DNS failure in update check | Preserves existing update status, updates `lastCheck` timestamp, and exits silently. | `0` |
 
 ---
@@ -231,8 +237,15 @@ sequenceDiagram
 1. **Windows `.cmd` Shim Path Baking**:
    - `statusline-installer.js` bakes the exact `process.execPath` into `codebuddy-hud.cmd` during `--setup`.
    - Batch percent characters (`%`) in paths are automatically escaped as `%%` to avoid `cmd.exe` variable substitution corruption.
+   - The shim is UTF-8, with `chcp 65001` when needed; UTF-16LE batch files are not supported by the tested cmd.exe invocation.
+   - v2.146.0 containment double-escapes literal quotes. Safe ASCII shim paths are left unquoted; paths requiring quotes retain them and remain subject to the host limitation.
 2. **Terminal UTF-8 Auto-Detection**:
    - On Windows, queries `chcp.com` and caches the result (`65001`) in `codebuddy-hud-cache-state.json`.
    - Seamlessly falls back to ASCII glyphs (`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`) when UTF-8 / Unicode is unsupported.
 3. **Natural Event Loop Drain**:
    - Eliminates abrupt `process.exit()` in rendering path. Releases all active `stdin` handles, timer handles, and let libuv naturally exit to prevent stdout buffer truncation.
+4. **Settings Writes**:
+   - JSONC parsing preserves string content. Atomic replacement follows valid symlinks and retains existing POSIX permissions and ownership; new settings and first backups default to `0600`. Multiple hard links are rejected rather than silently detached.
+   - Uninstall restores only `statusLine`, preserves other settings and user themes, and retains the backup if writing fails.
+5. **Verification Isolation**:
+   - Setup/uninstall tests isolate runtime, settings and user state together. `CODEBUDDY_HOME` alone cannot protect the checkout's generated shim.

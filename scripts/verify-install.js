@@ -6,13 +6,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const HUD_BIN = path.join(__dirname, '..', 'runtime', 'bin', 'codebuddy-hud.js');
+const SOURCE_RUNTIME = path.join(__dirname, '..', 'runtime');
 const isWin = process.platform === 'win32';
-const cmdShim = HUD_BIN.replace(/\.js$/, '.cmd');
-
-// Track if a .cmd shim already existed in the repo so local runs leave the repo clean
-const origShimExisted = fs.existsSync(cmdShim);
-const origShimContent = origShimExisted ? fs.readFileSync(cmdShim, 'utf8') : null;
 
 function runProcess(exe, args = [], options = {}, stdinData = null) {
   return new Promise((resolve) => {
@@ -71,6 +66,9 @@ async function main() {
   console.log('=== codebuddy-cli-hud Isolated Installation Verification ===\n');
 
   const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-verify-install-'));
+  const runtimeDir = path.join(tmpHome, 'runtime');
+  const HUD_BIN = path.join(runtimeDir, 'bin', 'codebuddy-hud.js');
+  const cmdShim = HUD_BIN.replace(/\.js$/, '.cmd');
   const settingsPath = path.join(tmpHome, 'settings.json');
   const isolatedEnv = {
     ...process.env,
@@ -94,6 +92,11 @@ async function main() {
   }
 
   try {
+    // CODEBUDDY_HOME isolates state; a runtime copy also isolates shim removal.
+    fs.cpSync(SOURCE_RUNTIME, runtimeDir, {
+      recursive: true,
+      filter: (source) => source !== path.join(SOURCE_RUNTIME, 'bin', 'codebuddy-hud.cmd'),
+    });
     // 0. Seed user settings to verify preservation
     fs.writeFileSync(settingsPath, JSON.stringify({ userCustomSetting: 'preserved' }, null, 2));
 
@@ -203,12 +206,6 @@ async function main() {
     record('isolated-state-files-cleaned', remainingStateFiles.length === 0, `lingering files: ${remainingStateFiles.join(', ')}`);
 
   } finally {
-    // Restore original shim if it existed in the repository prior to test
-    if (origShimExisted && origShimContent !== null) {
-      try {
-        fs.writeFileSync(cmdShim, origShimContent);
-      } catch {}
-    }
     try {
       fs.rmSync(tmpHome, { recursive: true, force: true });
     } catch {}

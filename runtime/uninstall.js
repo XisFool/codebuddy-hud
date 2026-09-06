@@ -4,7 +4,6 @@ const fs = require('fs');
 const path = require('path');
 const {
   getSettingsPath,
-  getUserConfigPath,
   getCacheStatePath,
   getGitCachePath,
   getCreditStatePath,
@@ -13,29 +12,12 @@ const {
   getUpdateStatusPath,
 } = require('./paths');
 const { sanitizeTerminalText } = require('./sanitize');
-const { parseSettingsJson, isSettingsObject } = require('./statusline-installer');
-
-
-function atomicWriteFile(targetPath, content) {
-  const dir = path.dirname(targetPath);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const tmpPath = `${targetPath}.tmp-${process.pid}-${Date.now()}`;
-  try {
-    fs.writeFileSync(tmpPath, content);
-    fs.renameSync(tmpPath, targetPath);
-  } catch (err) {
-    try {
-      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-    } catch {}
-    throw err;
-  }
-}
+const { atomicWriteSettingsFile, parseSettingsJson, isSettingsObject } = require('./settings-file');
 
 function uninstall(options) {
   const opts = options || {};
   const settingsPath = opts.settingsPath || getSettingsPath();
   const backupPath = settingsPath + '.bak.codebuddy-hud';
-  const userConfigPath = getUserConfigPath();
   const cachePath = getCacheStatePath();
   const gitCachePath = getGitCachePath();
   const updateStatusPath = getUpdateStatusPath();
@@ -57,6 +39,7 @@ function uninstall(options) {
         rawSettings = fs.readFileSync(settingsPath, 'utf8');
       } catch (err) {
         cleaned.push(`Warning: could not read settings.json: ${sanitizeTerminalText(err && err.message, 160)}`);
+        throw err;
       }
 
       let settings = null;
@@ -77,24 +60,27 @@ function uninstall(options) {
 
       if (settings !== null) {
         let modified = false;
+        let restoredBackup = false;
         if (fs.existsSync(backupPath)) {
           try {
             const backupRaw = fs.readFileSync(backupPath, 'utf8');
             const backup = parseSettingsJson(backupRaw);
+            if (!isSettingsObject(backup)) {
+              throw new Error('backup root is not a JSON object');
+            }
             if (isSettingsObject(backup) && backup.statusLine) {
               settings.statusLine = backup.statusLine;
             } else {
               delete settings.statusLine;
             }
-            try { fs.unlinkSync(backupPath); } catch {}
-            cleaned.push(`Restored settings from backup: ${sanitizeTerminalText(backupPath, 512)}`);
             modified = true;
-          } catch {
+            restoredBackup = true;
+          } catch (err) {
+            cleaned.push(`Warning: could not parse backup, retaining it: ${sanitizeTerminalText(err && err.message, 160)}`);
             if (settings.statusLine && typeof settings.statusLine.command === 'string' && settings.statusLine.command.includes('codebuddy-hud')) {
               delete settings.statusLine;
               modified = true;
             }
-            try { fs.unlinkSync(backupPath); } catch {}
           }
         } else {
           if (settings.statusLine && typeof settings.statusLine.command === 'string' && settings.statusLine.command.includes('codebuddy-hud')) {
@@ -105,7 +91,15 @@ function uninstall(options) {
         }
 
         if (modified) {
-          atomicWriteFile(settingsPath, JSON.stringify(settings, null, 2));
+          atomicWriteSettingsFile(settingsPath, JSON.stringify(settings, null, 2));
+          if (restoredBackup) {
+            try {
+              fs.unlinkSync(backupPath);
+              cleaned.push(`Restored settings from backup: ${sanitizeTerminalText(backupPath, 512)}`);
+            } catch (err) {
+              cleaned.push(`Warning: restored settings but retained backup: ${sanitizeTerminalText(err && err.message, 160)}`);
+            }
+          }
         }
       }
     }

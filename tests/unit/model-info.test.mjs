@@ -1,16 +1,28 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const { resolveEffortLevel, resolveCreditSpend, resetModelInfoCache } = require('../../runtime/model-info.js');
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const MODEL_INFO_PATH = path.join(REPO_ROOT, 'runtime', 'model-info.js');
 
 let originalSettingsPath;
+let originalCodeBuddyHome;
+let tmpDir;
 
 beforeEach(() => {
   resetModelInfoCache();
   originalSettingsPath = process.env.CODEBUDDY_SETTINGS_PATH;
-  process.env.CODEBUDDY_SETTINGS_PATH = '/nonexistent/path/settings.json';
+  originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-modelinfo-'));
+  process.env.CODEBUDDY_HOME = path.join(tmpDir, 'codebuddy-home');
+  process.env.CODEBUDDY_SETTINGS_PATH = path.join(tmpDir, 'missing-settings.json');
 });
 
 afterEach(() => {
@@ -19,7 +31,13 @@ afterEach(() => {
   } else {
     process.env.CODEBUDDY_SETTINGS_PATH = originalSettingsPath;
   }
+  if (originalCodeBuddyHome === undefined) {
+    delete process.env.CODEBUDDY_HOME;
+  } else {
+    process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
+  }
   resetModelInfoCache();
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
 describe('resolveEffortLevel', () => {
@@ -153,20 +171,74 @@ describe('resolveEffortLevel', () => {
   });
 
   it('reads reasoningEffort from settings.json when present', () => {
-    const fs = require('fs');
-    const os = require('os');
-    const path = require('path');
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-modelinfo-'));
     const tmpSettings = path.join(tmpDir, 'settings.json');
-    try {
-      fs.writeFileSync(tmpSettings, JSON.stringify({ reasoningEffort: 'xhigh' }));
-      process.env.CODEBUDDY_SETTINGS_PATH = tmpSettings;
-      resetModelInfoCache();
-      const data = { model: { id: 'unknown-model-xyz' } };
-      assert.equal(resolveEffortLevel(data), 'xhigh');
-    } finally {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
+    fs.writeFileSync(tmpSettings, JSON.stringify({ reasoningEffort: 'xhigh' }));
+    process.env.CODEBUDDY_SETTINGS_PATH = tmpSettings;
+    resetModelInfoCache();
+    const data = { model: { id: 'unknown-model-xyz' } };
+    assert.equal(resolveEffortLevel(data), 'xhigh');
+  });
+
+  it('keeps same-mtime settings files separate when the configured path changes', () => {
+    const settingsA = path.join(tmpDir, 'settings-a.json');
+    const settingsB = path.join(tmpDir, 'settings-b.json');
+    const fixedTime = new Date('2026-01-01T00:00:00.000Z');
+    const data = { model: { id: 'unknown-model-xyz' } };
+    fs.writeFileSync(settingsA, JSON.stringify({ reasoningEffort: 'high' }));
+    fs.writeFileSync(settingsB, JSON.stringify({ reasoningEffort: 'low' }));
+    fs.utimesSync(settingsA, fixedTime, fixedTime);
+    fs.utimesSync(settingsB, fixedTime, fixedTime);
+
+    process.env.CODEBUDDY_SETTINGS_PATH = settingsA;
+    assert.equal(resolveEffortLevel(data), 'high');
+    process.env.CODEBUDDY_SETTINGS_PATH = settingsB;
+    assert.equal(resolveEffortLevel(data), 'low');
+  });
+
+  it('does not read a legacy disk effort cache in a separate process', () => {
+    const settingsPath = path.join(tmpDir, 'settings.json');
+    const cachePath = path.join(process.env.CODEBUDDY_HOME, 'codebuddy-hud-cache-state.json');
+    fs.writeFileSync(settingsPath, JSON.stringify({ reasoningEffort: 'low' }));
+    const legacyCache = JSON.stringify({
+      settingsMtime: fs.statSync(settingsPath).mtimeMs,
+      settingsEffort: 'high',
+    });
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    fs.writeFileSync(cachePath, legacyCache);
+
+    const output = execFileSync(process.execPath, ['-e', [
+      "const { resolveEffortLevel } = require(process.env.MODEL_INFO_PATH);",
+      "process.stdout.write(String(resolveEffortLevel({ model: { id: 'unknown-model' } })));",
+    ].join(' ')], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CODEBUDDY_SETTINGS_PATH: settingsPath,
+        MODEL_INFO_PATH,
+      },
+    });
+    assert.equal(output, 'low');
+    assert.equal(fs.readFileSync(cachePath, 'utf8'), legacyCache);
+  });
+
+  it('does not create an effort disk cache', () => {
+    const settingsPath = path.join(tmpDir, 'settings.json');
+    const cachePath = path.join(process.env.CODEBUDDY_HOME, 'codebuddy-hud-cache-state.json');
+    fs.mkdirSync(process.env.CODEBUDDY_HOME, { recursive: true });
+    fs.writeFileSync(settingsPath, JSON.stringify({ reasoningEffort: 'max' }));
+    process.env.CODEBUDDY_SETTINGS_PATH = settingsPath;
+
+    assert.equal(resolveEffortLevel({ model: { id: 'unknown-model-xyz' } }), 'max');
+    assert.equal(fs.existsSync(cachePath), false);
+  });
+
+  it('caches a missing settings file as null for the current path', () => {
+    const settingsPath = process.env.CODEBUDDY_SETTINGS_PATH;
+    const data = { model: { id: 'unknown-model-xyz' } };
+    assert.equal(resolveEffortLevel(data), null);
+    fs.writeFileSync(settingsPath, JSON.stringify({ reasoningEffort: 'high' }));
+    assert.equal(resolveEffortLevel(data), null);
   });
 });
 

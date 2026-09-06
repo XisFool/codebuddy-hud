@@ -1,7 +1,7 @@
 # CodeBuddy HUD 系统架构设计全景文档
 
 > **目标版本：** `v0.1.0+`  
-> **宿主兼容性：** CodeBuddy Code CLI (`>= 2.90.0`)  
+> **宿主兼容性：** CodeBuddy Code CLI；v2.146.0 存在下文说明的 Windows 引号与三行显示限制。
 > **底层运行环境：** 纯 Node.js 标准库 (`>= 18.0.0`，绝对零外部 npm 依赖)
 
 ---
@@ -14,7 +14,7 @@
 1. **绝对零外部依赖 (Zero npm dependencies)**：
    - 纯基于 Node.js 原生标准库（`fs`, `path`, `os`, `crypto`, `child_process`, `readline`, `https` 等）构建，无需执行 `npm install`，分发体积保持在百 KB 级别。
 2. **状态栏宿主契约 (Statusline Contract)**：
-   - **硬执行超时限制**：整体单次执行硬超时 $\le 1500\text{ms}$（内部 Stdin 超时保底 $800\text{ms}$）。
+   - **执行预算**：整体单次执行预算 $\le 1500\text{ms}$，内部 Stdin 超时保底 $800\text{ms}$。定时器不能抢占同步文件调用或 JSON 解析。
    - **恒零退出码保证**：进程必须**恒定以 `process.exitCode = 0` 退出**。任何未捕获的运行时异常均重定向记录至 `~/.codebuddy/codebuddy-hud-error.log`（权限 `0o600`，上限 1MB 自动覆盖轮转），严禁抛出非零 Exit Code 破坏终端主会话。
    - **渲染输出行数约束**：终端渲染输出严格限制在 $\le 4$ 行，无数据行自动向上裁剪合并。
 3. **真实遥测契约 (Truthful Telemetry)**：
@@ -54,8 +54,8 @@
 graph TD
     Entry["runtime/bin/codebuddy-hud.js"] --> Parser["runtime/parser.js"]
     Entry --> Config["runtime/config.js"]
-    Entry --> Transcript["runtime/transcript.js"]
-    Entry --> SessionStats["runtime/session-stats.js"]
+    Renderer --> Transcript["runtime/transcript.js"]
+    Renderer --> SessionStats["runtime/session-stats.js"]
     Entry --> Renderer["runtime/renderer.js"]
     Entry --> Doctor["runtime/doctor.js"]
     Entry --> UpdateChecker["runtime/update-checker.js"]
@@ -80,18 +80,20 @@ graph TD
     Doctor --> Git
     Installer --> Paths
     Uninstall --> Paths
+    Installer --> SettingsFile["runtime/settings-file.js"]
+    Uninstall --> SettingsFile
 ```
 
 ---
 
 ## 4. 单次交互执行流与生命周期时序 (Execution Flow)
 
-宿主以约 **$300\text{ms}$** 的高频周期触发 HUD 进程，完整生命周期时序如下：
+宿主 v2.146.0 在会话、结果、配置等事件后约 300ms 去抖触发 HUD。空闲时不周期刷新；命令失败会清空 HUD，且不会自动定时重试。
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Host as CodeBuddy 宿主 (~300ms)
+    actor Host as CodeBuddy 宿主 (事件触发)
     participant Entry as codebuddy-hud.js
     participant Stdin as Stdin 管道
     participant Engine as 解析与状态机子系统
@@ -109,10 +111,10 @@ sequenceDiagram
     alt Stdin 正常结束 或 800ms 定时器触发
         Entry->>Stdin: process.stdin.destroy() (释放 libuv 句柄)
         Entry->>Engine: parseCodeBuddyInput(rawStdin) 解析基础 Payload
-        Entry->>Engine: loadConfig() 合并配置 & getGitStatus() 获取分支
-        Entry->>Engine: getSessionUsageMetrics() & getTurnUsageMetrics() 遥测扫描
-        Entry->>Engine: getLogicalSessionCostData() 会话差值判定
-        Entry->>Renderer: renderHUD(cbData, config, telemetry)
+        Entry->>Engine: loadConfig(cwd) 合并配置
+        Entry->>Renderer: renderHUD(cbData, config)
+        Renderer->>Engine: getGitStatus() & getLogicalSessionCostData()
+        Renderer->>Engine: getSessionUsageMetrics() & getTurnMetricsAndActivity()
         Renderer-->>Entry: 装配输出 ≤4 行 ANSI 看板字符串
         Entry->>Host: stdout.write(renderedOutput)
     else 管道异常断开 (EPIPE / 宿主提前关闭)
@@ -134,14 +136,15 @@ sequenceDiagram
 ### 5.1 逆向滑窗遥测扫描算法 (`transcript.js`)
 - **痛点**：Prompt Cache 真实命中数、实际 Credits 扣费与工具调用序列仅存在于 `transcript.jsonl` 中，长会话下该文件可能达数十 MB。
 - **算法细节**：
-  1. **尾部逆向读取**：从文件 `EOF` 向前逆向读取 $16\text{KB} \sim 64\text{KB}$ 的滑动数据块（全扫描上限 $256\text{KB}$）。
+  1. **尾部逆向读取**：`getTurnMetricsAndActivity()` 用一次回扫聚合本轮 usage 和工具活动；默认滑窗 16KB，全扫描上限 256KB。会话 Credits 另用前向增量扫描。
   2. **跨块断行拼装 (Straddle Reconstruction)**：当滑窗边界切断了单行 JSONL 时，将未完成的前半段暂存并在读取前一块时完成拼装。
   3. **Turn 轮次边界截断**：从后向前逆向回扫 API usage 记录，直到遇到 `role: 'user'` 时停止，确保指标展示的是**当前这一轮交互的聚合命中率**。
   4. **字段优先级判定**：
      ```
-     Prompt Cache 命中数 = rawUsage.prompt_cache_hit_tokens
-                         || usage.inputTokensDetails[].cached_tokens
-                         || cache_read_input_tokens
+     rawUsage.prompt_tokens 有效时：
+       prompt_cache_hit_tokens -> prompt_tokens_details.cached_tokens -> cached_tokens -> 0
+     否则，usage.inputTokens 有效时：
+       sum(usage.inputTokensDetails[].cached_tokens)
      ```
 
 ### 5.2 会话基线捕获与 `/clear` 判定机制 (`session-stats.js`)
@@ -149,22 +152,22 @@ sequenceDiagram
 - **状态机**：
   1. 在 `~/.codebuddy/codebuddy-hud-session-state/<hash>.json` 记录会话基线。
   2. 触发判定规则：
-     - 当前 `input_tokens` 骤降至历史总量的 $1\%$ 以下；
+     - 当前 `input_tokens` 降至不超过 2048，且此前当前输入至少 8192；或者累计 `total_input_tokens` 下降；
      - 同一文件路径被赋予了全新的 `session_id`；
-     - 代码增删行数小于上一快照（单调性打破）。
+     - 代码增删或耗时计数低于已存基线，此时将 cost 基线归零。
   3. 识别到重置后自动建立新基线，使看板显示的耗时与变更严格反映当前会话增量。
 
 ### 5.3 增量 SHA-256 Credits Checkpoint 机制 (`transcript.js`)
-- **痛点**：每 300ms 全量遍历数万行 JSONL 计算累计消费会导致 CPU 飙升。
+- **痛点**：每次事件刷新全量遍历长 JSONL 会重复解析已有消费记录。
 - **增量 Checkpoint 状态机**：
   1. 基于 transcript 绝对路径 SHA-256 哈希隔离状态文件：`~/.codebuddy/codebuddy-hud-usage-state/<sha256>.json`。
-  2. 状态机持久化 `{ offset: number, credits: number, inode: number, size: number }`。
-  3. 后续调用仅从 `offset` 处向后增量读取新增行（耗时 $< 1\text{ms}$）。
+  2. 状态文件为 version 5：`{ version, path, identity: { dev, ino, birthtimeMs }, headHash, offset, credits, creditCallCount, checkpointHash, sourceSize, sourceMtimeNs, sourceCtimeNs, sourceContentHash, updatedAt }`。
+  3. 后续从 `offset` 增量解析，并保留少量身份与 checkpoint 校验读取。分块循环预算为 100ms；未完成时保存进度并返回 `complete: false`，不暴露累计 Credits。渲染层隐藏该值，也不回退到 payload Credits。未写完的 JSONL 尾行等待下一次续读。
   4. **覆写与截断容灾**：若检测到 `file.size < state.offset`，自动重置 `offset = 0` 并重建 Checkpoint。
 
 ### 5.4 后台更新检查防惊群风暴预占位锁 (`update-checker.js`)
-- **并发隐患**：在 300ms 刷新频率下，异步网络请求耗时 1~3 秒会导致连续派生数十个后台 Node 进程（**进程炸弹 / Process Stampede**）。
-- **预占位锁实现**：
+- **连续派生**：事件密集时，网络请求尚未完成就可能再次启动 HUD。先写入 `lastCheck` 可减少重复派生，但它不是跨进程互斥锁。
+- **时间戳预占位实现**：
   ```javascript
   // 派生后台进程前立即落盘时间戳，阻断后续并发实例
   writeUpdateStatus({
@@ -178,23 +181,27 @@ sequenceDiagram
   });
   child.unref();
   ```
+  网络失败保留上次有效更新结果并刷新 `lastCheck`；请求总计时器为 8s，独立后台 CLI 另有 15s 退出兜底。
 
 ### 5.5 多层级配置合并与主题调色板引擎 (`config.js`)
 - **配置覆盖优先级**：
   ```
-  内置默认配置 
-    → 内置主题预设 (ocean, emerald, cyberpunk, amber, monochrome)
+  内置默认配置 (DEFAULT_CONFIG)
+    → 随包配置 (runtime/codebuddy-hud.config.json)
       → 用户全局配置 (~/.codebuddy/codebuddy-hud.config.json)
         → 项目局部配置 (./codebuddy-hud.config.json)
-          → 命令行显式指定 (--theme <name>)
+          → 主题解析 (resolveTheme)
   ```
-- **安全性防护**：`deepMerge()` 递归时自动过滤 `__proto__`、`constructor` 与 `prototype` 键，深度上限 64，杜绝原型链污染攻击。
+- `--theme <name>` 将主题保存到用户配置，不是运行时覆盖层。
+- **安全性防护**：`deepMerge()` 跳过 `__proto__`，递归深度上限 64。配置文件每次直接读取；effort 只保留按 settings 路径区分的进程内缓存，不写磁盘缓存。
 
 ### 5.6 4 行自适应布局与自裁剪规则 (`renderer.js`)
 - **Line 1 (标识与状态)**：模型名称 · 推理深度 (effort) · Git 分支与 Dirty 状态 (`*`) · 工作区目录 · 权限模式 · 版本提示。
 - **Line 2 (Tokens 与上下文)**：总 Tokens (输入/输出拆解) · 进度条 (`[███░░░░░░░]`) · 用量百分比 · 本轮 Cache 命中率徽标。
 - **Line 3 (变更、消费与耗时)**：`Δ +增加 -删除` · 实际 Credits · 总耗时 · API 耗时。（无数据自动隐藏整行）。
 - **Line 4 (代理与工具状态)**：活跃代理 · 任务队列 · 完成数 · 工具调用频次聚合（`✓ Edit ×3`）。（无数据自动隐藏整行）。
+
+宿主 v2.146.0 仅保留 stdout 前 3 行。这一显示限制不改变 HUD 自身最多输出 4 行的契约。
 
 ---
 
@@ -219,10 +226,10 @@ sequenceDiagram
 | **空 Stdin** | Windows 宿主启动时序抖动 | 优雅回退至最小 Payload 渲染，输出基础行 | `0` |
 | **Stdin 管道悬挂** | 宿主未按时发送 EOF 结束管道 | $800\text{ms}$ 定时器触发，强行切断 Stdin 并按已收数据渲染 | `0` |
 | **EPIPE 错误** | 宿主提前关闭 Stdout 接收管道 | `process.stdout.on('error')` 静默捕获，安全退出 | `0` |
-| **Transcript 缺失** | 首轮会话 / 远程无盘环境 | 隐藏 Line 4 工具行，Token 与 Credits 回退使用 Payload 估值 | `0` |
+| **Transcript 缺失** | 首轮会话 / 远程无盘环境 | 隐藏工具活动，Token 回退使用 payload；Credits 仅使用 payload 明示的实际值 | `0` |
 | **状态文件截断损坏** | 异常断电 / 进程被强杀 | 自动丢弃损坏 JSON，重置偏移量为 0 全量重建 | `0` |
-| **只读文件系统** | 权限受限的容器环境 | 状态写入在 try/catch 中静默失败，纯内存计算 | `0` |
-| **Git 超时** | 庞大 Mono-repo / 网络挂载盘 | 200ms 超时强制中断 Git 进程，不显示分支标记 | `0` |
+| **只读文件系统** | 权限受限的容器环境 | 状态写入静默失败；未完成的 Credits 隐藏，后续调用可能从头重建 | `0` |
+| **Git 超时** | 庞大 Mono-repo / 网络挂载盘 | 若能直接读出分支则保留分支并返回 `dirty: null`，否则隐藏 | `0` |
 | **检查更新网络失败** | 离线环境 / GitHub API 限制 | 保留已有状态并刷新 `lastCheck` 时间戳，静默退出 | `0` |
 
 ---
@@ -232,8 +239,15 @@ sequenceDiagram
 1. **Windows `.cmd` Shim 绝对路径烘焙**：
    - `statusline-installer.js` 在 `--setup` 时将当前环境的 `process.execPath` 绝对路径固化写入 `.cmd`。
    - 自动将路径中的 `%` 批量转义为 `%%`，免疫 `cmd.exe` 变量误展开。
+   - shim 为 UTF-8，必要时先 `chcp 65001`；实测 cmd.exe 不支持 UTF-16LE 批处理文件。
+   - v2.146.0 containment 会二次转义字面引号。安全 ASCII shim 路径省略引号；需要引号的路径保留引号，仍受宿主兼容限制。
 2. **终端编码自动探测与缓存**：
    - Windows 下通过 `chcp.com` 探测代码页并缓存于 `codebuddy-hud-cache-state.json`（`65001`）。
    - 在不支持 UTF-8 的终端自动无缝回退至纯 ASCII 字符集（`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`）。
 3. **事件循环自然排空退出 (Natural Drain)**：
    - 渲染完成后主动释放 Stdin 句柄与定时器，依靠 Node.js 事件循环自然排空退出，杜绝 `process.exit()` 引起的异步 Stdout 缓冲区截断。
+4. **配置写入**：
+   - JSONC 解析保留字符串。原子替换跟随有效符号链接，保留现有 POSIX 权限和所有者；新配置及首次备份默认 `0600`。多硬链接目标会被拒绝，避免悄悄断链。
+   - 卸载只恢复 `statusLine`，保留其他 settings 及用户主题；写入失败保留备份。
+5. **验证隔离**：
+   - 安装卸载测试同时隔离 runtime、settings 和用户目录；仅设置 `CODEBUDDY_HOME` 不能保护真实 shim。

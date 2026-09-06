@@ -36,7 +36,7 @@
 
 ### 命令行参数支持 (CLI Flags)
 - `--setup`: 执行安装，写入 `settings.json` 并生成 Windows `.cmd` shim。
-- `--uninstall`: 恢复 `settings.json` 备份并清理所有缓存状态。
+- `--uninstall`: 仅恢复备份中的 `statusLine`，清理缓存及 shim，保留其他 settings 与用户主题配置。
 - `--theme [name]`: 交互式切换或指定设置主题（如 `--theme cyberpunk`、`--theme list`）。
 - `--doctor` / `-d`: 运行环境健康体检（支持 `--json` 输出结构化报告）。
 - `--status`: 输出当前 HUD 静态看板样例（用于健康探测）。
@@ -143,7 +143,7 @@ export function detectThemeMode(config: ResolvedConfig): 'dark' | 'light';
 ### 安全机制 (Why)
 `deepMerge()` 内部校验：
 ```javascript
-if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+if (key === '__proto__') continue;
 ```
 严格阻断恶意配置文件通过伪造 `__proto__` 污染 V8 原型链。
 
@@ -243,29 +243,43 @@ export function getI18n(config?: ResolvedConfig): {
 ```typescript
 export function getTurnUsageMetrics(
   transcriptPath: string | null,
-  opts?: { cwd?: string; maxScanBytes?: number }
+  opts?: { cwd?: string; tailBytes?: number }
 ): {
-  hitTokens: number;
-  promptTokens: number;
-  credits: number;
+  hitTokens: number | null;
+  promptTokens: number | null;
+  credit: number | null;
 } | null;
 
 export function getSessionUsageMetrics(
   transcriptPath: string | null,
   opts?: { statePath?: string; cwd?: string }
 ): {
-  credits: number;
+  complete: boolean;
+  credits: number | null;
+  creditCallCount: number | null;
+  offset: number;
+  source: 'session';
 } | null;
 
 export function getTurnToolActivity(
   transcriptPath: string | null,
-  opts?: { cwd?: string }
+  opts?: { cwd?: string; tailBytes?: number }
 ): {
   active?: { tool: string; detail?: string };
   completed: Array<{ tool: string; count: number }>;
   totalCompleted: number;
 } | null;
+
+export function getTurnMetricsAndActivity(
+  transcriptPath: string | null,
+  opts?: { cwd?: string; tailBytes?: number }
+): {
+  turnUsage: ReturnType<typeof getTurnUsageMetrics>;
+  toolActivity: ReturnType<typeof getTurnToolActivity>;
+};
 ```
+
+`getTurnMetricsAndActivity()` 共享本轮 usage 和工具活动的逆向扫描。会话 Credits 另用前向 checkpoint 扫描，分块循环预算 100ms。`complete: false` 表示预算耗尽、短读或尾行尚未完成；此时累计值与调用数为 `null`，内部 checkpoint 仍可续扫。渲染层隐藏 Credits 并禁止 payload 兜底。
 
 ---
 
@@ -300,9 +314,11 @@ export function getGitStatus(
   timeoutMs?: number // 默认 200ms 超时保底
 ): {
   branch: string;
-  dirty: boolean;
+  dirty: boolean | null;
 } | null;
 ```
+
+正常缓存 TTL 为 10 秒，HEAD/index mtime 变化可提前失效；未暂存的工作树编辑可能延迟显示。`null` 表示 Git 超时后的未知脏状态。
 
 ---
 
@@ -359,8 +375,15 @@ export function setup(options?: {
 }): void;
 
 export function buildStatusLineCommand(platform: string, hudBin: string, nodeExe: string): string;
-export function buildCmdShimContent(nodeExe: string): string;
+export function buildCmdShimContent(nodeExe: string, hudBin?: string): string;
+export function parseSettingsJson(raw: string): object;
 ```
+
+`runtime/settings-file.js` 提供共享的 JSONC 解析与配置写入：仅处理字符串外的注释和尾逗号；跟随有效符号链接写入真实目标；保留 POSIX mode/uid/gid，新配置及首次备份默认 `0600`。多硬链接目标拒绝原子替换。首次备份不会覆盖，卸载写入失败时不删除备份。
+
+安装和卸载成功时使用 `JSON.stringify` 写回标准 JSON，保证字段值而非注释/排版的保真；首次备份保留原始文本，成功恢复后删除。读取 settings 失败时不进入配置修改。
+
+Windows shim 使用 UTF-8 和安装时的 Node 路径。v2.146.0 containment 不兼容字面引号的二次转义，只有安全 ASCII 命令路径可以省略引号。
 
 ---
 
@@ -395,6 +418,8 @@ export function compareVersions(v1: string, v2: string): 1 | -1 | 0;
 export function parseSemver(v: string): [number, number, number];
 ```
 
+网络失败保留最后一次有效更新信息，只刷新检查时间。spawn 前写 `lastCheck` 是节流，不是跨进程互斥锁。
+
 ---
 
 ## 18. `runtime/theme-selector.js` — 交互式主题选择器
@@ -411,7 +436,7 @@ export function printThemesList(): void;
 
 ## 19. `runtime/uninstall.js` — 卸载还原与深度清理
 
-**职责：** 还原 `settings.json.bak.codebuddy-hud` 备份，全面清理所有 Shim 脚本、缓存与持久化状态文件。
+**职责：** 从首次备份仅还原 `statusLine`，保留其他 settings 及用户主题配置；移除对应 runtime 的 Windows shim 与用户缓存。有效备份在配置写入成功后才删除。
 
 ### 接口定义
 ```typescript

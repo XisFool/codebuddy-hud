@@ -187,8 +187,16 @@ function renderHUD(cbData, config) {
     totalDurationMs: sessionCostData.totalDurationMs,
     apiDurationMs: sessionCostData.apiDurationMs,
   } : null;
-  const transcriptCredits = sessionUsage && Number.isFinite(sessionUsage.credits) ? sessionUsage.credits : null;
-  const creditSpend = transcriptCredits === null ? resolveCreditSpend(cbData) : transcriptCredits;
+  // A resumable transcript scan may have only a prefix of the session. Hide
+  // credits for that frame rather than replacing the partial value with an
+  // unrelated payload total.
+  const sessionUsageIncomplete = sessionUsage && sessionUsage.complete === false;
+  const transcriptCredits = !sessionUsageIncomplete && sessionUsage && Number.isFinite(sessionUsage.credits)
+    ? sessionUsage.credits
+    : null;
+  const creditSpend = sessionUsageIncomplete
+    ? null
+    : (transcriptCredits === null ? resolveCreditSpend(cbData) : transcriptCredits);
   const line3 = renderDiffSegment(diffStats, costData, config, glyphs, creditSpend);
   if (line3) lines.push(line3);
 

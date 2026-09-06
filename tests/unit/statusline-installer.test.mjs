@@ -23,12 +23,19 @@ describe('buildStatusLineCommand', () => {
     assert.equal(res1, res2);
   });
 
-  test('win32 -> quoted .cmd shim path, no .js left in the command', () => {
+  test('win32 -> unquoted safe .cmd path for the containment launcher', () => {
     const hudBin = 'C:\\Users\\me\\proj\\runtime\\bin\\codebuddy-hud.js';
     const command = buildStatusLineCommand('win32', hudBin, 'C:\\Program Files\\nodejs\\node.exe');
 
-    assert.equal(command, '"C:\\Users\\me\\proj\\runtime\\bin\\codebuddy-hud.cmd"');
+    assert.equal(command, 'C:\\Users\\me\\proj\\runtime\\bin\\codebuddy-hud.cmd');
     assert.ok(!command.includes('.js'));
+  });
+
+  test('win32 retains quotes for paths containing spaces', () => {
+    assert.equal(
+      buildStatusLineCommand('win32', 'C:\\My Project\\codebuddy-hud.js', 'C:\\node.exe'),
+      '"C:\\My Project\\codebuddy-hud.cmd"',
+    );
   });
 
   test('win32 does not add POSIX escaping', () => {
@@ -231,6 +238,61 @@ test('POSIX setup does not create or remove a Windows shim', () => {
   }
 });
 
+test('setup keeps commas followed by closing delimiters inside settings strings', () => {
+  const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-jsonc-string-'));
+  const settingsPath = path.join(tempRoot, 'settings.json');
+  const runtimeDir = path.join(tempRoot, 'runtime');
+  const hudBin = path.join(runtimeDir, 'bin', 'codebuddy-hud.js');
+  try {
+    fs.mkdirSync(path.dirname(hudBin), { recursive: true });
+    fs.writeFileSync(hudBin, '#!/usr/bin/env node\n');
+    fs.writeFileSync(settingsPath, '{"command":"echo ,}","items":["x,]",]}');
+    process.env.CODEBUDDY_HOME = path.join(tempRoot, 'home');
+
+    setup({ settingsPath, runtimeDir, platform: 'linux', nodeExe: '/usr/bin/node' });
+
+    const installed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    assert.equal(installed.command, 'echo ,}');
+    assert.deepEqual(installed.items, ['x,]']);
+  } finally {
+    if (originalCodeBuddyHome === undefined) delete process.env.CODEBUDDY_HOME;
+    else process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('uninstall retains a backup when the settings write fails', () => {
+  const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-backup-retain-'));
+  const settingsPath = path.join(tempRoot, 'settings.json');
+  const linkedSettingsPath = path.join(tempRoot, 'linked-settings.json');
+  const backupPath = settingsPath + '.bak.codebuddy-hud';
+  const runtimeDir = path.join(tempRoot, 'runtime');
+  const installedSettings = JSON.stringify({
+    statusLine: { type: 'command', command: 'node codebuddy-hud.js' },
+  });
+  const backupSettings = JSON.stringify({
+    statusLine: { type: 'command', command: 'custom-statusline' },
+  });
+  try {
+    fs.writeFileSync(settingsPath, installedSettings);
+    fs.linkSync(settingsPath, linkedSettingsPath);
+    fs.writeFileSync(backupPath, backupSettings);
+    process.env.CODEBUDDY_HOME = path.join(tempRoot, 'home');
+
+    uninstall({ settingsPath, runtimeDir, platform: 'linux' });
+
+    assert.equal(fs.readFileSync(settingsPath, 'utf8'), installedSettings);
+    assert.equal(fs.readFileSync(linkedSettingsPath, 'utf8'), installedSettings);
+    assert.equal(fs.readFileSync(backupPath, 'utf8'), backupSettings);
+  } finally {
+    if (originalCodeBuddyHome === undefined) delete process.env.CODEBUDDY_HOME;
+    else process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test('generated Windows shim runs through cmd.exe from a special-character path', {
   skip: process.platform !== 'win32',
 }, () => {
@@ -265,35 +327,75 @@ test('buildCmdShimContent includes @chcp 65001 when hudBin contains non-ASCII ch
   assert.ok(shim.includes('%~dp0codebuddy-hud.js'));
 });
 
+test('uninstall preserves settings and backup when reading settings fails', () => {
+  const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
+  const originalReadFile = fs.readFileSync;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-uninst-unreadable-'));
+  const settingsPath = path.join(tempRoot, 'settings.json');
+  const backupPath = settingsPath + '.bak.codebuddy-hud';
+  const settings = '{"model":"keep","statusLine":{"command":"codebuddy-hud"}}';
+  const backup = '{"statusLine":{"command":"previous-command"}}';
+  fs.writeFileSync(settingsPath, settings);
+  fs.writeFileSync(backupPath, backup);
+  try {
+    process.env.CODEBUDDY_HOME = path.join(tempRoot, 'home');
+    fs.readFileSync = function (file, ...args) {
+      if (file === settingsPath) {
+        const error = new Error('simulated read failure');
+        error.code = 'EACCES';
+        throw error;
+      }
+      return originalReadFile.call(this, file, ...args);
+    };
+    uninstall({ settingsPath, runtimeDir: path.join(tempRoot, 'runtime'), platform: 'win32' });
+    assert.equal(originalReadFile(settingsPath, 'utf8'), settings);
+    assert.equal(originalReadFile(backupPath, 'utf8'), backup);
+  } finally {
+    fs.readFileSync = originalReadFile;
+    if (originalCodeBuddyHome === undefined) delete process.env.CODEBUDDY_HOME;
+    else process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test('uninstall preserves JSONC settings with comments and trailing commas without wiping', () => {
+  const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-uninst-jsonc-'));
   const settingsPath = path.join(tempRoot, 'settings.json');
+  const runtimeDir = path.join(tempRoot, 'runtime');
   const jsoncContent = '\ufeff{\n  // User comments\n  "model": "deepseek-v4",\n  "statusLine": {\n    "command": "node runtime/bin/codebuddy-hud.js"\n  },\n  /* trailing comma */\n}\n';
   fs.writeFileSync(settingsPath, jsoncContent, 'utf8');
 
   try {
-    uninstall({ settingsPath, platform: 'win32' });
+    process.env.CODEBUDDY_HOME = path.join(tempRoot, 'home');
+    uninstall({ settingsPath, runtimeDir, platform: 'win32' });
     const contentAfter = fs.readFileSync(settingsPath, 'utf8');
     const parsed = JSON.parse(contentAfter);
     assert.equal(parsed.model, 'deepseek-v4');
     assert.equal(parsed.statusLine, undefined);
   } finally {
+    if (originalCodeBuddyHome === undefined) delete process.env.CODEBUDDY_HOME;
+    else process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 
 test('uninstall aborts and preserves original file if settings.json is corrupt syntax', () => {
+  const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-uninst-corrupt-'));
   const settingsPath = path.join(tempRoot, 'settings.json');
+  const runtimeDir = path.join(tempRoot, 'runtime');
   const corruptContent = '{ not valid json at all ...';
   fs.writeFileSync(settingsPath, corruptContent, 'utf8');
 
   try {
-    uninstall({ settingsPath, platform: 'win32' });
+    process.env.CODEBUDDY_HOME = path.join(tempRoot, 'home');
+    uninstall({ settingsPath, runtimeDir, platform: 'win32' });
     const contentAfter = fs.readFileSync(settingsPath, 'utf8');
     assert.equal(contentAfter, corruptContent, 'corrupted file must not be overwritten or wiped to {}');
   } finally {
+    if (originalCodeBuddyHome === undefined) delete process.env.CODEBUDDY_HOME;
+    else process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
-

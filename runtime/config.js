@@ -206,19 +206,10 @@ function deepMerge(target, source, depth) {
   return result;
 }
 
-const _jsonFileCache = new Map();
-
 function loadJsonFile(filePath) {
   try {
-    const stat = fs.statSync(filePath);
-    const cached = _jsonFileCache.get(filePath);
-    if (cached && cached.mtimeMs === stat.mtimeMs) {
-      return cached.data;
-    }
     const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    const valid = (data && typeof data === 'object' && !Array.isArray(data)) ? data : null;
-    _jsonFileCache.set(filePath, { mtimeMs: stat.mtimeMs, data: valid });
-    return valid;
+    return (data && typeof data === 'object' && !Array.isArray(data)) ? data : null;
   } catch {
     return null;
   }

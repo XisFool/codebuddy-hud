@@ -93,6 +93,44 @@ describe('update-checker', () => {
     }
   });
 
+  test('checkForUpdates preserves a confirmed update when the local request fails', async () => {
+    const http = require('node:http');
+    const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-update-failure-test-'));
+    const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
+    process.env.CODEBUDDY_HOME = tmpHome;
+    const server = http.createServer((req) => req.socket.destroy());
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address();
+
+    try {
+      const confirmed = {
+        updateAvailable: true,
+        latestVersion: '9.9.9',
+        currentVersion: '0.1.0',
+        lastCheck: 1,
+      };
+      writeUpdateStatus(confirmed);
+
+      const result = await checkForUpdates({
+        force: true,
+        localVersion: '0.1.0',
+        url: `http://127.0.0.1:${port}/package.json`,
+      });
+
+      assert.equal(result.updateAvailable, true);
+      assert.equal(result.latestVersion, '9.9.9');
+      assert.equal(result.currentVersion, '0.1.0');
+      assert.ok(result.lastCheck >= confirmed.lastCheck);
+      assert.deepEqual(readUpdateStatus({ forceReload: true }), result);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      if (originalCodeBuddyHome === undefined) delete process.env.CODEBUDDY_HOME;
+      else process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+
   test('spawnBackgroundUpdateCheck sets placeholder timestamp to avoid process stampede', () => {
     const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-update-stampede-test-'));
     const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;

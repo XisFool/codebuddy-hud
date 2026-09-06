@@ -192,7 +192,16 @@ async function checkForUpdates(options) {
       updateAvailable = compareVersions(latestVersion, localVersion) > 0;
     }
   } catch {
-    // Fail silently on network errors
+    // A transient failure must not erase a previously confirmed update notice.
+    // Keep the same 24h throttle while preserving only a status usable by the UI.
+    if (currentStatus
+        && typeof currentStatus.updateAvailable === 'boolean'
+        && typeof currentStatus.latestVersion === 'string'
+        && currentStatus.latestVersion) {
+      const retainedStatus = { ...currentStatus, lastCheck: now };
+      writeUpdateStatus(retainedStatus);
+      return retainedStatus;
+    }
   }
 
   const newStatus = {

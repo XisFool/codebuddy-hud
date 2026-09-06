@@ -158,39 +158,6 @@ if (args.includes('--setup')) {
   });
   handleRender(samplePayload);
 } else {
-  // [HUD-DEBUG] Temporary invocation trace for statusLine diagnosis.
-  // Appends one line per invocation to ~/.codebuddy/codebuddy-hud-debug.log.
-  // Set CODEBUDDY_HUD_DEBUG=0 to silence; remove this whole block after diagnosis.
-  const DEBUG_ENABLED = process.env.CODEBUDDY_HUD_DEBUG !== '0';
-  const debugT0 = Date.now();
-  let debugOutBytes = 0;
-  if (DEBUG_ENABLED) {
-    const origStdoutWrite = process.stdout.write.bind(process.stdout);
-    process.stdout.write = (chunk, cb) => {
-      debugOutBytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(String(chunk));
-      return origStdoutWrite(chunk, cb);
-    };
-  }
-  const debugTrace = (trigger, inBytes) => {
-    if (!DEBUG_ENABLED) return;
-    try {
-      const path = require('path');
-      const os = require('os');
-      const logPath = path.join(os.homedir(), '.codebuddy', 'codebuddy-hud-debug.log');
-      let cwd = '';
-      try { cwd = process.cwd(); } catch {}
-      const line = `[${new Date().toISOString()}] pid=${process.pid} trigger=${trigger} inBytes=${inBytes} outBytes=${debugOutBytes} elapsed=${Date.now() - debugT0}ms cwd=${JSON.stringify(cwd)} argv=${JSON.stringify(process.argv.slice(1))}\n`;
-      try {
-        if (fs.statSync(logPath).size > LOG_MAX_BYTES) fs.writeFileSync(logPath, '', { mode: 0o600 });
-      } catch {}
-      fs.appendFileSync(logPath, line, { mode: 0o600 });
-    } catch {}
-  };
-  const renderAndTrace = (raw, trigger) => {
-    handleRender(raw);
-    debugTrace(trigger, Buffer.byteLength(String(raw || ''), 'utf8'));
-  };
-  // [HUD-DEBUG] end temporary block
   try {
     if (process.env.CODEBUDDY_HUD_NO_UPDATE_CHECK !== '1') {
       const { spawnBackgroundUpdateCheck } = require('../update-checker');
@@ -209,7 +176,7 @@ if (args.includes('--setup')) {
       // stdin may never close (host keeps the pipe open) — it is the only
       // handle keeping the loop alive, so release it before rendering
       process.stdin.destroy();
-      renderAndTrace(Buffer.concat(stdinChunks).toString('utf8'), 'timeout');
+      handleRender(Buffer.concat(stdinChunks).toString('utf8'));
     }
   }, TIMEOUT_MS);
   timer.unref();
@@ -220,7 +187,7 @@ if (args.includes('--setup')) {
     if (totalStdinSize > MAX_STDIN_SIZE) {
       handled = true;
       clearTimeout(timer);
-      renderAndTrace('', 'oversize');
+      handleRender('');
       process.stdin.destroy();
       return;
     }
@@ -231,7 +198,7 @@ if (args.includes('--setup')) {
     if (!handled) {
       handled = true;
       clearTimeout(timer);
-      renderAndTrace(Buffer.concat(stdinChunks).toString('utf8'), 'end');
+      handleRender(Buffer.concat(stdinChunks).toString('utf8'));
     }
   });
 
@@ -239,7 +206,7 @@ if (args.includes('--setup')) {
     if (!handled) {
       handled = true;
       clearTimeout(timer);
-      renderAndTrace('', 'stdin-error');
+      handleRender('');
     }
   });
 

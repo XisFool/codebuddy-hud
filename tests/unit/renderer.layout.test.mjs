@@ -247,6 +247,34 @@ describe('renderHUD — tool activity merged into line 4', () => {
     assert.ok(!output.includes('0.00x credits'), output);
   });
 
+  it('hides incomplete transcript credits without falling back to payload credits', () => {
+    const transcriptPath = nodePath.join(tmpDir, 'incomplete-credits.jsonl');
+    const usage = (id, credit, padding = 0) => JSON.stringify({
+      type: 'function_call', callId: id, name: 'Bash',
+      providerData: { rawUsage: { prompt_tokens: 1000, prompt_cache_hit_tokens: 900, credit } },
+      padding: 'x'.repeat(padding),
+    });
+    const first = usage('first', 5) + '\n';
+    fs.writeFileSync(transcriptPath, first + usage('noise', null, 130000) + '\n' + usage('last', 7) + '\n');
+
+    const originalNow = Date.now;
+    const ticks = [0, 0, 101];
+    let output;
+    try {
+      Date.now = () => (ticks.length > 0 ? ticks.shift() : 102);
+      output = renderHUD({
+        ...fullPayload,
+        cost: { ...fullPayload.cost, credits: 99, total_cost_usd: 0 },
+        transcript_path: transcriptPath,
+      }, defaultConfig);
+    } finally {
+      Date.now = originalNow;
+    }
+
+    assert.ok(!output.includes('5.00 credits'), output);
+    assert.ok(!output.includes('99.00 credits'), output);
+  });
+
   it('resets visible diff and duration after /clear while the transcript path remains stable', () => {
     const clearTranscript = nodePath.join(tmpDir, 'clear-session.jsonl');
     fs.writeFileSync(clearTranscript, '');

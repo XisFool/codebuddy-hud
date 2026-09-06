@@ -121,6 +121,20 @@ describe('loadConfig', () => {
     assert.doesNotThrow(() => loadConfig(null));
     assert.doesNotThrow(() => loadConfig(undefined));
   });
+
+  it('reads a rewritten project config even when its mtime is preserved', () => {
+    const projectDir = path.join(tmpDir, 'project-config-reload');
+    const configPath = path.join(projectDir, 'codebuddy-hud.config.json');
+    const fixedTime = new Date('2026-01-01T00:00:00.000Z');
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.writeFileSync(configPath, JSON.stringify({ defaultEffortLevel: 'low' }));
+    fs.utimesSync(configPath, fixedTime, fixedTime);
+    assert.equal(loadConfig(projectDir).defaultEffortLevel, 'low');
+
+    fs.writeFileSync(configPath, JSON.stringify({ defaultEffortLevel: 'max' }));
+    fs.utimesSync(configPath, fixedTime, fixedTime);
+    assert.equal(loadConfig(projectDir).defaultEffortLevel, 'max');
+  });
 });
 
 describe('THEME_PRESETS and resolveTheme', () => {

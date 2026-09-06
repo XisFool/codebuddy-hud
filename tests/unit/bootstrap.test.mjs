@@ -60,4 +60,74 @@ describe('bootstrap installer', () => {
       fs.rmSync(testRoot, { recursive: true, force: true });
     }
   });
+
+  test('standalone bootstrap downloads a complete runtime and supports uninstall', async () => {
+    const fs = require('fs');
+    const os = require('os');
+    const http = require('http');
+    const { spawn } = require('child_process');
+    const repoRoot = path.dirname(path.dirname(require.resolve('../../scripts/bootstrap.js')));
+    const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-remote-install-'));
+    const standalone = path.join(testRoot, 'standalone', 'scripts', 'bootstrap.js');
+    const targetDir = path.join(testRoot, 'installed');
+    const testHome = path.join(testRoot, 'home');
+    const settingsPath = path.join(testHome, 'settings.json');
+    const requests = [];
+    const server = http.createServer((req, res) => {
+      const relative = new URL(req.url, 'http://localhost').pathname.slice(1);
+      const source = path.resolve(repoRoot, relative);
+      if (!source.startsWith(repoRoot + path.sep)) {
+        res.writeHead(403).end();
+        return;
+      }
+      try {
+        const content = fs.readFileSync(source);
+        requests.push(relative);
+        res.end(content);
+      } catch {
+        res.writeHead(404).end();
+      }
+    });
+    try {
+      fs.mkdirSync(path.dirname(standalone), { recursive: true });
+      fs.copyFileSync(path.join(repoRoot, 'scripts', 'bootstrap.js'), standalone);
+      fs.mkdirSync(testHome);
+      fs.writeFileSync(settingsPath, JSON.stringify({ model: 'retained' }));
+      await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', resolve);
+      });
+      const env = {
+        ...process.env,
+        CODEBUDDY_HOME: testHome,
+        CODEBUDDY_SETTINGS_PATH: settingsPath,
+        CODEBUDDY_HUD_DIR: targetDir,
+        CODEBUDDY_HUD_RAW_BASE: `http://127.0.0.1:${server.address().port}`,
+        CODEBUDDY_HUD_NO_UPDATE_CHECK: '1',
+      };
+      const run = (bin, args = []) => new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [bin, ...args], {
+          cwd: testRoot, env, windowsHide: true, timeout: 15000,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let output = '';
+        child.stdout.on('data', chunk => { output += chunk; });
+        child.stderr.on('data', chunk => { output += chunk; });
+        child.once('error', reject);
+        child.once('close', code => resolve({ code, output }));
+      });
+      const installed = await run(standalone);
+      assert.equal(installed.code, 0, installed.output);
+      assert.match(installed.output, /Mode: Remote download/);
+      assert.ok(requests.includes('runtime/settings-file.js'));
+      assert.equal(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).model, 'retained');
+      assert.ok(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).statusLine.command);
+      const removed = await run(path.join(targetDir, 'runtime', 'bin', 'codebuddy-hud.js'), ['--uninstall']);
+      assert.equal(removed.code, 0, removed.output);
+      assert.deepEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), { model: 'retained' });
+    } finally {
+      await new Promise(resolve => server.close(resolve));
+      fs.rmSync(testRoot, { recursive: true, force: true });
+    }
+  });
 });

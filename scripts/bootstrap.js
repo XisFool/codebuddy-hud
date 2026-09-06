@@ -27,6 +27,7 @@ const RUNTIME_FILES = [
   'runtime/renderer/lang.js',
   'runtime/sanitize.js',
   'runtime/session-stats.js',
+  'runtime/settings-file.js',
   'runtime/statusline-installer.js',
   'runtime/theme-selector.js',
   'runtime/transcript.js',

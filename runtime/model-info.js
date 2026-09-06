@@ -1,59 +1,46 @@
 'use strict';
 
 const fs = require('fs');
-const { getSettingsPath, getCacheStatePath } = require('./paths');
+const path = require('path');
+const { getSettingsPath } = require('./paths');
 
 let _cachedSettingsEffort = null;
 let _cachedSettingsEffortLoaded = false;
 let _cachedSettingsEffortTime = 0;
+let _cachedSettingsPath = null;
 
 function getSettingsReasoningEffort() {
-  const now = Date.now();
-  if (_cachedSettingsEffortLoaded && now - _cachedSettingsEffortTime < 5000) {
-    return _cachedSettingsEffort;
-  }
-  _cachedSettingsEffortTime = now;
-  _cachedSettingsEffortLoaded = true;
-
+  let settingsPath;
   try {
-    const settingsPath = getSettingsPath();
-    if (!fs.existsSync(settingsPath)) {
-      _cachedSettingsEffort = null;
-      return null;
-    }
-
-    const mtime = fs.statSync(settingsPath).mtimeMs;
-    const cachePath = getCacheStatePath();
-    if (fs.existsSync(cachePath)) {
-      try {
-        const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-        if (cache && cache.settingsMtime === mtime && cache.settingsEffort !== undefined) {
-          _cachedSettingsEffort = cache.settingsEffort;
-          return _cachedSettingsEffort;
-        }
-      } catch {}
-    }
-
-    const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    _cachedSettingsEffort = (data && typeof data === 'object' && data.reasoningEffort) ? data.reasoningEffort : null;
-
-    try {
-      let cache = {};
-      if (fs.existsSync(cachePath)) {
-        try { cache = JSON.parse(fs.readFileSync(cachePath, 'utf8')); } catch {}
-      }
-      cache.settingsMtime = mtime;
-      cache.settingsEffort = _cachedSettingsEffort;
-      const tmp = `${cachePath}.tmp-${process.pid}-${Date.now()}`;
-      fs.writeFileSync(tmp, JSON.stringify(cache));
-      fs.renameSync(tmp, cachePath);
-    } catch {}
-
-    return _cachedSettingsEffort;
+    settingsPath = path.resolve(getSettingsPath());
   } catch {
-    _cachedSettingsEffort = null;
     return null;
   }
+
+  const now = Date.now();
+  if (
+    _cachedSettingsEffortLoaded
+    && _cachedSettingsPath === settingsPath
+    && now - _cachedSettingsEffortTime < 5000
+  ) {
+    return _cachedSettingsEffort;
+  }
+
+  let effort = null;
+  try {
+    if (fs.existsSync(settingsPath)) {
+      const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      effort = (data && typeof data === 'object' && data.reasoningEffort) ? data.reasoningEffort : null;
+    }
+  } catch {
+    effort = null;
+  }
+
+  _cachedSettingsEffort = effort;
+  _cachedSettingsEffortLoaded = true;
+  _cachedSettingsEffortTime = now;
+  _cachedSettingsPath = settingsPath;
+  return effort;
 }
 
 const MODEL_EFFORT_MAP = [
@@ -148,7 +135,9 @@ function resolveCreditSpend(cbData) {
 
 function resetModelInfoCache() {
   _cachedSettingsEffort = null;
+  _cachedSettingsEffortLoaded = false;
   _cachedSettingsEffortTime = 0;
+  _cachedSettingsPath = null;
 }
 
 module.exports = {

@@ -4,6 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const { getSettingsPath } = require('./paths');
 const { sanitizeTerminalText } = require('./sanitize');
+const {
+  atomicWriteSettingsFile,
+  isSettingsObject,
+  parseSettingsJson,
+  writePrivateFileIfAbsent,
+} = require('./settings-file');
 
 // Escape characters that stay special inside a double-quoted shell word.
 // Backslash must be escaped first, otherwise the backslashes added by the
@@ -18,8 +24,10 @@ function escapeShellArg(value) {
 
 function buildStatusLineCommand(platform, hudBin, nodeExe) {
   if (platform === 'win32') {
-    // The host runs this through cmd; the generated .cmd shim handles quoting.
-    return `"${String(hudBin).replace(/\.js$/, '.cmd')}"`;
+    const shim = String(hudBin).replace(/\.js$/, '.cmd');
+    // The Windows containment launcher double-escapes literal quotes. Omit
+    // unnecessary quotes, but keep protecting paths with spaces/metacharacters.
+    return /^[A-Za-z0-9_:/\\.-]+$/.test(shim) ? shim : `"${shim}"`;
   }
   return `"${escapeShellArg(nodeExe)}" "${escapeShellArg(hudBin)}"`;
 }
@@ -54,97 +62,6 @@ function buildCmdShimContent(nodeExe, hudBin) {
 }
 
 
-function stripJsonComments(text) {
-  let out = '';
-  let inString = false;
-  let inSingleComment = false;
-  let inMultiComment = false;
-  let escape = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    const next = text[i + 1];
-
-    if (inSingleComment) {
-      if (ch === '\n' || ch === '\r') {
-        inSingleComment = false;
-        out += ch;
-      }
-      continue;
-    }
-
-    if (inMultiComment) {
-      if (ch === '*' && next === '/') {
-        inMultiComment = false;
-        i++;
-      }
-      continue;
-    }
-
-    if (inString) {
-      out += ch;
-      if (escape) {
-        escape = false;
-      } else if (ch === '\\') {
-        escape = true;
-      } else if (ch === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (ch === '/' && next === '/') {
-      inSingleComment = true;
-      i++;
-      continue;
-    }
-    if (ch === '/' && next === '*') {
-      inMultiComment = true;
-      i++;
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      out += ch;
-      continue;
-    }
-    out += ch;
-  }
-
-  return out.replace(/,\s*([}\]])/g, '$1');
-}
-
-function parseSettingsJson(raw) {
-  let cleaned = raw;
-  if (cleaned.charCodeAt(0) === 0xFEFF) {
-    cleaned = cleaned.slice(1);
-  }
-  cleaned = stripJsonComments(cleaned).trim();
-  if (!cleaned) return {};
-  return JSON.parse(cleaned);
-}
-
-function atomicWriteFile(targetPath, content) {
-  const dir = path.dirname(targetPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  const tmpPath = `${targetPath}.tmp-${process.pid}-${Date.now()}`;
-  try {
-    fs.writeFileSync(tmpPath, content);
-    fs.renameSync(tmpPath, targetPath);
-  } catch (err) {
-    try {
-      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-    } catch {}
-    throw err;
-  }
-}
-
-function isSettingsObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 // Options are intentionally internal/test-oriented. The CLI uses the defaults,
 // while an isolated runtime lets regression tests exercise installation without
 // writing a generated shim beside the checked-out source.
@@ -166,17 +83,6 @@ function setup(options) {
       throw err;
     }
 
-    // Unconditional backup of existing configuration before any modification
-    const backupPath = settingsPath + '.bak.codebuddy-hud';
-    if (!fs.existsSync(backupPath)) {
-      try {
-        fs.writeFileSync(backupPath, rawSettings);
-        console.log(`Backed up existing settings to: ${sanitizeTerminalText(backupPath, 512)}`);
-      } catch (err) {
-        console.error(`Warning: could not create backup: ${sanitizeTerminalText(err && err.message, 160)}`);
-      }
-    }
-
     if (rawSettings.trim().length > 0) {
       try {
         const parsed = parseSettingsJson(rawSettings);
@@ -189,6 +95,19 @@ function setup(options) {
         console.error('Setup aborted to prevent overwriting invalid configuration.');
         throw err;
       }
+    }
+
+    // Preserve the exact pre-install content only after it has been validated.
+    // An unavailable backup makes uninstall unable to restore a prior command,
+    // so fail before changing settings rather than continue without one.
+    const backupPath = settingsPath + '.bak.codebuddy-hud';
+    try {
+      if (writePrivateFileIfAbsent(backupPath, rawSettings)) {
+        console.log(`Backed up existing settings to: ${sanitizeTerminalText(backupPath, 512)}`);
+      }
+    } catch (err) {
+      console.error(`Error: could not create private backup: ${sanitizeTerminalText(err && err.message, 160)}`);
+      throw err;
     }
   }
 
@@ -230,11 +149,10 @@ function setup(options) {
     padding: 0,
   };
 
-  atomicWriteFile(settingsPath, JSON.stringify(settings, null, 2));
+  atomicWriteSettingsFile(settingsPath, JSON.stringify(settings, null, 2));
   console.log(`\nStatusLine configured in: ${sanitizeTerminalText(settingsPath, 512)}`);
   console.log(`Command: ${sanitizeTerminalText(command, 1024)}`);
   console.log('\ncodebuddy-cli-hud setup complete.');
 }
 
 module.exports = { setup, buildStatusLineCommand, buildCmdShimContent, parseSettingsJson, isSettingsObject };
-

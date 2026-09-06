@@ -474,6 +474,7 @@ function getSessionUsageMetrics(transcriptPath, opts) {
     let total = cached ? cached.credits : 0;
     let calls = cached ? cached.creditCallCount : 0;
     let processedOffset = offset;
+    let complete = true;
     if (size > offset) {
       // Read appended data in bounded chunks. A transcript can be tens or
       // hundreds of megabytes; allocating size-offset here would turn every
@@ -501,6 +502,7 @@ function getSessionUsageMetrics(transcriptPath, opts) {
 
       const scanStartTime = Date.now();
       let hitDeadline = false;
+      let hitShortRead = false;
 
       while (cursor < size) {
         if (Date.now() - scanStartTime > 100) {
@@ -511,8 +513,12 @@ function getSessionUsageMetrics(transcriptPath, opts) {
         const length = Math.min(SESSION_READ_CHUNK_BYTES, size - cursor);
         const chunk = Buffer.alloc(length);
         const bytesRead = fs.readSync(fd, chunk, 0, length, cursor);
-        if (!bytesRead) break;
+        if (!Number.isSafeInteger(bytesRead) || bytesRead <= 0 || bytesRead > length) {
+          hitShortRead = true;
+          break;
+        }
         cursor += bytesRead;
+        const shortRead = bytesRead !== length;
 
         const current = bytesRead === chunk.length ? chunk : chunk.subarray(0, bytesRead);
         let lineStart = 0;
@@ -539,27 +545,35 @@ function getSessionUsageMetrics(transcriptPath, opts) {
           pendingChunks.push(tail);
           pendingLength += tail.length;
         }
+        if (shortRead) {
+          hitShortRead = true;
+          break;
+        }
       }
 
       // Accept a complete final JSON object without a newline. An incomplete
       // tail stays uncommitted and will be retried when the writer completes it.
-      if (!hitDeadline) {
+      if (!hitDeadline && !hitShortRead && cursor === size) {
         if (pendingLength > 0) {
           const tail = Buffer.concat(pendingChunks, pendingLength);
           if (countCreditLine(tail)) {
             processedOffset = size;
           } else {
             processedOffset = pendingStart;
+            complete = false;
           }
         } else {
           processedOffset = size;
         }
+      } else {
+        complete = false;
       }
     } else if (size < offset) {
       // Defensive reset; readSessionState normally rejects this state already.
       processedOffset = 0;
       total = 0;
       calls = 0;
+      complete = false;
     }
 
     const checkpointStart = Math.max(0, processedOffset - SESSION_HEAD_BYTES);
@@ -591,8 +605,12 @@ function getSessionUsageMetrics(transcriptPath, opts) {
     if (willWrite) writeSessionState(statePath, state);
 
     return {
-      credits: calls > 0 ? total : null,
-      creditCallCount: calls,
+      // A deadline, short read, or incomplete JSONL tail leaves a resumable
+      // checkpoint but not a complete session total. Do not expose a prefix as
+      // a session-wide value to callers.
+      complete,
+      credits: complete && calls > 0 ? total : null,
+      creditCallCount: complete ? calls : null,
       offset: processedOffset,
       source: 'session',
     };

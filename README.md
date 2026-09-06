@@ -30,6 +30,8 @@ Token 250.1k (in: 249k · out: 1.1k)  │  249k/1M [███░░░░░░�
 
 没有对应数据的行或片段会自动隐藏。HUD 最多输出 4 行。
 
+> CodeBuddy Code v2.146.0 实测仅显示命令输出的前 3 行，因此该宿主中的第 4 行工具活动不可见。直接运行 HUD 可查看完整输出。宿主在会话事件后约 300ms 去抖刷新，空闲时不会周期重刷。
+
 
 支持 Unicode 的终端会显示 `Δ`、`█` 与暗灰 `░` 进度条；不支持时自动使用 `[D]`、`#`、`-` 等 ASCII 回退，不会显示乱码。Markdown 代码块不保留 ANSI 颜色，实际终端中的填充部分会按阈值显示绿色、黄色或红色。
 
@@ -79,7 +81,11 @@ npm link  # 推荐：注册全局 codebuddy-hud 命令，方便在任意目录�
 
 重新运行 `--setup` 是安全的：它会修复路径和 Windows Node 版本变更，但不会覆盖第一次安装留下的原始 settings 备份。
 
+安装器接受 BOM、JSONC 注释和尾逗号，保留字段值并写成标准 JSON；注释和原排版不会保留在写回文件中，首次备份保留原始文本。卸载成功后会移除已使用的备份。
+
 > Windows 的 `.cmd` shim 内含安装时的 Node 绝对路径，因此从 GUI 启动的 CodeBuddy 不依赖当前终端的 `PATH`。不要从其他电脑复制这个文件；切换 nvm、fnm、Volta 的 Node 版本后重新执行 `--setup`。
+
+> CodeBuddy Code v2.146.0 的 Windows 启动器存在引号二次转义问题。当前安装器会对安全 ASCII 路径省略引号；使用该宿主时建议将仓库放在类似 `D:\tools\codebuddy-hud` 的路径。含空格、Unicode 或 shell 特殊字符的安装路径仍可能无法通过宿主启动链。
 
 ---
 
@@ -170,6 +176,8 @@ codebuddy-hud --doctor --json
 node runtime/bin/codebuddy-hud.js --setup
 ```
 
+若手动 `--status` 正常但宿主仍无 HUD，检查 `runtime/bin/codebuddy-hud.cmd` 是否存在，并核对上面的 Windows 路径限制。恢复入口后，在原会话发一条消息触发刷新。`--status` 只验证 HUD 渲染，不会验证宿主启动器。
+
 ### Unicode 图标或进度条乱码 / 强制切换
 
 强制使用 ASCII（兼容纯文本终端）：
@@ -216,7 +224,7 @@ HUD 会静默降级并保持 CodeBuddy 正常运行。若要完成安装或保�
 node runtime/bin/codebuddy-hud.js --uninstall
 ```
 
-卸载器会恢复首次安装前备份的 `settings.json`。没有备份时，它只删除本项目写入的 statusLine，并清理 HUD 本地缓存、用户主题配置、Credits checkpoint 和会话统计基线。Windows 同时移除本机生成的 `.cmd` shim。
+卸载器只从首次备份恢复 `statusLine` 字段，保留安装后新增的其他 settings。没有可用备份时，仅移除本项目写入的 statusLine。HUD 缓存、Credits checkpoint、会话统计基线和 Windows `.cmd` shim 会被清理；用户主题配置 `codebuddy-hud.config.json` 会保留。配置写入失败时保留备份以便恢复。
 
 ---
 
@@ -286,6 +294,7 @@ Credits 是当前 `transcript_path` 对应会话的**累计实际消费**：它�
 - 缺失、负数、字符串、`NaN` 和无限值不会计入。
 - 每个 transcript 独立累计；新 transcript 即新会话。
 - 有有效 transcript credit 时，优先显示它，而不是 payload 的美元估值。
+- 重建累计值采用约 100ms 的分块扫描预算。尚未扫描完成时暂时隐藏 Credits，下一次事件刷新继续扫描；不会把已扫描部分显示为会话总额。
 - 没有 `transcript_path` 时，只能回退使用 payload 明示的 `cost.credits`。
 
 ---
@@ -293,6 +302,8 @@ Credits 是当前 `transcript_path` 对应会话的**累计实际消费**：它�
 ## 高级路径与环境变量设置
 
 默认 CodeBuddy 根目录为 `~/.codebuddy`。需要隔离测试、便携安装或排障时，可以使用：
+
+这些变量只隔离配置与状态目录。安装或卸载仍会操作所调用 runtime 旁的 Windows shim；自动化验证请使用 `npm run verify:install`，它会同时复制 runtime 到临时目录。
 
 | 变量 | 用途 |
 | --- | --- |
@@ -322,7 +333,8 @@ node runtime/bin/codebuddy-hud.js --setup
 - 仅在后台发起匿名轻量版本更新检查（每 24 小时最多一次，静默 HTTPS 拉取 `package.json` 版本号），不收集或上传任何代码、会话或用户数据。不读取 transcript 以外的会话内容。
 - 所有输出到终端的外部文本都会经过 `sanitizeTerminalText()`；ANSI/OSC 注入、控制字符和 bidi/RTL 控制字符会被移除。
 - Credits checkpoint 和会话基线只保存在本机 CodeBuddy 根目录。缓存损坏、文件截断或状态不可写时会自动降级，不会中断 HUD。
-- Windows、Linux、macOS、WSL 均支持；含空格、Unicode 与常见 shell 特殊字符的安装路径可用。
+- Windows、Linux、macOS、WSL 均有运行时支持；宿主 v2.146.0 的 Windows 引号限制见安装说明。
+- 配置写入保留现有 POSIX 权限并跟随有效符号链接；新配置及首次备份默认 `0600`。多硬链接配置不做原子替换，以免悄悄断开链接关系。
 - 单次运行目标小于 1500ms，所有内部异常静默处理并以 exit code `0` 结束。
 - 特别巨大的单条 transcript 记录可能使较早的工具活动或当前轮 cache telemetry 不可见；HUD 会省略该段或回退到 payload。
 

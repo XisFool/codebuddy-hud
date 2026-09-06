@@ -1,6 +1,6 @@
 # Implementation Plan: Turn Cache Hit Rate Badge & Open-Source Hardening for codebuddy-cli-hud
 
-> **Note**: 本文档为功能演进阶段的历史设计规划初稿（已完成交付并归档）。当前权威架构、测试套件规模（297 用例）与行为契约请以 [AGENTS.md](file:///D:/code_sum/Github/codebuddy-cli-hud/AGENTS.md) 及 `runtime/` 源码为准。
+> **Note**: 本文档是历史规划，包含后来被取代的方案，不再作为实施清单。当前行为契约与验证命令以 [AGENTS.md](AGENTS.md) 和 `runtime/` 源码为准；后续决策见 [2026-09-06 复核记录](docs/audit-report-2026-09-06.md)。
 
 ## 1. Project Background & Constraints
 - **Target Host**: CodeBuddy Code CLI `statusLine` command.

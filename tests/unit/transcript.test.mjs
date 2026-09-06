@@ -500,6 +500,7 @@ describe('getSessionUsageMetrics — incremental session aggregation', () => {
     const p = writeTmp('session-credits.jsonl', call('a', 1.25) + '\n' + call('b', 4.6) + '\n');
     const state = path.join(tmpDir, 'session-state.json');
     let m = getSessionUsageMetrics(p, { statePath: state });
+    assert.equal(m.complete, true);
     assert.equal(m.credits, 5.85);
     assert.equal(m.creditCallCount, 2);
     fs.appendFileSync(p, call('c', 0) + '\n');
@@ -556,17 +557,110 @@ describe('getSessionUsageMetrics — incremental session aggregation', () => {
     assert.equal(m.creditCallCount, 0);
   });
 
-  it('does not commit an incomplete trailing JSONL line', () => {
+  it('marks an incomplete trailing JSONL line as non-final until it is completed', () => {
     const p = writeTmp('session-partial.jsonl', call('a', 1) + '\n' + call('b', 2).slice(0, -3));
     const state = path.join(tmpDir, 'session-partial-state.json');
     let m = getSessionUsageMetrics(p, { statePath: state });
-    assert.equal(m.credits, 1);
+    assert.equal(m.complete, false);
+    assert.equal(m.credits, null);
+    assert.equal(m.creditCallCount, null);
     assert.ok(m.offset < fs.statSync(p).size);
 
     fs.appendFileSync(p, call('b', 2).slice(-3) + '\n');
     m = getSessionUsageMetrics(p, { statePath: state });
+    assert.equal(m.complete, true);
     assert.equal(m.credits, 3);
     assert.equal(m.creditCallCount, 2);
+  });
+
+  it('hides deadline-limited credits and resumes from the committed checkpoint', () => {
+    const first = call('first', 5) + '\n';
+    const filler = JSON.stringify({ type: 'noise', padding: 'x'.repeat(130000) }) + '\n';
+    const p = writeTmp('session-deadline.jsonl', first + filler + call('last', 7) + '\n');
+    const state = path.join(tmpDir, 'session-deadline-state.json');
+    const originalNow = Date.now;
+    const ticks = [0, 0, 101];
+    let partial;
+
+    try {
+      Date.now = () => (ticks.length > 0 ? ticks.shift() : 102);
+      partial = getSessionUsageMetrics(p, { statePath: state });
+    } finally {
+      Date.now = originalNow;
+    }
+
+    assert.equal(partial.complete, false);
+    assert.equal(partial.credits, null);
+    assert.equal(partial.creditCallCount, null);
+    assert.equal(partial.offset, Buffer.byteLength(first));
+
+    const resumed = getSessionUsageMetrics(p, { statePath: state });
+    assert.equal(resumed.complete, true);
+    assert.equal(resumed.credits, 12);
+    assert.equal(resumed.creditCallCount, 2);
+  });
+
+  it('does not mark a short read as a complete session total', () => {
+    const first = call('first', 5) + '\n';
+    const filler = JSON.stringify({ type: 'noise', padding: 'x'.repeat(130000) }) + '\n';
+    const p = writeTmp('session-short-read.jsonl', first + filler + call('last', 7) + '\n');
+    const state = path.join(tmpDir, 'session-short-read-state.json');
+    const originalReadSync = fs.readSync;
+    let shortened = false;
+    let partial;
+
+    try {
+      fs.readSync = function shortFirstTranscriptChunk(fd, buffer, offset, length, position) {
+        const bytesRead = originalReadSync.call(this, fd, buffer, offset, length, position);
+        if (!shortened && length === 64 * 1024 && position === 0 && bytesRead === length) {
+          shortened = true;
+          return Buffer.byteLength(first);
+        }
+        return bytesRead;
+      };
+      partial = getSessionUsageMetrics(p, { statePath: state });
+    } finally {
+      fs.readSync = originalReadSync;
+    }
+
+    assert.equal(partial.complete, false);
+    assert.equal(partial.credits, null);
+    assert.equal(partial.creditCallCount, null);
+    assert.equal(partial.offset, Buffer.byteLength(first));
+
+    const resumed = getSessionUsageMetrics(p, { statePath: state });
+    assert.equal(resumed.complete, true);
+    assert.equal(resumed.credits, 12);
+  });
+
+  it('does not expose partial credits when the checkpoint cannot be written', () => {
+    const first = call('first', 5) + '\n';
+    const filler = JSON.stringify({ type: 'noise', padding: 'x'.repeat(130000) }) + '\n';
+    const p = writeTmp('session-deadline-readonly-state.jsonl', first + filler + call('last', 7) + '\n');
+    const state = path.join(tmpDir, 'session-deadline-readonly-state.json');
+    const originalNow = Date.now;
+    const originalWriteFileSync = fs.writeFileSync;
+    const ticks = [0, 0, 101];
+    let partial;
+
+    try {
+      Date.now = () => (ticks.length > 0 ? ticks.shift() : 102);
+      fs.writeFileSync = function rejectUsageStateWrite(filePath, ...args) {
+        if (typeof filePath === 'string' && filePath.startsWith(`${state}.tmp-`)) {
+          throw new Error('read-only usage state');
+        }
+        return originalWriteFileSync.call(this, filePath, ...args);
+      };
+      partial = getSessionUsageMetrics(p, { statePath: state });
+    } finally {
+      fs.writeFileSync = originalWriteFileSync;
+      Date.now = originalNow;
+    }
+
+    assert.equal(partial.complete, false);
+    assert.equal(partial.credits, null);
+    assert.equal(partial.creditCallCount, null);
+    assert.equal(fs.existsSync(state), false);
   });
 
   it('detects an in-place transcript rewrite even when the path remains the same', () => {
@@ -631,8 +725,14 @@ describe('getSessionUsageMetrics — incremental session aggregation', () => {
     const start = process.hrtime.bigint();
     const m = getSessionUsageMetrics(p, { statePath: state });
     const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
-    assert.equal(m.credits, 7);
-    assert.equal(m.creditCallCount, 1);
+    if (m.complete) {
+      assert.equal(m.credits, 7);
+      assert.equal(m.creditCallCount, 1);
+    } else {
+      assert.equal(m.credits, null);
+      assert.equal(m.creditCallCount, null);
+      assert.ok(m.offset < fs.statSync(p).size);
+    }
     assert.ok(elapsedMs < 1500, `took ${elapsedMs}ms`);
   });
 
@@ -645,8 +745,14 @@ describe('getSessionUsageMetrics — incremental session aggregation', () => {
     const start = process.hrtime.bigint();
     const m = getSessionUsageMetrics(p, { statePath: state });
     const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
-    assert.equal(m.credits, 8);
-    assert.equal(m.creditCallCount, 1);
+    if (m.complete) {
+      assert.equal(m.credits, 8);
+      assert.equal(m.creditCallCount, 1);
+    } else {
+      assert.equal(m.credits, null);
+      assert.equal(m.creditCallCount, null);
+      assert.ok(m.offset < fs.statSync(p).size);
+    }
     assert.ok(elapsedMs < 1500, `took ${elapsedMs}ms`);
   });
 
@@ -725,4 +831,3 @@ describe('getTurnToolActivity — per-turn aggregation', () => {
     assert.equal(res.completed[1].count, 1);
   });
 });
-
