@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 
+import { fileURLToPath } from 'node:url';
+
 const require = createRequire(import.meta.url);
 const fs = require('node:fs');
 const path = require('node:path');
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const { getGitStatus, parseGitStatusOutput, findGitInfo, readDirectBranch } = require('../../runtime/git.js');
 
 describe('parseGitStatusOutput', () => {
@@ -76,22 +79,27 @@ describe('getGitStatus', () => {
     assert.equal(getGitStatus(randomDir), null);
   });
 
-  test('returns branch info for current git repository', () => {
-    const result = getGitStatus(process.cwd());
-    if (result !== null) {
-      assert.equal(typeof result.branch, 'string');
-      assert.ok(result.branch.length > 0);
-      assert.equal(typeof result.dirty, 'boolean');
-    }
+  test('returns branch info for git repository', () => {
+    const result = getGitStatus(REPO_ROOT, 1000);
+    assert.ok(result !== null, 'git status must not be null in a git repository');
+    assert.equal(typeof result.branch, 'string');
+    assert.ok(result.branch.length > 0);
+    assert.ok(typeof result.dirty === 'boolean' || result.dirty === null);
   });
 
   test('respects small timeout without crashing', () => {
-    const result = getGitStatus(process.cwd(), 1); // 1ms might timeout or succeed
-    assert.ok(result === null || typeof result === 'object');
+    const result = getGitStatus(REPO_ROOT, 1); // 1ms might timeout or succeed
+    if (result !== null) {
+      assert.equal(typeof result, 'object');
+      assert.equal(typeof result.branch, 'string');
+      assert.ok(result.dirty === null || typeof result.dirty === 'boolean');
+    } else {
+      assert.equal(result, null);
+    }
   });
 
   test('findGitInfo locates .git directory in current and parent dirs', () => {
-    const info = findGitInfo(process.cwd());
+    const info = findGitInfo(REPO_ROOT);
     assert.ok(info !== null);
     assert.ok(typeof info.gitDir === 'string');
     assert.ok(typeof info.workTree === 'string');
@@ -132,10 +140,10 @@ describe('getGitStatus', () => {
   });
 
   test('getGitStatus uses cache for consecutive calls within TTL', () => {
-    const res1 = getGitStatus(process.cwd());
+    const res1 = getGitStatus(REPO_ROOT, 1000);
     assert.ok(res1 !== null);
     const start = Date.now();
-    const res2 = getGitStatus(process.cwd());
+    const res2 = getGitStatus(REPO_ROOT, 1000);
     const duration = Date.now() - start;
     assert.deepEqual(res2, res1);
     assert.ok(duration < 50, `cached lookup took ${duration}ms, expected < 50ms`);
@@ -145,7 +153,7 @@ describe('getGitStatus', () => {
     const orig = process.env.CODEBUDDY_HUD_NO_GIT_CACHE;
     process.env.CODEBUDDY_HUD_NO_GIT_CACHE = '1';
     try {
-      const res = getGitStatus(process.cwd());
+      const res = getGitStatus(REPO_ROOT, 1000);
       assert.ok(res !== null);
     } finally {
       if (orig === undefined) delete process.env.CODEBUDDY_HUD_NO_GIT_CACHE;

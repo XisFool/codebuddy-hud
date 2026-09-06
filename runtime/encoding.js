@@ -17,7 +17,12 @@ let _unicodeSupported = null;
 function readUnicodeSupportCache() {
   try {
     const data = JSON.parse(fs.readFileSync(getCacheStatePath(), 'utf8'));
-    if (data && typeof data.unicodeSupported === 'boolean') return data.unicodeSupported;
+    if (data && typeof data.unicodeSupported === 'boolean') {
+      const savedAt = typeof data.savedAt === 'number' ? data.savedAt : (data.savedAt ? Date.parse(data.savedAt) : 0);
+      if (!savedAt || (Date.now() - savedAt < 3600000)) {
+        return data.unicodeSupported;
+      }
+    }
   } catch {
     // no cache yet — caller probes
   }
@@ -25,16 +30,23 @@ function readUnicodeSupportCache() {
 }
 
 function writeUnicodeSupportCache(value) {
+  const cachePath = getCacheStatePath();
+  const tmpPath = `${cachePath}.tmp-${process.pid}-${Date.now()}`;
   try {
-    const cachePath = getCacheStatePath();
     const dir = path.dirname(cachePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(cachePath, JSON.stringify({
-      unicodeSupported: value,
-      savedAt: new Date().toISOString(),
-    }));
+    let existing = {};
+    try {
+      if (fs.existsSync(cachePath)) existing = JSON.parse(fs.readFileSync(cachePath, 'utf8')) || {};
+    } catch {}
+    existing.unicodeSupported = value;
+    existing.savedAt = Date.now();
+    fs.writeFileSync(tmpPath, JSON.stringify(existing));
+    fs.renameSync(tmpPath, cachePath);
   } catch {
-    // best-effort: read-only home or missing dir must not break rendering
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {}
   }
 }
 
@@ -100,6 +112,7 @@ function supportsUnicode() {
         writeUnicodeSupportCache(_unicodeSupported);
       } catch {
         _unicodeSupported = false;
+        writeUnicodeSupportCache(false);
       }
     }
   } else {

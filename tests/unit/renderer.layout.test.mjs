@@ -360,8 +360,15 @@ describe('effort label injection defence (hard constraint 5)', () => {
       cwd: os.tmpdir(),
       context_window: { context_window_size: 1000000, used_percentage: 20, current_usage: { input_tokens: 100, output_tokens: 50 } },
     };
-    assert.doesNotThrow(() => renderHUD(payload, {}));
-    assert.doesNotThrow(() => renderHUD(payload, { theme: {} }));
+    const out1 = renderHUD(payload, {});
+    assert.ok(typeof out1 === 'string' && out1.length > 0);
+    assert.ok(out1.split('\n').length <= 4);
+    assert.ok(out1.includes('TestModel'));
+
+    const out2 = renderHUD(payload, { theme: {} });
+    assert.ok(typeof out2 === 'string' && out2.length > 0);
+    assert.ok(out2.split('\n').length <= 4);
+    assert.ok(out2.includes('TestModel'));
   });
 
   it('clamps context percentage string to [0, 100]', () => {

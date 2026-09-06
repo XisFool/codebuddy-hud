@@ -16,8 +16,11 @@ const POSIX_NODE = '/usr/bin/node';
 const POSIX_HUD = '/opt/codebuddy-hud/runtime/bin/codebuddy-hud.js';
 
 describe('buildStatusLineCommand', () => {
-  test('is exported as a pure function (requiring the module writes nothing)', () => {
+  test('is exported as a pure function without side effects', () => {
     assert.equal(typeof buildStatusLineCommand, 'function');
+    const res1 = buildStatusLineCommand('linux', POSIX_HUD, POSIX_NODE);
+    const res2 = buildStatusLineCommand('linux', POSIX_HUD, POSIX_NODE);
+    assert.equal(res1, res2);
   });
 
   test('win32 -> quoted .cmd shim path, no .js left in the command', () => {

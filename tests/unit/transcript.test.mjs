@@ -186,7 +186,14 @@ describe('getRecentToolActivity — resilience', () => {
   });
 
   it('does not read beyond the MAX_TOTAL_BYTES safety cap', () => {
-    assert.ok(MAX_TOTAL_BYTES >= 65536);
+    const paddingLine = JSON.stringify({ type: 'noise', data: 'x'.repeat(1000) }) + '\n';
+    const lines = [];
+    for (let i = 0; i < 400; i++) lines.push(paddingLine);
+    lines.push(cbCall('call_cap', 'CapTestTool', { action: 'done' }) + '\n');
+    const p = writeTmp('cap-test.jsonl', lines.join(''));
+    const r = getRecentToolActivity(p);
+    assert.ok(r !== null);
+    assert.equal(r.tool, 'CapTestTool');
   });
 });
 

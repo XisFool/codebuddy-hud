@@ -102,15 +102,13 @@ test('--status renders and exits 0', async () => {
   let out = '', err = '';
   child.stdout.on('data', (d) => { out += d; });
   child.stderr.on('data', (d) => { err += d; });
-  await new Promise((resolve) => child.on('close', (code) => {
-    assert.equal(code, 0);
-    assert.ok(out.trim().length > 0);
-    const plainOutput = out.replace(/\x1b\[[0-9;]*m/g, '');
-    assert.match(plainOutput, /DeepSeek V4 Flash/);
-    assert.match(plainOutput, /82\.04 credits/);
-    assert.equal(err, '');
-    resolve();
-  }));
+  const code = await new Promise((resolve) => child.on('close', resolve));
+  assert.equal(code, 0);
+  assert.ok(out.trim().length > 0);
+  const plainOutput = out.replace(/\x1b\[[0-9;]*m/g, '');
+  assert.match(plainOutput, /DeepSeek V4 Flash/);
+  assert.match(plainOutput, /82\.04 credits/);
+  assert.equal(err, '');
 });
 
 test('--theme list renders theme options and exits 0', async () => {

@@ -5,7 +5,9 @@ const os = require('os');
 const crypto = require('crypto');
 
 function getCodeBuddyHome() {
-  return process.env.CODEBUDDY_HOME || path.join(os.homedir(), '.codebuddy');
+  const home = os.homedir();
+  const base = (home && typeof home === 'string' && home.trim()) ? home : os.tmpdir();
+  return process.env.CODEBUDDY_HOME || path.join(base, '.codebuddy');
 }
 
 function resolveCodeBuddyPath(...segments) {

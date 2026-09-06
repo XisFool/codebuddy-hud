@@ -41,7 +41,16 @@ function saveUserTheme(themeName) {
   }
 
   userConfig.theme = themeName;
-  fs.writeFileSync(configPath, JSON.stringify(userConfig, null, 2));
+  const tmpPath = `${configPath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    const dir = path.dirname(configPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(tmpPath, JSON.stringify(userConfig, null, 2));
+    fs.renameSync(tmpPath, configPath);
+  } catch (err) {
+    try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
+    throw err;
+  }
   return configPath;
 }
 
@@ -200,44 +209,52 @@ function selectThemeInteractive(opts) {
     }
 
     function onKeypress(str, key) {
-      if (!key) return;
+      try {
+        if (!key) return;
 
-      if (key.ctrl && key.name === 'c') {
+        if (key.ctrl && key.name === 'c') {
+          cleanup();
+          process.stdout.write('\n');
+          resolve(null);
+          return;
+        }
+
+        if (key.name === 'escape' || key.name === 'q') {
+          cleanup();
+          process.stdout.write('\n');
+          resolve(null);
+          return;
+        }
+
+        if (key.name === 'up' || key.name === 'k') {
+          selectedIndex = (selectedIndex - 1 + THEMES.length) % THEMES.length;
+          render();
+          return;
+        }
+
+        if (key.name === 'down' || key.name === 'j') {
+          selectedIndex = (selectedIndex + 1) % THEMES.length;
+          render();
+          return;
+        }
+
+        if (typeof str === 'string' && /^[1-9]\d*$/.test(str.trim())) {
+          const num = parseInt(str.trim(), 10);
+          if (num >= 1 && num <= THEMES.length) {
+            selectedIndex = num - 1;
+            render();
+            return;
+          }
+        }
+
+        if (key.name === 'return' || key.name === 'enter') {
+          cleanup();
+          process.stdout.write('\n');
+          resolve(THEMES[selectedIndex].name);
+        }
+      } catch {
         cleanup();
-        process.stdout.write('\n');
         resolve(null);
-        return;
-      }
-
-      if (key.name === 'escape' || key.name === 'q') {
-        cleanup();
-        process.stdout.write('\n');
-        resolve(null);
-        return;
-      }
-
-      if (key.name === 'up' || key.name === 'k') {
-        selectedIndex = (selectedIndex - 1 + THEMES.length) % THEMES.length;
-        render();
-        return;
-      }
-
-      if (key.name === 'down' || key.name === 'j') {
-        selectedIndex = (selectedIndex + 1) % THEMES.length;
-        render();
-        return;
-      }
-
-      if (str >= '1' && str <= String(THEMES.length)) {
-        selectedIndex = parseInt(str, 10) - 1;
-        render();
-        return;
-      }
-
-      if (key.name === 'return' || key.name === 'enter') {
-        cleanup();
-        process.stdout.write('\n');
-        resolve(THEMES[selectedIndex].name);
       }
     }
 

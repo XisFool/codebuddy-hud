@@ -62,11 +62,12 @@ function formatDurationMs(ms) {
 }
 
 function createProgressBar(percent, width, thresholds, glyphs) {
+  const safeWidth = Number.isFinite(width) ? Math.max(4, Math.min(40, Math.floor(width))) : 12;
   const filledChar = glyphs.bar;
   const emptyChar = glyphs.empty;
   const pct = Math.max(0, Math.min(100, percent));
-  const filled = Math.round((pct / 100) * width);
-  const empty = width - filled;
+  const filled = Math.round((pct / 100) * safeWidth);
+  const empty = safeWidth - filled;
 
   let colorName = 'green';
   const warnPct = ((thresholds && thresholds.warning) || 0.7) * 100;

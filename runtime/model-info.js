@@ -1,29 +1,59 @@
 'use strict';
 
 const fs = require('fs');
-const { getSettingsPath } = require('./paths');
+const { getSettingsPath, getCacheStatePath } = require('./paths');
 
 let _cachedSettingsEffort = null;
+let _cachedSettingsEffortLoaded = false;
 let _cachedSettingsEffortTime = 0;
 
 function getSettingsReasoningEffort() {
   const now = Date.now();
-  if (_cachedSettingsEffort !== null && now - _cachedSettingsEffortTime < 5000) {
+  if (_cachedSettingsEffortLoaded && now - _cachedSettingsEffortTime < 5000) {
     return _cachedSettingsEffort;
   }
   _cachedSettingsEffortTime = now;
+  _cachedSettingsEffortLoaded = true;
+
   try {
     const settingsPath = getSettingsPath();
-    if (fs.existsSync(settingsPath)) {
-      const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-      _cachedSettingsEffort = data.reasoningEffort || null;
-      return _cachedSettingsEffort;
+    if (!fs.existsSync(settingsPath)) {
+      _cachedSettingsEffort = null;
+      return null;
     }
+
+    const mtime = fs.statSync(settingsPath).mtimeMs;
+    const cachePath = getCacheStatePath();
+    if (fs.existsSync(cachePath)) {
+      try {
+        const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+        if (cache && cache.settingsMtime === mtime && cache.settingsEffort !== undefined) {
+          _cachedSettingsEffort = cache.settingsEffort;
+          return _cachedSettingsEffort;
+        }
+      } catch {}
+    }
+
+    const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    _cachedSettingsEffort = (data && typeof data === 'object' && data.reasoningEffort) ? data.reasoningEffort : null;
+
+    try {
+      let cache = {};
+      if (fs.existsSync(cachePath)) {
+        try { cache = JSON.parse(fs.readFileSync(cachePath, 'utf8')); } catch {}
+      }
+      cache.settingsMtime = mtime;
+      cache.settingsEffort = _cachedSettingsEffort;
+      const tmp = `${cachePath}.tmp-${process.pid}-${Date.now()}`;
+      fs.writeFileSync(tmp, JSON.stringify(cache));
+      fs.renameSync(tmp, cachePath);
+    } catch {}
+
+    return _cachedSettingsEffort;
   } catch {
-    // ignore
+    _cachedSettingsEffort = null;
+    return null;
   }
-  _cachedSettingsEffort = null;
-  return null;
 }
 
 const MODEL_EFFORT_MAP = [

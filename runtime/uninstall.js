@@ -14,6 +14,21 @@ const {
 } = require('./paths');
 const { sanitizeTerminalText } = require('./sanitize');
 
+function atomicWriteFile(targetPath, content) {
+  const dir = path.dirname(targetPath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const tmpPath = `${targetPath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    fs.writeFileSync(tmpPath, content);
+    fs.renameSync(tmpPath, targetPath);
+  } catch (err) {
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {}
+    throw err;
+  }
+}
+
 function uninstall(options) {
   const opts = options || {};
   const settingsPath = opts.settingsPath || getSettingsPath();
@@ -32,20 +47,38 @@ function uninstall(options) {
 
   let cleaned = [];
 
-  // Restore backup or remove statusLine
+  // Restore backup or remove statusLine precisely
   try {
-    if (fs.existsSync(backupPath)) {
-      const backup = fs.readFileSync(backupPath, 'utf8');
-      fs.writeFileSync(settingsPath, backup);
-      fs.unlinkSync(backupPath);
-      cleaned.push(`Restored settings from backup: ${sanitizeTerminalText(backupPath, 512)}`);
-    } else {
-      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-      if (settings.statusLine && typeof settings.statusLine.command === 'string' && settings.statusLine.command.includes('codebuddy-hud')) {
-        delete settings.statusLine;
-        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-        cleaned.push('Removed statusLine from settings.json');
+    if (fs.existsSync(settingsPath)) {
+      let settings = {};
+      try {
+        settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      } catch {}
+
+      if (fs.existsSync(backupPath)) {
+        try {
+          const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+          if (backup && typeof backup === 'object' && backup.statusLine) {
+            settings.statusLine = backup.statusLine;
+          } else {
+            delete settings.statusLine;
+          }
+          fs.unlinkSync(backupPath);
+          cleaned.push(`Restored settings from backup: ${sanitizeTerminalText(backupPath, 512)}`);
+        } catch {
+          if (settings.statusLine && typeof settings.statusLine.command === 'string' && settings.statusLine.command.includes('codebuddy-hud')) {
+            delete settings.statusLine;
+          }
+          try { fs.unlinkSync(backupPath); } catch {}
+        }
+      } else {
+        if (settings.statusLine && typeof settings.statusLine.command === 'string' && settings.statusLine.command.includes('codebuddy-hud')) {
+          delete settings.statusLine;
+          cleaned.push('Removed statusLine from settings.json');
+        }
       }
+
+      atomicWriteFile(settingsPath, JSON.stringify(settings, null, 2));
     }
   } catch {
     cleaned.push('Warning: could not modify settings.json');
@@ -110,14 +143,7 @@ function uninstall(options) {
     // ignore
   }
 
-  try {
-    if (fs.existsSync(userConfigPath)) {
-      fs.unlinkSync(userConfigPath);
-      cleaned.push(`Removed user configuration: ${sanitizeTerminalText(userConfigPath, 512)}`);
-    }
-  } catch {
-    // ignore
-  }
+  // Note: userConfigPath (codebuddy-hud.config.json) is intentionally preserved to keep user customizations
 
   try {
     if (fs.existsSync(updateStatusPath)) {

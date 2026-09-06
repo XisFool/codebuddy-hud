@@ -40,9 +40,15 @@ function parseGitStatusOutput(out) {
  * @param {string} cwd
  * @returns {{ gitDir: string, workTree: string } | null}
  */
+const _nonGitDirs = new Map();
+
 function findGitInfo(cwd) {
   try {
     let current = path.resolve(cwd);
+    const now = Date.now();
+    const cachedNeg = _nonGitDirs.get(current);
+    if (cachedNeg && (now - cachedNeg < 5000)) return null;
+
     const root = path.parse(current).root;
     while (current) {
       const gitCandidate = path.join(current, '.git');
@@ -66,6 +72,7 @@ function findGitInfo(cwd) {
       if (parent === current) break;
       current = parent;
     }
+    _nonGitDirs.set(path.resolve(cwd), now);
   } catch {
     return null;
   }
@@ -123,13 +130,17 @@ function readGitCache() {
 }
 
 function writeGitCache(cache) {
+  const cachePath = getGitCachePath();
+  const tmpPath = `${cachePath}.tmp-${process.pid}-${Date.now()}`;
   try {
-    const cachePath = getGitCachePath();
     const dir = path.dirname(cachePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(cachePath, JSON.stringify(cache));
+    fs.writeFileSync(tmpPath, JSON.stringify(cache));
+    fs.renameSync(tmpPath, cachePath);
   } catch {
-    // best-effort
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {}
   }
 }
 
@@ -138,7 +149,7 @@ function writeGitCache(cache) {
  * mtime invalidation cache, and child_process fallback.
  * @param {string} cwd Working directory
  * @param {number} timeoutMs Maximum time to wait in ms (default 200)
- * @returns {{ branch: string, dirty: boolean } | null}
+ * @returns {{ branch: string, dirty: boolean | null } | null}
  */
 function getGitStatus(cwd, timeoutMs = 200) {
   if (!cwd || typeof cwd !== 'string' || cwd.includes('\0')) return null;
@@ -165,10 +176,10 @@ function getGitStatus(cwd, timeoutMs = 200) {
       entry &&
       typeof entry === 'object' &&
       typeof entry.branch === 'string' &&
-      typeof entry.dirty === 'boolean' &&
+      (entry.dirty === null || typeof entry.dirty === 'boolean') &&
       entry.headMtime === headMtime &&
       entry.indexMtime === indexMtime &&
-      now - entry.timestamp < 2000
+      now - entry.timestamp < 10000
     ) {
       return {
         branch: directBranch || entry.branch,
@@ -193,7 +204,20 @@ function getGitStatus(cwd, timeoutMs = 200) {
       out = execSync('git status --porcelain -b', execOpts);
     } catch {
       if (directBranch) {
-        return { branch: directBranch, dirty: false };
+        if (!noCache) {
+          try {
+            const cache = readGitCache();
+            cache[workTree] = {
+              branch: directBranch,
+              dirty: null,
+              headMtime,
+              indexMtime,
+              timestamp: now,
+            };
+            writeGitCache(cache);
+          } catch {}
+        }
+        return { branch: directBranch, dirty: null };
       }
       return null;
     }
@@ -234,7 +258,7 @@ function getGitStatus(cwd, timeoutMs = 200) {
 
     return result;
   } catch {
-    if (directBranch) return { branch: directBranch, dirty: false };
+    if (directBranch) return { branch: directBranch, dirty: null };
     return null;
   }
 }

@@ -90,7 +90,6 @@ describe('deepMerge', () => {
   it('caps merge depth so a pathologically deep config cannot overflow the stack', () => {
     let deep = { leaf: 1 };
     for (let i = 0; i < 10000; i++) deep = { next: deep };
-    const result = loadConfig('/nonexistent/path');
     let m;
     assert.doesNotThrow(() => { m = deepMerge({}, deep); });
     assert.ok(m, 'deep config must merge without throwing');
