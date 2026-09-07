@@ -3,51 +3,12 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { renderAgentLine, renderToolActivity } = require('../../runtime/renderer/agents-render.js');
+const { renderToolActivity } = require('../../runtime/renderer/agents-render.js');
 
 const glyphs = {
   agentIcon: '[A] ', taskIcon: '[T] ', vbar: '|',
   activeIcon: '◐ ', queueIcon: '▸ ', doneIcon: '✓ ',
 };
-
-describe('renderAgentLine', () => {
-  it('returns empty string for null data', () => {
-    assert.equal(renderAgentLine(null, {}, glyphs, 'en'), '');
-  });
-
-  it('renders active agents', () => {
-    const data = { active: [{ id: '1', name: 'explorer' }, { id: '2', name: 'planner' }], queueDepth: 0, completedCount: 0, totalCount: 0 };
-    const result = renderAgentLine(data, {}, glyphs, 'en');
-    assert.ok(result.includes('2 active'));
-    assert.ok(result.includes('explorer'));
-  });
-
-  it('renders queue depth', () => {
-    const data = { active: [], queueDepth: 3, completedCount: 0, totalCount: 0 };
-    const result = renderAgentLine(data, {}, glyphs, 'en');
-    assert.ok(result.includes('Queue: 3'));
-  });
-
-  it('renders completion ratio', () => {
-    const data = { active: [], queueDepth: 0, completedCount: 5, totalCount: 8 };
-    const result = renderAgentLine(data, {}, glyphs, 'en');
-    assert.ok(result.includes('Done 5/8'));
-  });
-
-  it('respects showAgentStatus=false', () => {
-    const data = { active: [{ id: '1', name: 'x' }], queueDepth: 0, completedCount: 0, totalCount: 0 };
-    const config = { display: { showAgentStatus: false } };
-    assert.equal(renderAgentLine(data, config, glyphs, 'en'), '');
-  });
-
-  it('renders English labels properly', () => {
-    const data = { active: [{ id: '1', name: 'test' }], queueDepth: 2, completedCount: 1, totalCount: 3 };
-    const result = renderAgentLine(data, {}, glyphs, 'en');
-    assert.ok(result.includes('active'));
-    assert.ok(result.includes('Queue: 2'));
-    assert.ok(result.includes('Done 1/3'));
-  });
-});
 
 describe('renderToolActivity', () => {
   it('returns empty string for null activity', () => {

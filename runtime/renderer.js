@@ -3,10 +3,10 @@
 const path = require('path');
 const { color, bold, dim, formatTokens, createProgressBar, getThemeColor, RESET, calculateTurnCacheMetrics, formatTurnCacheBadge, metricsFromPromptCache } = require('./renderer/format');
 const { renderDiffSegment } = require('./renderer/diff-render');
-const { renderAgentLine, renderToolActivity } = require('./renderer/agents-render');
+const { renderToolActivity } = require('./renderer/agents-render');
 const { sanitizeTerminalText } = require('./sanitize');
 const { selectGlyphs, supportsUnicode } = require('./encoding');
-const { extractTokenData, extractDiffStats, extractCostData, extractAgentData } = require('./parser');
+const { extractTokenData, extractDiffStats, extractCostData } = require('./parser');
 const { getGitStatus } = require('./git');
 const { resolveEffortLevel, resolveCreditSpend } = require('./model-info');
 const { getRecentToolActivity, getTurnToolActivity, getTurnUsageMetrics, getSessionUsageMetrics, getTurnMetricsAndActivity } = require('./transcript');
@@ -197,23 +197,19 @@ function renderHUD(cbData, config) {
   const creditSpend = sessionUsageIncomplete
     ? null
     : (transcriptCredits === null ? resolveCreditSpend(cbData) : transcriptCredits);
-  const line3 = renderDiffSegment(diffStats, costData, config, glyphs, creditSpend);
-  if (line3) lines.push(line3);
 
-  // Line 4: Subagent/Task Status + Recent Tool Activity
-  const agentData = extractAgentData(cbData);
-  const line4Parts = [];
-  line4Parts.push(renderAgentLine(agentData, config, glyphs));
+  let toolSegment = '';
   if (disp.showToolActivity !== false) {
     const tailBytes = disp.toolActivityTailBytes;
     const activity = turnActivity
       || getRecentToolActivity(cbData.transcript_path, { cwd, tailBytes });
-    line4Parts.push(renderToolActivity(activity, glyphs));
+    toolSegment = renderToolActivity(activity, glyphs);
   }
-  const line4 = line4Parts.filter(Boolean).join(divider);
-  if (line4) lines.push(line4);
 
-  const maxLines = disp.maxLines || 4;
+  const line3 = renderDiffSegment(diffStats, costData, config, glyphs, creditSpend, toolSegment);
+  if (line3) lines.push(line3);
+
+  const maxLines = disp.maxLines || 3;
   return lines.slice(0, maxLines).join('\n');
 }
 

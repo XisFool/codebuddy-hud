@@ -61,53 +61,10 @@ function extractCostData(cbData) {
   };
 }
 
-function extractAgentData(cbData) {
-  if (!cbData) return null;
-
-  const agents = cbData.agents;
-  const tasks = cbData.tasks;
-
-  if (!agents && !tasks) return null;
-
-  const result = {
-    active: [],
-    queueDepth: 0,
-    completedCount: 0,
-    totalCount: 0,
-  };
-
-  if (Array.isArray(agents)) {
-    for (const a of agents) {
-      if (a && typeof a === 'object') {
-        if (a.status === 'active' || a.status === 'running') {
-          result.active.push({
-            id: String(a.id || ''),
-            name: String(a.name || a.type || ''),
-            status: String(a.status || ''),
-          });
-        }
-      }
-    }
-  }
-
-  if (tasks && typeof tasks === 'object') {
-    result.totalCount = num(tasks.total);
-    result.completedCount = num(tasks.completed);
-    result.queueDepth = num(tasks.pending || tasks.queued);
-  }
-
-  if (result.active.length === 0 && result.totalCount === 0 && result.queueDepth === 0) {
-    return null;
-  }
-
-  return result;
-}
-
 module.exports = {
   parseCodeBuddyInput,
   extractTokenData,
   extractDiffStats,
   extractCostData,
-  extractAgentData,
   num,
 };

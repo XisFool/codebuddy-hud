@@ -34,14 +34,5 @@
       "cache_creation_input_tokens": 0
     }
   },
-  "exceeds_200k_tokens": false,
-  "agents": [
-    { "id": "agent-1", "name": "explorer", "status": "active" },
-    { "id": "agent-2", "name": "coder", "status": "running" }
-  ],
-  "tasks": {
-    "total": 8,
-    "completed": 5,
-    "pending": 3
-  }
+  "exceeds_200k_tokens": false
 }

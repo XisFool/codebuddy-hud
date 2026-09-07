@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { parseCodeBuddyInput, extractTokenData, extractDiffStats, extractCostData, extractAgentData } = require('../../runtime/parser.js');
+const { parseCodeBuddyInput, extractTokenData, extractDiffStats, extractCostData } = require('../../runtime/parser.js');
 
 describe('parseCodeBuddyInput', () => {
   it('parses valid JSON', () => {
@@ -93,39 +93,5 @@ describe('extractCostData', () => {
 
   it('returns null when cost is missing', () => {
     assert.equal(extractCostData({}), null);
-  });
-});
-
-describe('extractAgentData', () => {
-  it('returns null when no agent/task data', () => {
-    assert.equal(extractAgentData({}), null);
-    assert.equal(extractAgentData({ model: {} }), null);
-  });
-
-  it('extracts active agents', () => {
-    const data = {
-      agents: [
-        { id: '1', name: 'explorer', status: 'active' },
-        { id: '2', name: 'planner', status: 'running' },
-        { id: '3', name: 'done-agent', status: 'completed' },
-      ],
-    };
-    const result = extractAgentData(data);
-    assert.equal(result.active.length, 2);
-    assert.equal(result.active[0].name, 'explorer');
-    assert.equal(result.active[1].name, 'planner');
-  });
-
-  it('extracts task counts', () => {
-    const data = { tasks: { total: 8, completed: 5, pending: 3 } };
-    const result = extractAgentData(data);
-    assert.equal(result.totalCount, 8);
-    assert.equal(result.completedCount, 5);
-    assert.equal(result.queueDepth, 3);
-  });
-
-  it('returns null when all agent data is empty/zero', () => {
-    const data = { agents: [], tasks: { total: 0, completed: 0, pending: 0 } };
-    assert.equal(extractAgentData(data), null);
   });
 });

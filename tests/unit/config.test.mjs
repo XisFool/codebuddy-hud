@@ -111,7 +111,7 @@ describe('loadConfig', () => {
     const config = loadConfig('/nonexistent/path');
     config.display.maxLines = 9999;
     config.theme.primary = 'red';
-    assert.equal(DEFAULT_CONFIG.display.maxLines, 4);
+    assert.equal(DEFAULT_CONFIG.display.maxLines, 3);
     assert.equal(DEFAULT_CONFIG.theme, 'ocean');
   });
 

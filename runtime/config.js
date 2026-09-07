@@ -152,7 +152,7 @@ const DEFAULT_CONFIG = {
     showPermissionMode: true,
     useNerdFonts: false,
     unicode: 'auto',
-    maxLines: 4,
+    maxLines: 3,
     progressBarWidth: 10,
     showCacheHitRate: true,
     showToolActivity: true,

@@ -47,16 +47,11 @@ const fullPayload = {
       cache_creation_input_tokens: 0,
     },
   },
-  agents: [
-    { id: '1', name: 'explorer', status: 'active' },
-    { id: '2', name: 'coder', status: 'running' },
-  ],
-  tasks: { total: 8, completed: 5, pending: 3 },
 };
 
 const defaultConfig = {
   theme: { primary: 'green', secondary: 'gray', warning: 'yellow', critical: 'red', accent: 'cyan', diffAdd: 'green', diffRemove: 'red' },
-  display: { showTokenBar: true, showDiffStats: true, showAgentStatus: true, showCost: true, showDuration: true, showCurrentDir: true, showVersion: true, showPermissionMode: true, useNerdFonts: false, unicode: false, maxLines: 4, progressBarWidth: 10, showCacheHitRate: true },
+  display: { showTokenBar: true, showDiffStats: true, showAgentStatus: true, showCost: true, showDuration: true, showCurrentDir: true, showVersion: true, showPermissionMode: true, useNerdFonts: false, unicode: false, maxLines: 3, progressBarWidth: 10, showCacheHitRate: true },
   thresholds: { warning: 0.7, critical: 0.9 },
   cacheHitThresholds: { excellent: 80, partial: 50 },
   defaultEffortLevel: 'medium',
@@ -64,10 +59,10 @@ const defaultConfig = {
 };
 
 describe('renderHUD', () => {
-  it('renders 4 lines for full payload', () => {
+  it('renders 3 lines for full payload', () => {
     const output = renderHUD(fullPayload, defaultConfig);
     const lines = output.split('\n');
-    assert.equal(lines.length, 4);
+    assert.equal(lines.length, 3);
   });
 
   it('line 1 contains model name', () => {
@@ -97,14 +92,15 @@ describe('renderHUD', () => {
     assert.ok(line3.includes('-1'));
   });
 
-  it('line 4 contains agent/task info', () => {
+  it('line 3 merged with diff and cost info', () => {
     const output = renderHUD(fullPayload, defaultConfig);
-    const line4 = output.split('\n')[3];
-    assert.ok(line4.includes('2'));
-    assert.ok(line4.includes('5/8'));
+    const line3 = output.split('\n')[2];
+    assert.ok(line3.includes('+168'));
+    assert.ok(line3.includes('-1'));
+    assert.ok(line3.includes('$0.50'));
   });
 
-  it('omits line 3 and 4 for minimal payload', () => {
+  it('omits line 3 for minimal payload', () => {
     const minimal = {
       model: { display_name: 'Test' },
       context_window: { context_window_size: 100000, used_percentage: 5, current_usage: { input_tokens: 5000, output_tokens: 100 } },
@@ -124,9 +120,9 @@ describe('renderHUD', () => {
     assert.equal(output.split('\n').length, 2);
   });
 
-  it('never exceeds four lines even when untrusted config requests more', () => {
+  it('never exceeds three lines even when untrusted config requests more', () => {
     const config = { ...defaultConfig, display: { ...defaultConfig.display, maxLines: 9999 } };
-    assert.ok(renderHUD(fullPayload, config).split('\n').length <= 4);
+    assert.ok(renderHUD(fullPayload, config).split('\n').length <= 3);
   });
 
   it('line 2 contains cache hit rate when cacheRead > 0', () => {
@@ -175,7 +171,7 @@ describe('renderHUD', () => {
   });
 });
 
-describe('renderHUD — tool activity merged into line 4', () => {
+describe('renderHUD — tool activity merged into line 3', () => {
   let tmpDir;
   let transcriptPath;
 
@@ -193,18 +189,18 @@ describe('renderHUD — tool activity merged into line 4', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('merges agents segment and tool segment on one line', () => {
+  it('merges diff and tool segment on line 3', () => {
     const payload = { ...fullPayload, transcript_path: transcriptPath };
     const output = renderHUD(payload, defaultConfig);
     const lines = output.split('\n');
-    assert.equal(lines.length, 4);
-    const line4 = lines[3];
-    assert.ok(line4.includes('2 active'));
-    assert.ok(line4.includes('Edit'));
-    assert.ok(line4.includes('auth.ts'));
+    assert.equal(lines.length, 3);
+    const line3 = lines[2];
+    assert.ok(line3.includes('+168'));
+    assert.ok(line3.includes('Edit'));
+    assert.ok(line3.includes('auth.ts'));
   });
 
-  it('shows tool segment alone when no agents/tasks data', () => {
+  it('shows tool segment alone when no diff/cost data', () => {
     const payload = {
       model: { display_name: 'Test' },
       transcript_path: transcriptPath,
@@ -226,7 +222,7 @@ describe('renderHUD — tool activity merged into line 4', () => {
   it('missing transcript file degrades silently', () => {
     const payload = { ...fullPayload, transcript_path: nodePath.join(tmpDir, 'nope.jsonl') };
     const output = renderHUD(payload, defaultConfig);
-    assert.equal(output.split('\n').length, 4);
+    assert.equal(output.split('\n').length, 3);
   });
 
   it('uses one turn scan to render actual transcript credits', () => {
@@ -394,12 +390,12 @@ describe('effort label injection defence (hard constraint 5)', () => {
     };
     const out1 = renderHUD(payload, {});
     assert.ok(typeof out1 === 'string' && out1.length > 0);
-    assert.ok(out1.split('\n').length <= 4);
+    assert.ok(out1.split('\n').length <= 3);
     assert.ok(out1.includes('TestModel'));
 
     const out2 = renderHUD(payload, { theme: {} });
     assert.ok(typeof out2 === 'string' && out2.length > 0);
-    assert.ok(out2.split('\n').length <= 4);
+    assert.ok(out2.split('\n').length <= 3);
     assert.ok(out2.includes('TestModel'));
   });
 

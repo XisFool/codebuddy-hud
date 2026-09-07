@@ -1,7 +1,7 @@
 # CodeBuddy HUD (codebuddy-hud) — AGENTS.md
 
 CodeBuddy Code 的 statusLine HUD：宿主在会话、结果、配置等事件后约 300ms 去抖，再把会话 JSON 从 stdin 喂入；空闲时不周期刷新。
-HUD 同步输出 ≤4 行 ANSI 看板并退出。CommonJS，Node >=18。
+HUD 同步输出 ≤3 行 ANSI 看板并退出。CommonJS，Node >=18。
 
 ## 硬约束（开发不可动摇规则）
 
@@ -10,8 +10,7 @@ HUD 同步输出 ≤4 行 ANSI 看板并退出。CommonJS，Node >=18。
    - 单次预算 <1500ms（实际 p50 ~200ms；`runtime/bin/codebuddy-hud.js:13` 设 800ms 管道保底超时）。
    - 任何内部异常静默降级，入口监听 `process.stdout/stderr.on('error')` 防 EPIPE 崩溃；
    - 入口采用 `process.exitCode = 0` + 事件循环自然排空，防 stdout 异步管道截断。
-3. **输出严格 ≤4 行**（`runtime/config.js:155` `display.maxLines: 4`）：结构上限 4 行，无数据行自动隐藏。
-   - CodeBuddy Code v2.146.0 实测仅保留 stdout 前 3 行；HUD 的输出上限与宿主显示上限是两个契约。
+3. **输出严格 ≤3 行**（`runtime/config.js:155` `display.maxLines: 3`）：结构上限 3 行，完全对齐宿主 CodeBuddy Code v2.146.0 实测截断（`stdout.split("\n").slice(0, 3)`，stdout 捕获上限 10KB），无数据行自动隐藏。
 4. **终端安全防御**：所有外部文本必须经 `sanitizeTerminalText()`，剔除 ANSI CSI、OSC、C0/C1（`U+0080-U+009F`）及 Bidi 字符（`U+202E` 等）；`effort` 走白名单校验。
 5. **数据真实性契约**：Cache 与 Credits 取自 transcript 真实遥测，绝不伪造或硬编码，无数据时优雅降级（如 `cache --`）。
 
@@ -19,13 +18,13 @@ HUD 同步输出 ≤4 行 ANSI 看板并退出。CommonJS，Node >=18。
 
 ```
 runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--doctor/-d
-  ├ parser.js                  从 payload 提取 token/diff/cost/agent
+  ├ parser.js                  从 payload 提取 token/diff/cost
   ├ config.js                  内置 THEME_PRESETS、Dark/Light 模式解析与 deepMerge
   ├ theme-selector.js          TTY 实时所见即所得交互主题选择器
-  ├ renderer.js                4 行组装
+  ├ renderer.js                3 行组装
   │ ├ renderer/format.js       调色板 / 进度条 / cache 命中率
-  │ ├ renderer/diff-render.js
-  │ └ renderer/agents-render.js Line 4 工具活动与频次聚合
+  │ ├ renderer/diff-render.js  Line 3 diff / credits / 耗时 / 工具活动段组装
+  │ └ renderer/agents-render.js 工具活动与频次聚合格式化（供 Line 3 复用）
   ├ transcript.js              尾读 transcript（本轮工具频次聚合 + 本轮 usage 聚合）
   ├ session-stats.js           /clear 会话重置识别与 Diff/耗时逻辑基线管理
   ├ doctor.js                  --doctor 环境诊断（Node/配置/编码/Git/transcript）
@@ -34,7 +33,7 @@ runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--d
   ├ statusline-installer.js    --setup 写 settings.json
   ├ settings-file.js          JSONC 解析、配置权限与符号链接保护
   └ uninstall.js               --uninstall 清理配置、shim、缓存与状态
-tests/fixtures/*.json          4 个 payload fixture
+tests/fixtures/*.json          3 个 payload fixture
 scripts/verify-display.js      E2E 看板与 CLI 命令形态契约验证
 scripts/verify-install.js      隔离宿主安装/卸载生命周期契约验证
 ```
@@ -72,7 +71,11 @@ node runtime/bin/codebuddy-hud.js --theme list
    - transcript 回扫上限 256KB，遇到超长单行优雅降级回退到 payload 兜底。
 8. **安装卸载测试隔离**：同时隔离 `CODEBUDDY_HOME`、`CODEBUDDY_SETTINGS_PATH` 和 runtime。仅指定临时 settings 不能隔离 shim 删除；CLI 测试必须调用临时 runtime 副本。
 9. **配置写入**：JSONC 处理不能改动字符串内容；原子替换须保留现有 POSIX 权限和符号链接，失败时保留原配置与备份。新配置及首次备份默认私有权限。
-10. **/clear 换新 transcript 的基线交接（handoff）**：
+10. **Payload 无 agents/tasks 与工具活动来源**：
+    - 宿主 statusLine payload 并不存在 `agents` 或 `tasks` 字段（源码逆向确认宿主未构造此二键）；
+    - 真实工具活动取自 transcript 真实遥测（`type: 'function_call'` 和 `type: 'function_call_result'`），由 `runtime/transcript.js` 解析；
+    - 工具活动并入 Line 3 尾部展示；payload fixtures 中不应包含假造的 `agents`/`tasks` 字段。
+11. **/clear 换新 transcript 的基线交接（handoff）**：
     - 宿主 /clear 后会切换到全新 transcript 文件（实测换文件而非截断），per-identity 状态失联，且所有 reset 信号都要求 `previous` 存在，进程级累计 Δ/⏱ 会全额漏显；
     - `session-stats.js` 另存按 cwd 寻址的 handoff 记录（`codebuddy-hud-session-state/handoff-<sha256(cwd)>.json`），每次刷新写入最新原始累计 cost；
     - identity 未命中时读取 handoff：cost 累计序列未下跌（同宿主进程延续）→ 继承其值为新基线，Δ/⏱ 归零；cost 下跌（新宿主进程启动）或 cwd 不同 → 不继承。

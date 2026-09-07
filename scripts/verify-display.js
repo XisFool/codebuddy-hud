@@ -13,7 +13,6 @@ const MAX_TIME_MS = 1500;
 const fixtures = [
   'payload-full.json',
   'payload-minimal.json',
-  'payload-with-agents.json',
   'payload-empty-cost.json',
 ];
 
@@ -56,7 +55,7 @@ function checkInvariants(result, label) {
   if (result.code !== 0) errors.push(`exit code ${result.code}`);
   if (result.elapsed > MAX_TIME_MS) errors.push(`took ${result.elapsed}ms (>${MAX_TIME_MS}ms)`);
   if (!clean) errors.push('empty output');
-  if (lines.length > 4) errors.push(`${lines.length} lines (>4)`);
+  if (lines.length > 3) errors.push(`${lines.length} lines (>3)`);
   if (result.stderr.trim()) errors.push(`stderr: ${result.stderr.trim().slice(0, 100)}`);
 
   return { clean, lines, errors };

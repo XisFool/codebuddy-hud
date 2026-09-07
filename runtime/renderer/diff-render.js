@@ -7,22 +7,22 @@ function formatCreditSpend(creditSpend) {
   return `${creditSpend.toFixed(2)} credits`;
 }
 
-function renderDiffSegment(diffStats, costData, config, glyphs, creditSpend, legacyCreditSpend) {
+function renderDiffSegment(diffStats, costData, config, glyphs, creditSpend, toolSegment) {
   const parts = [];
   const display = (config && config.display) || {};
-  const actualCreditSpend = typeof creditSpend === 'number' ? creditSpend : (typeof legacyCreditSpend === 'number' ? legacyCreditSpend : null);
+  const actualCreditSpend = typeof creditSpend === 'number' ? creditSpend : null;
 
   const added = (diffStats && diffStats.linesAdded) || 0;
   const removed = (diffStats && diffStats.linesRemoved) || 0;
   const hasDiff = added > 0 || removed > 0;
   const totalCostUsd = (costData && costData.totalCostUsd) || 0;
   const totalMs = (costData && costData.totalDurationMs) || 0;
-  const apiMs = (costData && costData.apiDurationMs) || 0;
   const hasCost = Boolean(costData && (totalCostUsd > 0 || totalMs > 0));
   const hasCreditSpend = Number.isFinite(actualCreditSpend) && actualCreditSpend >= 0;
+  const hasToolSegment = Boolean(toolSegment && typeof toolSegment === 'string' && toolSegment.trim().length > 0);
 
-  // If there's no diff and no cost/duration data, omit Line 3 completely
-  if (!hasDiff && !hasCost && !hasCreditSpend) {
+  // If there's no diff, cost/duration data, and no tool activity, omit Line 3 completely
+  if (!hasDiff && !hasCost && !hasCreditSpend && !hasToolSegment) {
     return '';
   }
 
@@ -45,13 +45,15 @@ function renderDiffSegment(diffStats, costData, config, glyphs, creditSpend, leg
     }
   }
 
-  // 3. Duration & API Duration
+  // 3. Duration
   if (display.showDuration !== false && totalMs > 0) {
-    let timeStr = `${glyphs.clockIcon}${formatDurationMs(totalMs)}`;
-    if (apiMs > 0 && apiMs !== totalMs) {
-      timeStr += ` (API: ${formatDurationMs(apiMs)})`;
-    }
+    const timeStr = `${glyphs.clockIcon}${formatDurationMs(totalMs)}`;
     parts.push(color(timeStr, 'gray'));
+  }
+
+  // 4. Tool activity
+  if (display.showToolActivity !== false && hasToolSegment) {
+    parts.push(toolSegment.trim());
   }
 
   if (parts.length === 0) return '';
