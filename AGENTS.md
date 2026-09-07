@@ -72,6 +72,11 @@ node runtime/bin/codebuddy-hud.js --theme list
    - transcript 回扫上限 256KB，遇到超长单行优雅降级回退到 payload 兜底。
 8. **安装卸载测试隔离**：同时隔离 `CODEBUDDY_HOME`、`CODEBUDDY_SETTINGS_PATH` 和 runtime。仅指定临时 settings 不能隔离 shim 删除；CLI 测试必须调用临时 runtime 副本。
 9. **配置写入**：JSONC 处理不能改动字符串内容；原子替换须保留现有 POSIX 权限和符号链接，失败时保留原配置与备份。新配置及首次备份默认私有权限。
+10. **/clear 换新 transcript 的基线交接（handoff）**：
+    - 宿主 /clear 后会切换到全新 transcript 文件（实测换文件而非截断），per-identity 状态失联，且所有 reset 信号都要求 `previous` 存在，进程级累计 Δ/⏱ 会全额漏显；
+    - `session-stats.js` 另存按 cwd 寻址的 handoff 记录（`codebuddy-hud-session-state/handoff-<sha256(cwd)>.json`），每次刷新写入最新原始累计 cost；
+    - identity 未命中时读取 handoff：cost 累计序列未下跌（同宿主进程延续）→ 继承其值为新基线，Δ/⏱ 归零；cost 下跌（新宿主进程启动）或 cwd 不同 → 不继承。
+    - 已漏显的旧会话状态无法自愈，下一次 /clear 起生效。
 
 ## 提交风格
 

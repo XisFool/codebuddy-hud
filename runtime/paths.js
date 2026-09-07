@@ -52,6 +52,14 @@ function getSessionStatsStatePath(identity) {
   return path.join(getSessionStatsStateDir(), `${digest}.json`);
 }
 
+// /clear may swap the transcript file entirely, orphaning the per-identity
+// state. This cwd-scoped handoff record survives the swap and lets the next
+// identity inherit the process-cumulative cost baseline.
+function getSessionStatsHandoffPath(cwd) {
+  const digest = crypto.createHash('sha256').update(String(cwd || ''), 'utf8').digest('hex');
+  return path.join(getSessionStatsStateDir(), `handoff-${digest}.json`);
+}
+
 function getUserConfigPath() {
   return resolveCodeBuddyPath('codebuddy-hud.config.json');
 }
@@ -77,6 +85,7 @@ module.exports = {
   getTranscriptUsageStatePath,
   getSessionStatsStateDir,
   getSessionStatsStatePath,
+  getSessionStatsHandoffPath,
   getUpdateStatusPath,
 };
 

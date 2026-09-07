@@ -180,3 +180,96 @@ describe('adaptive /clear detection (context reset)', () => {
     assert.deepEqual(cleared, cost({ added: 0, removed: 0, totalMs: 0, apiMs: 0 }));
   });
 });
+
+describe('/clear with a fresh transcript file (identity swap)', () => {
+  let tmpDir;
+  let cwd;
+  let oldTranscript;
+  let newTranscript;
+  let statePath;
+  let handoffPath;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-session-swap-'));
+    cwd = path.join(tmpDir, 'proj');
+    fs.mkdirSync(cwd);
+    oldTranscript = path.join(tmpDir, 'old.jsonl');
+    newTranscript = path.join(tmpDir, 'new.jsonl');
+    fs.writeFileSync(oldTranscript, 'x'.repeat(1200));
+    fs.writeFileSync(newTranscript, '');
+    statePath = path.join(tmpDir, 'state.json');
+    handoffPath = path.join(tmpDir, 'handoff.json');
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function turn({ transcript, sessionId, totalInput, currentInput, cost: costArgs }) {
+    return getLogicalSessionCostData({
+      session_id: sessionId,
+      transcript_path: transcript,
+      context_window: {
+        total_input_tokens: totalInput,
+        current_usage: { input_tokens: currentInput },
+      },
+    }, cost(costArgs), { statePath, handoffPath, cwd });
+  }
+
+  it('resets Δ/⏱ when /clear swaps to a new transcript while host cost keeps accumulating', () => {
+    const preClear = turn({
+      transcript: oldTranscript, sessionId: 's1', totalInput: 10483815, currentInput: 160902,
+      cost: { added: 157, removed: 1, totalMs: 3178000, apiMs: 1500000 },
+    });
+    assert.deepEqual(preClear, cost({ added: 157, removed: 1, totalMs: 3178000, apiMs: 1500000 }));
+
+    // /clear: brand-new transcript file, same cwd, host cost fields preserved
+    const postClear = turn({
+      transcript: newTranscript, sessionId: 's2', totalInput: 0, currentInput: 0,
+      cost: { added: 157, removed: 1, totalMs: 3178000, apiMs: 1500000 },
+    });
+    assert.deepEqual(postClear, cost({ added: 0, removed: 0, totalMs: 0, apiMs: 0 }));
+
+    // New conversation work grows from zero
+    const grown = turn({
+      transcript: newTranscript, sessionId: 's2', totalInput: 5000, currentInput: 4000,
+      cost: { added: 170, removed: 2, totalMs: 3200000, apiMs: 1511000 },
+    });
+    assert.deepEqual(grown, cost({ added: 13, removed: 1, totalMs: 22000, apiMs: 11000 }));
+  });
+
+  it('does not inherit when the host process restarted (cost counters dropped)', () => {
+    turn({
+      transcript: oldTranscript, sessionId: 's1', totalInput: 100000, currentInput: 90000,
+      cost: { added: 157, removed: 1, totalMs: 3178000, apiMs: 1500000 },
+    });
+
+    const fresh = turn({
+      transcript: newTranscript, sessionId: 's2', totalInput: 3000, currentInput: 3000,
+      cost: { added: 2, removed: 0, totalMs: 5000, apiMs: 1200 },
+    });
+    assert.deepEqual(fresh, cost({ added: 2, removed: 0, totalMs: 5000, apiMs: 1200 }));
+  });
+
+  it('does not inherit across a different cwd', () => {
+    turn({
+      transcript: oldTranscript, sessionId: 's1', totalInput: 100000, currentInput: 90000,
+      cost: { added: 157, removed: 1, totalMs: 3178000, apiMs: 1500000 },
+    });
+
+    const other = getLogicalSessionCostData({
+      session_id: 's2',
+      transcript_path: newTranscript,
+      context_window: { total_input_tokens: 0, current_usage: { input_tokens: 0 } },
+    }, cost(), { statePath, handoffPath, cwd: path.join(tmpDir, 'other-proj') });
+    assert.deepEqual(other, cost());
+  });
+
+  it('behaves as before when no handoff record exists', () => {
+    const first = turn({
+      transcript: oldTranscript, sessionId: 's1', totalInput: 100000, currentInput: 90000,
+      cost: { added: 157, removed: 1, totalMs: 3178000, apiMs: 1500000 },
+    });
+    assert.deepEqual(first, cost({ added: 157, removed: 1, totalMs: 3178000, apiMs: 1500000 }));
+  });
+});

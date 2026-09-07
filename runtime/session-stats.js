@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { getSessionStatsStatePath } = require('./paths');
+const { getSessionStatsStatePath, getSessionStatsHandoffPath } = require('./paths');
 
 const SESSION_STATS_VERSION = 1;
 // Adaptive /clear detection thresholds: balance long initial prompts (3-4k tokens
@@ -186,6 +186,27 @@ function subtractBaseline(cost, baseline) {
   };
 }
 
+// /clear may swap the transcript file entirely, which orphans the per-identity
+// state (a brand-new identity hash finds no checkpoint and the process-cumulative
+// cost leaks through as if it belonged to the new session). The handoff record is
+// keyed by cwd — which /clear does not change — and carries the last seen raw
+// cumulative cost. On an identity miss we inherit that cost as the new baseline
+// so the displayed Δ/⏱ restart at zero. A falling cost series means a genuinely
+// new host process and must not inherit.
+function readHandoffBaseline(handoffPath, cost, cwd) {
+  if (!handoffPath || typeof cwd !== 'string' || !cwd) return null;
+  try {
+    const handoff = JSON.parse(fs.readFileSync(handoffPath, 'utf8'));
+    if (!handoff || handoff.version !== SESSION_STATS_VERSION) return null;
+    if (handoff.cwd !== cwd) return null;
+    const lastCost = normalizeBaseline(handoff.cost);
+    if (!lastCost || costCounterDropped(cost, lastCost)) return null;
+    return createBaseline(lastCost);
+  } catch {
+    return null;
+  }
+}
+
 // The host's cost fields are process-cumulative. `/clear` may preserve those
 // fields even though it starts a new conversation, so retain a per-transcript
 // baseline and subtract it only after a reliable reset signal.
@@ -203,6 +224,17 @@ function getLogicalSessionCostData(cbData, costData, opts) {
       : getSessionStatsStatePath(identity);
   } catch {
     return cost;
+  }
+
+  let handoffPath = null;
+  try {
+    if (typeof options.handoffPath === 'string' && options.handoffPath) {
+      handoffPath = options.handoffPath;
+    } else if (typeof options.cwd === 'string' && options.cwd) {
+      handoffPath = getSessionStatsHandoffPath(options.cwd);
+    }
+  } catch {
+    handoffPath = null;
   }
 
   // Get transcript size for physical truncation detection (hard signal)
@@ -225,6 +257,15 @@ function getLogicalSessionCostData(cbData, costData, opts) {
     totalDurationMs: 0,
     apiDurationMs: 0,
   });
+
+  // Identity miss: the transcript path (or session id) is new. If the same host
+  // process kept accumulating cost across that swap (typical /clear with a fresh
+  // transcript file), inherit the handoff cost as the baseline so the new
+  // conversation starts from zero instead of leaking the old cumulative values.
+  if (!previous) {
+    const handoffBaseline = readHandoffBaseline(handoffPath, cost, options.cwd);
+    if (handoffBaseline) baseline = handoffBaseline;
+  }
 
   // Multi-layer /clear detection with forward compatibility for explicit signals
   const explicitClearSignal = Boolean(cbData && (cbData.clear_signal || cbData.is_clear));
@@ -275,6 +316,17 @@ function getLogicalSessionCostData(cbData, costData, opts) {
       baseline,
       signal,
       transcriptSize,
+      updatedAt: Date.now(),
+    });
+  }
+
+  // Refresh the cwd-scoped handoff record on every invocation so the inherited
+  // baseline after an identity swap reflects the cost at the moment of the swap.
+  if (handoffPath) {
+    writeState(handoffPath, {
+      version: SESSION_STATS_VERSION,
+      cost,
+      cwd: typeof options.cwd === 'string' ? options.cwd : null,
       updatedAt: Date.now(),
     });
   }

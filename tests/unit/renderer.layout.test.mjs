@@ -276,10 +276,14 @@ describe('renderHUD — tool activity merged into line 4', () => {
   });
 
   it('resets visible diff and duration after /clear while the transcript path remains stable', () => {
+    // Unique cwd keeps the cwd-scoped session-stats handoff record isolated
+    // from other tests that share the default fullPayload cwd.
+    const clearCwd = nodePath.join(tmpDir, 'clear-proj');
     const clearTranscript = nodePath.join(tmpDir, 'clear-session.jsonl');
     fs.writeFileSync(clearTranscript, '');
     const beforeClear = {
       ...fullPayload,
+      cwd: clearCwd,
       session_id: 'clear-session',
       transcript_path: clearTranscript,
       cost: {
