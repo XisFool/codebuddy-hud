@@ -4,7 +4,7 @@
 [![npm dependencies](https://img.shields.io/badge/npm%20dependencies-0-2ea44f)](#安装)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](#许可证)
 
-> CodeBuddy Code 的实时终端 statusLine HUD。每次会话刷新后，它在终端底部展示当前模型、上下文、Token、缓存命中、代码变更、会话 Credits 与任务进度。
+> CodeBuddy Code 的实时终端 statusLine HUD。每次会话刷新后，它在终端底部展示当前模型、上下文、Token、缓存命中、代码变更、会话 Credits 与工具活动。
 >
 > 不需要 `npm install`，不会因为 HUD 出错而中断 CodeBuddy。仅在后台发起匿名轻量版本更新检查（24h/次，静默），不收集或上传任何代码与会话数据。
 
@@ -257,11 +257,10 @@ node runtime/bin/codebuddy-hud.js --uninstall
 | `display.showGitBranch` | `boolean` / `true` | 显示或隐藏 Git 分支名与脏标记（Line 1）。 |
 | `display.showPermissionMode` | `boolean` / `true` | 显示或隐藏权限模式（Line 1）。 |
 | `display.showVersion` | `boolean` / `false` | 显示或隐藏宿主版本号（Line 1）。 |
-| `display.showAgentStatus` | `boolean` / `true` | 显示或隐藏子代理与任务队列（Line 4）。 |
-| `display.showToolActivity` | `boolean` / `true` | 显示或隐藏最近工具活动与聚合频次（Line 4）。 |
+| `display.showToolActivity` | `boolean` / `true` | 显示或隐藏最近工具活动与聚合频次（Line 3 尾部）。 |
 | `display.toolActivityTailBytes` | `number` / `16384` | transcript 回扫初始滑窗字节数。 |
 | `display.progressBarWidth` | `number` / `10` | 上下文进度条字符宽度。 |
-| `display.maxLines` | `number` / `4` | 最大输出行数（结构上限 ≤4 行）。 |
+| `display.maxLines` | `number` / `3` | 最大输出行数（结构上限 ≤3 行）。 |
 | `display.unicode` | `string|boolean` / `"auto"` | `"auto"`、`true` 或 `false`。 |
 | `display.useNerdFonts` | `boolean` / `false` | 设为 `true` 时使用 Nerd Fonts 图标。 |
 | `thresholds` | `object` | 上下文使用率进度条颜色阈值，默认 `{ "warning": 0.7, "critical": 0.9 }`。 |
@@ -269,7 +268,7 @@ node runtime/bin/codebuddy-hud.js --uninstall
 | `defaultEffortLevel` | `string` / `"medium"` | 默认思考推理强度兜底（`"low"`, `"medium"`, `"high"`, `"xhigh"`, `"max"`, `"ultracode"`）。 |
 | `language` | `string` / `"en"` | HUD 界面语言（`"en"` 英文、`"zh"` 中文）。 |
 
-无论怎样配置，HUD 都不会超过 4 行。
+无论怎样配置，HUD 都不会超过 3 行。
 
 
 ---

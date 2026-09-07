@@ -113,7 +113,7 @@ sequenceDiagram
         Entry->>Renderer: renderHUD(cbData, config)
         Renderer->>Engine: getGitStatus() & getLogicalSessionCostData()
         Renderer->>Engine: getSessionUsageMetrics() & getTurnMetricsAndActivity()
-        Renderer-->>Entry: formatted ≤4 ANSI lines
+        Renderer-->>Entry: formatted ≤3 ANSI lines
         Entry->>Host: stdout.write(renderedOutput)
     else Pipe broken (EPIPE / early close)
         Entry->>Entry: Swallowed via process.stdout.on('error')
@@ -191,15 +191,14 @@ sequenceDiagram
           → Theme Resolution (resolveTheme based on merged config)
   ```
   Note: `--theme <name>` is a persistent write operation (saves to user config), not a runtime argument overlay.
-- **Security Guard**: `deepMerge()` skips `__proto__` and caps recursion at 64. Config files are read directly on each load; effort fallback uses a small process-local cache keyed by resolved settings path, with no persisted effort cache.
+- **Security Guard**: `deepMerge()` skips `__proto__` and caps recursion at 64. Config files are read directly on each load; the settings effort fallback keeps only a process-local cache, while the transcript effort signal is persisted per transcript hash under the session-state directory (`effort-<sha256>.json`), supporting tail-scan adjudication, cache inheritance, and a bounded cold-start head scan.
 
-### 5.6 4-Line Adaptive Layout & Pruning (`renderer.js`)
+### 5.6 3-Line Adaptive Layout & Pruning (`renderer.js`)
 - **Line 1 (Identity & Status)**: Model Display Name · Reasoning Effort Icon · Git Branch & Dirty (`*`) · Workspace Name · Permission Mode · Version Badge.
 - **Line 2 (Tokens & Context)**: Total Tokens (In/Out breakdown) · Progress Bar (`[███░░░░░░░]`) · Percentage Used · Turn Cache Hit Badge.
-- **Line 3 (Diff & Cost & Latency)**: `Δ +Added -Removed` · Actual Credits · Total Duration · API Duration. (Omitted if all are zero).
-- **Line 4 (Agents & Tool Activity)**: Active Agents · Task Queue · Completed Count · Aggregated Tool Call Badges (`✓ Edit ×3`). (Omitted if empty).
+- **Line 3 (Diff & Cost & Latency & Tool Activity)**: `Δ +Added -Removed` · Actual Credits · Total Duration · Current tool activity and turn-aggregated tool badges (`◐ Edit: parser.js`, `✓ Edit ×3`). (Omitted if all are zero).
 
-CodeBuddy Code v2.146.0 retains only the first three stdout lines. This host restriction does not change the HUD's own four-line output contract.
+CodeBuddy Code v2.146.0 retains only the first three stdout lines. The HUD's own three-line contract is strictly aligned with this truncation limit; tool activity is merged into Line 3 so every key segment stays visible.
 
 ---
 
@@ -224,7 +223,7 @@ CodeBuddy Code v2.146.0 retains only the first three stdout lines. This host res
 | **Empty Stdin** | Early hook trigger / absent payload | Handles empty input without inventing telemetry. | `0` |
 | **Stdin Hang** | Host pipe remains open without sending EOF | $800\text{ms}$ timeout timer fires, forcibly closes stdin and renders collected input. | `0` |
 | **EPIPE Error** | Host kills statusline process while stdout writing | `process.stdout.on('error', () => {})` swallows error cleanly. | `0` |
-| **Missing Transcript** | First turn / remote headless session | Omits Line 4 tool activity and falls back to payload-supplied token counts. | `0` |
+| **Missing Transcript** | First turn / remote headless session | Omits tool activity and falls back to payload-supplied token counts. | `0` |
 | **Corrupt JSONL / State** | Process killed mid-write | Checkpoint discarded; resets byte offset to 0 and rebuilds from start. | `0` |
 | **Readonly Filesystem** | Permission restricted container | State writes fail silently; incomplete Credits scans remain hidden and may restart on later invocations. | `0` |
 | **Git Timeout** | Huge mono-repo / NFS lag | Falls back to a directly readable branch with `dirty: null`, otherwise omits it. | `0` |

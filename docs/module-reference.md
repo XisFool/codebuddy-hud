@@ -10,10 +10,10 @@
 1. [`runtime/bin/codebuddy-hud.js` — CLI 统一入口与执行调度器](#1-runtimebincodebuddy-hudjs--cli-入口与执行调度器)
 2. [`runtime/parser.js` — 宿主输入 JSON 解析与边界清洗](#2-runtimeparserjs--宿主输入解析与边界清洗)
 3. [`runtime/config.js` — 多层配置合并与主题调色板引擎](#3-runtimeconfigjs--多层配置合并与主题引擎)
-4. [`runtime/renderer.js` — 4 行看板装配与布局编排器](#4-runtimerendererjs--4-行看板装配与布局编排)
+4. [`runtime/renderer.js` — 3 行看板装配与布局编排器](#4-runtimerendererjs--3-行看板装配与布局编排)
 5. [`runtime/renderer/format.js` — 格式化、进度条与 Cache 徽标](#5-runtimerendererformatjs--格式化进度条与-cache-徽标)
 6. [`runtime/renderer/diff-render.js` — 代码变更、Credits 与耗时渲染器](#6-runtimerendererdiff-renderjs--代码变更credits-与耗时渲染)
-7. [`runtime/renderer/agents-render.js` — 子代理与工具活动频次聚合渲染器](#7-runtimerendereragents-renderjs--子代理与工具活动聚合渲染)
+7. [`runtime/renderer/agents-render.js` — 工具活动频次聚合渲染器](#7-runtimerendereragents-renderjs--工具活动聚合渲染)
 8. [`runtime/renderer/lang.js` & `runtime/lang.js` — 多语言国际化字典与探测器](#8-runtimerendererlangjs--runtimelangjs--多语言国际化)
 9. [`runtime/transcript.js` — 逆向滑窗遥测与增量 Checkpoint 状态机](#9-runtimetranscriptjs--逆向滑窗遥测与-checkpoint-状态机)
 10. [`runtime/session-stats.js` — 会话基线捕获与 `/clear` 重置状态机](#10-runtimesession-statsjs--会话基线与-clear-重置状态机)
@@ -60,7 +60,7 @@ const MAX_STDIN_SIZE = 1024 * 1024;// Stdin 接收上限 1MB（stdin 管道分�
 
 ## 2. `runtime/parser.js` — 宿主输入解析与边界清洗
 
-**职责：** 从 CodeBuddy 传入的原始 stdin JSON 字符串中安全提取会话、Token、变更、消费与 Agent 指标。
+**职责：** 从 CodeBuddy 传入的原始 stdin JSON 字符串中安全提取会话、Token、变更与消费指标。
 
 ### 接口定义 (TypeScript Signatures)
 
@@ -83,13 +83,6 @@ export function extractCostData(cbData: CodeBuddyPayload): {
   totalCostUsd: number;
   totalDurationMs: number;
   apiDurationMs: number;
-} | null;
-
-export function extractAgentData(cbData: CodeBuddyPayload): {
-  active: Array<{ id: string; name?: string; status: string }>;
-  queueDepth: number;
-  completedCount: number;
-  totalCount: number;
 } | null;
 ```
 
@@ -115,9 +108,7 @@ export function extractAgentData(cbData: CodeBuddyPayload): {
     total_api_duration_ms?: number,
     total_lines_added?: number,
     total_lines_removed?: number
-  },
-  agents?: Array<{ id: string, name?: string, status: string }>,
-  tasks?: { total: number, completed: number, pending: number }
+  }
 }
 ```
 
@@ -151,9 +142,9 @@ if (key === '__proto__') continue;
 
 ---
 
-## 4. `runtime/renderer.js` — 4 行看板装配与布局编排
+## 4. `runtime/renderer.js` — 3 行看板装配与布局编排
 
-**职责：** 核心布局引擎，协调各子渲染器装配 4 行看板，执行空行智能裁剪与终端安全转义。
+**职责：** 核心布局引擎，协调各子渲染器装配 3 行看板，执行空行智能裁剪与终端安全转义。
 
 ### 接口定义
 ```typescript
@@ -163,11 +154,10 @@ export function renderHUD(
 ): string;
 ```
 
-### 4 行输出排版规范
+### 3 行输出排版规范
 - **Line 1 (Identity)**: `[ModelName] [EffortIcon] │ [Branch*] │ [Workspace] │ [Permission] [UpdateBadge]`
 - **Line 2 (Tokens)**: `Token 250.1k (in: 249k · out: 1.1k) │ 249k/1M [███░░░░░░░] 25% │ cache 96.8%`
-- **Line 3 (Diff/Cost)**: `Δ +1.7k -161 │ 82.04 credits │ ⏱ 2h47m (API: 1h23m)` (全空自动隐藏)
-- **Line 4 (Agents/Tools)**: `⚙ 2 active (explorer, coder) │ ◂ Queue: 3 │ ✓ Done 5/8 │ ✓ Edit ×3` (全空自动隐藏)
+- **Line 3 (Diff/Cost/Tools)**: `Δ +1.7k -161 │ 82.04 credits │ ⏱ 2h47m │ ◐ Edit: parser.js │ ✓ Read ×3` (全空自动隐藏)
 
 ---
 
@@ -204,13 +194,12 @@ export function formatCreditSpend(creditSpend: number): string; // "82.04 credit
 
 ---
 
-## 7. `runtime/renderer/agents-render.js` — 子代理与工具活动聚合渲染
+## 7. `runtime/renderer/agents-render.js` — 工具活动聚合渲染
 
-**职责：** 装配 Line 4 活动子代理列表、任务队列状态与本轮已完成工具调用频次聚合。
+**职责：** 装配 Line 3 尾部的当前工具活动与本轮已完成工具调用频次聚合。
 
 ### 接口定义
 ```typescript
-export function renderAgentLine(agentData: AgentData, config: ResolvedConfig, glyphs: GlyphSet): string;
 export function renderToolActivity(activity: ToolActivity, glyphs: GlyphSet): string;
 ```
 
@@ -360,6 +349,8 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 - `getUpdateStatusPath(): string`: 返回 `codebuddy-hud-update-status.json` 路径。
 - `getTranscriptUsageStateDir(): string`: 返回 `codebuddy-hud-usage-state/` 目录。
 - `getSessionStatsStateDir(): string`: 返回 `codebuddy-hud-session-state/` 目录。
+- `normalizePlatformPath(p: string): string`: 平台感知路径归一化——Windows 下 resolve 后整体小写（消除盘符 `d:`/`D:` 哈希分裂），POSIX 保留大小写语义。
+- `getSessionEffortStatePath(transcriptPath: string): string`: 返回按 transcript 路径哈希寻址的会话 effort 状态文件 `codebuddy-hud-session-state/effort-<sha256>.json`。
 
 ---
 
@@ -401,8 +392,8 @@ export function printDoctorReport(report: DoctorReport, isJson?: boolean): void;
 
 ### 诊断项分类 (Checks Categories)
 1. `node`: Node.js 版本（$\ge 18$）、架构与可执行文件路径。
-2. `codebuddy`: `CODEBUDDY_HOME`、`settings.json` 与 `statusLine.command` 指向的目标物理文件存在性校验。
-3. `terminal`: Windows 代码页（`chcp 65001`）、Unicode 支持与明暗色调。
+2. `codebuddy`: `CODEBUDDY_HOME`、`settings.json` 与 `statusLine.command` 指向的目标物理文件存在性校验；宿主事件驱动刷新架构契约说明（长任务期间宿主不派发更新属正常现象）。
+3. `terminal`: Windows 代码页（`chcp 65001`）、Unicode 支持、明暗色调与 Windows 路径大小写规范化状态。
 4. `git`: Git PATH 可达性、当前仓库分支与探测延迟。
 5. `transcript`: 遥测缓存目录读写权限与历史日志存在性。
 
@@ -462,7 +453,7 @@ export function uninstall(options?: object): void;
 
 ## 21. `scripts/verify-display.js` — 看板端到端验证
 
-**职责：** 执行 `npm run verify` 的 11 个 CLI、payload 与边界场景，验证看板行数、命令形态与容错契约。
+**职责：** 执行 `npm run verify` 的 10 个 CLI、payload 与边界场景，验证看板行数、命令形态与容错契约。
 
 ---
 

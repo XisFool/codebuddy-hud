@@ -16,7 +16,7 @@
 2. **状态栏宿主契约 (Statusline Contract)**：
    - **执行预算**：整体单次执行预算 $\le 1500\text{ms}$，内部 Stdin 超时保底 $800\text{ms}$。定时器不能抢占同步文件调用或 JSON 解析。
    - **恒零退出码保证**：进程必须**恒定以 `process.exitCode = 0` 退出**。任何未捕获的运行时异常均重定向记录至 `~/.codebuddy/codebuddy-hud-error.log`（权限 `0o600`，上限 1MB 自动覆盖轮转），严禁抛出非零 Exit Code 破坏终端主会话。
-   - **渲染输出行数约束**：终端渲染输出严格限制在 $\le 4$ 行，无数据行自动向上裁剪合并。
+   - **渲染输出行数约束**：终端渲染输出严格限制在 $\le 3$ 行，与宿主 stdout 前 3 行截断上限对齐，无数据行自动向上裁剪合并。
 3. **真实遥测契约 (Truthful Telemetry)**：
    - Prompt Cache 命中率与累计 Credits 消费必须从真实的会话 `transcript.jsonl` 中逆向提取，缺失时优雅降级（如 `cache --`），**绝对严禁硬编码或伪造假数据**。
 
@@ -39,7 +39,7 @@
 │   parser.js · config.js · paths.js · encoding.js · git.js · sanitize.js │
 │   doctor.js · update-checker.js · session-stats.js · uninstall.js       │
 │   transcript.js (逆向滑窗扫描与 SHA-256 增量遥测状态机)                      │
-│   renderer.js (4 行看板装配引擎) ──> renderer/ (format, diff, agents)    │
+│   renderer.js (3 行看板装配引擎) ──> renderer/ (format, diff, agents)    │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -115,7 +115,7 @@ sequenceDiagram
         Entry->>Renderer: renderHUD(cbData, config)
         Renderer->>Engine: getGitStatus() & getLogicalSessionCostData()
         Renderer->>Engine: getSessionUsageMetrics() & getTurnMetricsAndActivity()
-        Renderer-->>Entry: 装配输出 ≤4 行 ANSI 看板字符串
+        Renderer-->>Entry: 装配输出 ≤3 行 ANSI 看板字符串
         Entry->>Host: stdout.write(renderedOutput)
     else 管道异常断开 (EPIPE / 宿主提前关闭)
         Entry->>Entry: 由 process.stdout.on('error') 静默捕获
@@ -193,15 +193,14 @@ sequenceDiagram
           → 主题解析 (resolveTheme)
   ```
 - `--theme <name>` 将主题保存到用户配置，不是运行时覆盖层。
-- **安全性防护**：`deepMerge()` 跳过 `__proto__`，递归深度上限 64。配置文件每次直接读取；effort 只保留按 settings 路径区分的进程内缓存，不写磁盘缓存。
+- **安全性防护**：`deepMerge()` 跳过 `__proto__`，递归深度上限 64。配置文件每次直接读取；settings effort 仅保留进程内缓存，transcript effort 信号则按 transcript 哈希持久化到会话状态目录（`effort-<sha256>.json`），支持长任务的尾部扫描裁决、缓存继承与冷启动头扫兜底。
 
-### 5.6 4 行自适应布局与自裁剪规则 (`renderer.js`)
+### 5.6 3 行自适应布局与自裁剪规则 (`renderer.js`)
 - **Line 1 (标识与状态)**：模型名称 · 推理深度 (effort) · Git 分支与 Dirty 状态 (`*`) · 工作区目录 · 权限模式 · 版本提示。
 - **Line 2 (Tokens 与上下文)**：总 Tokens (输入/输出拆解) · 进度条 (`[███░░░░░░░]`) · 用量百分比 · 本轮 Cache 命中率徽标。
-- **Line 3 (变更、消费与耗时)**：`Δ +增加 -删除` · 实际 Credits · 总耗时 · API 耗时。（无数据自动隐藏整行）。
-- **Line 4 (代理与工具状态)**：活跃代理 · 任务队列 · 完成数 · 工具调用频次聚合（`✓ Edit ×3`）。（无数据自动隐藏整行）。
+- **Line 3 (变更、消费、耗时与工具活动)**：`Δ +增加 -删除` · 实际 Credits · 总耗时 · 当前工具活动与本轮完成频次聚合（`◐ Edit: parser.js`、`✓ Edit ×3`）。（无数据自动隐藏整行）。
 
-宿主 v2.146.0 仅保留 stdout 前 3 行。这一显示限制不改变 HUD 自身最多输出 4 行的契约。
+宿主 v2.146.0 仅保留 stdout 前 3 行。HUD 的 3 行输出契约与该截断上限严格对齐；工具活动并入 Line 3，确保所有关键信息在截断限制下完整可见。
 
 ---
 

@@ -79,7 +79,7 @@ function renderHUD(cbData, config) {
     high: 'yellow',
     xhigh: 'magenta',
     max: 'red',
-    ultracode: 'cyan',
+    ultracode: 'gold',
   };
   const effortColor = effortColorMap[effortLevel] || 'gray';
 
@@ -104,7 +104,9 @@ function renderHUD(cbData, config) {
   if (disp.showPermissionMode !== false && cbData.permission_mode) {
     // 22 chars fits `bypassPermissions` (17) plus headroom for future modes
     // without re-introducing the truncation that produced `bypassPermissio`.
-    line1Parts.push(dim(color(sanitizeTerminalText(cbData.permission_mode, 22), 'magenta')));
+    // Bright magenta instead of dimmed magenta: dim purple is near-illegible
+    // on dark backgrounds (user-reported).
+    line1Parts.push(color(sanitizeTerminalText(cbData.permission_mode, 22), 'brightMagenta'));
   }
 
   if (disp.showVersion === true && cbData.version) {
