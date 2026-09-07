@@ -101,3 +101,82 @@ describe('getLogicalSessionCostData', () => {
     assert.equal(secondMtime, initialMtime);
   });
 });
+
+describe('adaptive /clear detection (context reset)', () => {
+  function sessionCost(p, c) {
+    const statePath = path.join(tmpDir, 'state.json');
+    return getLogicalSessionCostData(p, c, { statePath });
+  }
+
+  it('detects cliff drop: 25000 -> 3500 tokens (86% relative + 21.5k absolute)', () => {
+    const transcript = path.join(tmpDir, 'cliff.jsonl');
+    fs.writeFileSync(transcript, '');
+    const p = { ...payload({ currentInput: 25000 }), transcript_path: transcript };
+    sessionCost(p, cost({ added: 370, removed: 103 }));
+
+    const cleared = sessionCost({ ...payload({ currentInput: 3500 }), transcript_path: transcript }, cost({ added: 370, removed: 103 }));
+    assert.deepEqual(cleared, cost({ added: 0, removed: 0, totalMs: 0, apiMs: 0 }));
+  });
+
+  it('detects mid-session clear: 7500 -> 2500 tokens', () => {
+    const transcript = path.join(tmpDir, 'mid.jsonl');
+    fs.writeFileSync(transcript, '');
+    const p = { ...payload({ currentInput: 7500 }), transcript_path: transcript };
+    sessionCost(p, cost({ added: 200, removed: 50 }));
+
+    const cleared = sessionCost({ ...payload({ currentInput: 2500 }), transcript_path: transcript }, cost({ added: 200, removed: 50 }));
+    assert.deepEqual(cleared, cost({ added: 0, removed: 0, totalMs: 0, apiMs: 0 }));
+  });
+
+  it('does NOT reset on normal fluctuation: 5200 -> 4800 tokens', () => {
+    const transcript = path.join(tmpDir, 'fluctuate.jsonl');
+    fs.writeFileSync(transcript, '');
+    const p = { ...payload({ currentInput: 5200 }), transcript_path: transcript };
+    sessionCost(p, cost({ added: 150, removed: 20 }));
+
+    const continued = sessionCost({ ...payload({ currentInput: 4800 }), transcript_path: transcript }, cost({ added: 170, removed: 25 }));
+    assert.deepEqual(continued, cost({ added: 170, removed: 25 }));
+  });
+
+  it('handles long initial prompt without baseline confusion: 3800 tokens first turn', () => {
+    const transcript = path.join(tmpDir, 'long-init.jsonl');
+    fs.writeFileSync(transcript, '');
+    const p = { ...payload({ currentInput: 3800 }), transcript_path: transcript };
+
+    const first = sessionCost(p, cost({ added: 12, removed: 0 }));
+    assert.deepEqual(first, cost({ added: 12, removed: 0 }));
+  });
+
+  it('detects transcript physical truncation (hard signal)', () => {
+    const transcript = path.join(tmpDir, 'truncate.jsonl');
+    fs.writeFileSync(transcript, 'x'.repeat(10000)); // 10KB
+    const p = { ...payload({ currentInput: 5000 }), transcript_path: transcript };
+
+    sessionCost(p, cost({ added: 100, removed: 20 }));
+
+    // Simulate /clear truncating the file
+    fs.writeFileSync(transcript, 'x'.repeat(500)); // 500B
+    const cleared = sessionCost(p, cost({ added: 100, removed: 20 }));
+    assert.deepEqual(cleared, cost({ added: 0, removed: 0, totalMs: 0, apiMs: 0 }));
+  });
+
+  it('respects explicit clear_signal flag (forward compatibility)', () => {
+    const transcript = path.join(tmpDir, 'explicit.jsonl');
+    fs.writeFileSync(transcript, '');
+    const p = { ...payload({ currentInput: 5000 }), transcript_path: transcript };
+
+    sessionCost(p, cost({ added: 100, removed: 30 }));
+    const cleared = sessionCost({ ...p, clear_signal: true }, cost({ added: 100, removed: 30 }));
+    assert.deepEqual(cleared, cost({ added: 0, removed: 0, totalMs: 0, apiMs: 0 }));
+  });
+
+  it('respects is_clear flag (forward compatibility)', () => {
+    const transcript = path.join(tmpDir, 'is-clear.jsonl');
+    fs.writeFileSync(transcript, '');
+    const p = { ...payload({ currentInput: 5000 }), transcript_path: transcript };
+
+    sessionCost(p, cost({ added: 80, removed: 10 }));
+    const cleared = sessionCost({ ...p, is_clear: true }, cost({ added: 80, removed: 10 }));
+    assert.deepEqual(cleared, cost({ added: 0, removed: 0, totalMs: 0, apiMs: 0 }));
+  });
+});

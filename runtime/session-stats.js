@@ -6,8 +6,14 @@ const crypto = require('crypto');
 const { getSessionStatsStatePath } = require('./paths');
 
 const SESSION_STATS_VERSION = 1;
-const CLEAR_CONTEXT_MAX_TOKENS = 2048;
-const CLEAR_CONTEXT_PREVIOUS_MIN_TOKENS = 8192;
+// Adaptive /clear detection thresholds: balance long initial prompts (3-4k tokens
+// with Rules/Skills) against normal conversation fluctuations to prevent false
+// positives while catching genuine session resets across all conversation sizes.
+const CLEAR_INITIAL_MAX_TOKENS = 4096;  // Tolerate long system prompts
+const CLIFF_DROP_MIN_TOKENS = 3000;     // Absolute drop floor (prevent trim misdetection)
+const CLIFF_DROP_RATIO = 0.5;           // Cliff threshold: 50% relative drop
+const MID_SESSION_MIN_TOKENS = 6000;    // Mid-size session accumulation floor
+const MID_SESSION_RATIO = 0.65;         // Mid-size session relative drop threshold
 
 function finiteNonNegative(value) {
   if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return value;
@@ -80,12 +86,23 @@ function normalizeBaseline(value) {
   return createBaseline(value);
 }
 
-function readState(statePath, identityHash) {
+function readState(statePath, identityHash, transcriptSize) {
   try {
     const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
     if (!state || state.version !== SESSION_STATS_VERSION || state.identityHash !== identityHash) return null;
     const baseline = normalizeBaseline(state.baseline);
     if (!baseline || !state.signal || typeof state.signal !== 'object') return null;
+
+    // Transcript physical truncation detection: if the current transcript file is
+    // smaller than the last recorded size, the host truncated or rewrote it during
+    // /clear. This is an OS-level hard signal with zero false-positive risk.
+    let truncated = false;
+    if (Number.isSafeInteger(state.transcriptSize) && state.transcriptSize > 0
+        && Number.isSafeInteger(transcriptSize) && transcriptSize > 0
+        && transcriptSize < state.transcriptSize) {
+      truncated = true;
+    }
+
     return {
       baseline,
       sessionIdHash: typeof state.sessionIdHash === 'string' ? state.sessionIdHash : null,
@@ -94,6 +111,8 @@ function readState(statePath, identityHash) {
         currentInputTokens: finiteNonNegative(state.signal.currentInputTokens),
       },
       updatedAt: finiteNonNegative(state.updatedAt) || 0,
+      transcriptSize: Number.isSafeInteger(state.transcriptSize) ? state.transcriptSize : 0,
+      truncated,
     };
   } catch {
     return null;
@@ -121,11 +140,34 @@ function counterDropped(current, previous) {
   return current !== null && previous !== null && current < previous;
 }
 
-function contextReturnedToInitial(current, previous) {
-  return current !== null && previous !== null
-    && current <= CLEAR_CONTEXT_MAX_TOKENS
-    && previous >= CLEAR_CONTEXT_PREVIOUS_MIN_TOKENS
-    && current < previous;
+// Cliff drop: detects dramatic conversation resets where context plummets by both
+// a large relative percentage (50%+) AND an absolute floor (3000+ tokens). This
+// catches long sessions (e.g. 25k -> 3.5k) while ignoring normal context window
+// trimming or small fluctuations that would otherwise false-positive.
+function isCliffDrop(current, previous) {
+  if (current === null || previous === null || current >= previous) return false;
+  const relativeDrop = current <= previous * CLIFF_DROP_RATIO;
+  const absoluteDrop = (previous - current) >= CLIFF_DROP_MIN_TOKENS;
+  return relativeDrop && absoluteDrop;
+}
+
+// Return to initial: detects mid-size session clears where context returns to the
+// initial prompt region (<= 4096) from an accumulated conversation (>= 6000),
+// with a significant relative drop (35%+). This avoids false positives on:
+//   - Normal 5200 -> 4800 fluctuations (neither crosses the initial threshold)
+//   - Long initial prompts at 3800 tokens (no previous accumulation to compare)
+function isReturnedToInitial(current, previous) {
+  if (current === null || previous === null || current >= previous) return false;
+  return (current <= CLEAR_INITIAL_MAX_TOKENS)
+    && (previous >= MID_SESSION_MIN_TOKENS)
+    && (current <= previous * MID_SESSION_RATIO);
+}
+
+// Integrated context reset detector: combines cliff-drop and return-to-initial
+// strategies to reliably identify /clear across all conversation sizes without
+// false positives on normal context window management.
+function isContextReset(current, previous) {
+  return isCliffDrop(current, previous) || isReturnedToInitial(current, previous);
 }
 
 function costCounterDropped(cost, baseline) {
@@ -162,11 +204,21 @@ function getLogicalSessionCostData(cbData, costData, opts) {
   } catch {
     return cost;
   }
+
+  // Get transcript size for physical truncation detection (hard signal)
+  let transcriptSize = 0;
+  const transcriptPath = resolveTranscriptPath(cbData && cbData.transcript_path, options.cwd);
+  if (transcriptPath) {
+    try {
+      transcriptSize = fs.statSync(transcriptPath).size;
+    } catch { /* file missing or inaccessible */ }
+  }
+
   const sessionIdHash = cbData && typeof cbData.session_id === 'string' && cbData.session_id
     ? hashValue(cbData.session_id)
     : null;
   const signal = getResetSignal(cbData);
-  const previous = readState(statePath, identityHash);
+  const previous = readState(statePath, identityHash, transcriptSize);
   let baseline = previous ? previous.baseline : createBaseline({
     linesAdded: 0,
     linesRemoved: 0,
@@ -174,24 +226,32 @@ function getLogicalSessionCostData(cbData, costData, opts) {
     apiDurationMs: 0,
   });
 
+  // Multi-layer /clear detection with forward compatibility for explicit signals
+  const explicitClearSignal = Boolean(cbData && (cbData.clear_signal || cbData.is_clear));
+  const transcriptTruncated = Boolean(previous && previous.truncated);
   const sessionIdChanged = Boolean(previous && sessionIdHash && previous.sessionIdHash
     && sessionIdHash !== previous.sessionIdHash);
+  const contextReset = Boolean(previous && isContextReset(signal.currentInputTokens, previous.signal.currentInputTokens));
   const inputCountersReset = Boolean(previous && (
     counterDropped(signal.totalInputTokens, previous.signal.totalInputTokens)
-    || contextReturnedToInitial(signal.currentInputTokens, previous.signal.currentInputTokens)
+    || contextReset
   ));
   const hostCostCountersReset = Boolean(previous && costCounterDropped(cost, baseline));
-  const reset = sessionIdChanged || inputCountersReset || hostCostCountersReset;
+  const reset = explicitClearSignal || transcriptTruncated || sessionIdChanged
+    || inputCountersReset || hostCostCountersReset;
   // If only host cost counters fell, they already describe a new session and
   // should remain visible. If the context/session reset while cumulative cost
   // remains high, use that high value as the new baseline instead.
-  if (sessionIdChanged || inputCountersReset) baseline = createBaseline(cost);
-  else if (hostCostCountersReset) baseline = createBaseline({
-    linesAdded: 0,
-    linesRemoved: 0,
-    totalDurationMs: 0,
-    apiDurationMs: 0,
-  });
+  if (explicitClearSignal || transcriptTruncated || sessionIdChanged || inputCountersReset) {
+    baseline = createBaseline(cost);
+  } else if (hostCostCountersReset) {
+    baseline = createBaseline({
+      linesAdded: 0,
+      linesRemoved: 0,
+      totalDurationMs: 0,
+      apiDurationMs: 0,
+    });
+  }
 
   const baselineChanged = Boolean(
     !previous ||
@@ -214,6 +274,7 @@ function getLogicalSessionCostData(cbData, costData, opts) {
       sessionIdHash,
       baseline,
       signal,
+      transcriptSize,
       updatedAt: Date.now(),
     });
   }
