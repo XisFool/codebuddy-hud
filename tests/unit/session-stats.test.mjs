@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { getLogicalSessionCostData } = require('../../runtime/session-stats.js');
+const { getSessionStatsHandoffPath } = require('../../runtime/paths.js');
 
 let tmpDir;
 
@@ -271,5 +272,115 @@ describe('/clear with a fresh transcript file (identity swap)', () => {
       cost: { added: 157, removed: 1, totalMs: 3178000, apiMs: 1500000 },
     });
     assert.deepEqual(first, cost({ added: 157, removed: 1, totalMs: 3178000, apiMs: 1500000 }));
+  });
+});
+
+describe('Windows path case normalization & TTL safety', () => {
+  let tmpDir;
+  let oldTranscript;
+  let newTranscript;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-norm-'));
+    oldTranscript = path.join(tmpDir, 'old.jsonl');
+    newTranscript = path.join(tmpDir, 'new.jsonl');
+    fs.writeFileSync(oldTranscript, 'x'.repeat(100));
+    fs.writeFileSync(newTranscript, '');
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  (process.platform === 'win32' ? it : it.skip)('inherits baseline across Windows drive letter case differences (d: vs D:)', () => {
+    const cwdLower = 'd:\\test_repo';
+    const cwdUpper = 'D:\\test_repo';
+    const handoffPathLower = getSessionStatsHandoffPath(cwdLower);
+    const handoffPathUpper = getSessionStatsHandoffPath(cwdUpper);
+
+    // Verify both casing variants resolve to the exact same handoff path on Windows
+    assert.equal(handoffPathLower, handoffPathUpper);
+
+    // Pre-clear turn in d:\test_repo
+    getLogicalSessionCostData({
+      session_id: 's1',
+      transcript_path: oldTranscript,
+      context_window: { total_input_tokens: 50000, current_usage: { input_tokens: 40000 } },
+    }, cost({ added: 150, removed: 20, totalMs: 50000, apiMs: 20000 }), {
+      statePath: path.join(tmpDir, 'state-old.json'),
+      handoffPath: handoffPathLower,
+      cwd: cwdLower,
+    });
+
+    // /clear switches to new transcript in D:\test_repo with host cumulative cost unchanged
+    const postClear = getLogicalSessionCostData({
+      session_id: 's2',
+      transcript_path: newTranscript,
+      context_window: { total_input_tokens: 0, current_usage: { input_tokens: 0 } },
+    }, cost({ added: 150, removed: 20, totalMs: 50000, apiMs: 20000 }), {
+      statePath: path.join(tmpDir, 'state-new.json'),
+      handoffPath: handoffPathUpper,
+      cwd: cwdUpper,
+    });
+
+    // Verify handoff baseline was successfully inherited (Δ and ⏱ reset to 0)
+    assert.deepEqual(postClear, cost({ added: 0, removed: 0, totalMs: 0, apiMs: 0 }));
+
+    // Clean up created handoff file
+    try { fs.unlinkSync(handoffPathLower); } catch { /* ignore */ }
+  });
+
+  it('rejects handoff baseline if older than 5 minutes TTL', () => {
+    const cwd = path.join(tmpDir, 'proj');
+    const handoffPath = path.join(tmpDir, 'handoff.json');
+
+    // Hand-craft a handoff state from 10 minutes ago
+    fs.writeFileSync(handoffPath, JSON.stringify({
+      version: 1,
+      cost: { linesAdded: 200, linesRemoved: 50, totalDurationMs: 60000, apiDurationMs: 30000 },
+      cwd,
+      updatedAt: Date.now() - (10 * 60 * 1000), // 10 minutes ago
+    }));
+
+    // New session starts
+    const res = getLogicalSessionCostData({
+      session_id: 's-new',
+      transcript_path: newTranscript,
+      context_window: { total_input_tokens: 1000, current_usage: { input_tokens: 1000 } },
+    }, cost({ added: 200, removed: 50, totalMs: 60000, apiMs: 30000 }), {
+      statePath: path.join(tmpDir, 'state-new.json'),
+      handoffPath,
+      cwd,
+    });
+
+    // Expired handoff baseline must NOT be inherited
+    assert.deepEqual(res, cost({ added: 200, removed: 50, totalMs: 60000, apiMs: 30000 }));
+  });
+
+  it('does not inherit when host cost dropped (host process restarted)', () => {
+    const cwd = path.join(tmpDir, 'proj');
+    const handoffPath = path.join(tmpDir, 'handoff.json');
+
+    // Fresh handoff from 5 seconds ago with higher cost
+    fs.writeFileSync(handoffPath, JSON.stringify({
+      version: 1,
+      cost: { linesAdded: 500, linesRemoved: 100, totalDurationMs: 100000, apiDurationMs: 50000 },
+      cwd,
+      updatedAt: Date.now() - 5000,
+    }));
+
+    // Host restarted, reporting lower cost
+    const res = getLogicalSessionCostData({
+      session_id: 's-restart',
+      transcript_path: newTranscript,
+      context_window: { total_input_tokens: 500, current_usage: { input_tokens: 500 } },
+    }, cost({ added: 10, removed: 2, totalMs: 3000, apiMs: 1000 }), {
+      statePath: path.join(tmpDir, 'state-new.json'),
+      handoffPath,
+      cwd,
+    });
+
+    // Must NOT inherit baseline from dead process
+    assert.deepEqual(res, cost({ added: 10, removed: 2, totalMs: 3000, apiMs: 1000 }));
   });
 });

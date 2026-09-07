@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getSettingsPath } = require('./paths');
+const { getSettingsPath, getSessionEffortStatePath } = require('./paths');
 
 let _cachedSettingsEffort = null;
 let _cachedSettingsEffortLoaded = false;
@@ -119,7 +119,38 @@ function normalizeEffort(value) {
 // therefore not a signal at all.
 
 const EFFORT_SIGNAL_TAIL_BYTES = 256 * 1024;
+const EFFORT_SIGNAL_HEAD_BYTES = 64 * 1024;
 const EFFORT_SIGNAL_MAX_LINES = 400;
+
+function readSessionEffortState(transcriptPath) {
+  if (!transcriptPath) return { exists: false, effort: null };
+  try {
+    const statePath = getSessionEffortStatePath(transcriptPath);
+    if (!fs.existsSync(statePath)) return { exists: false, effort: null };
+    const data = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    if (!data || data.version !== 1) return { exists: false, effort: null };
+    const effort = (typeof data.effort === 'string') ? data.effort : null;
+    return { exists: true, effort };
+  } catch {
+    return { exists: false, effort: null };
+  }
+}
+
+function writeSessionEffortState(transcriptPath, effort) {
+  if (!transcriptPath) return;
+  try {
+    const statePath = getSessionEffortStatePath(transcriptPath);
+    const dir = path.dirname(statePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(statePath, JSON.stringify({
+      version: 1,
+      effort: effort || null,
+      updatedAt: Date.now(),
+    }), 'utf8');
+  } catch {
+    // 静默降级，绝不阻塞渲染
+  }
+}
 
 const EFFORT_COMMAND_RE = /^<command-name>\/effort<\/command-name><command-args>([^<]{0,40})<\/command-args>$/;
 
@@ -153,14 +184,14 @@ function decideEffortFromEntry(entry) {
   return { decisive: false, value: null };
 }
 
-function scanTranscriptEffortSignal(resolved, size) {
-  let fd = null;
+function scanChunkForEffortSignal(fd, offset, length) {
+  if (length <= 0) return { decisive: false, value: null };
   try {
-    fd = fs.openSync(resolved, 'r');
-    const len = Math.min(EFFORT_SIGNAL_TAIL_BYTES, size);
-    const buf = Buffer.alloc(len);
-    const bytesRead = fs.readSync(fd, buf, 0, len, size - len);
-    if (!Number.isSafeInteger(bytesRead) || bytesRead <= 0) return null;
+    const buf = Buffer.alloc(length);
+    const bytesRead = fs.readSync(fd, buf, 0, length, offset);
+    if (!Number.isSafeInteger(bytesRead) || bytesRead <= 0) {
+      return { decisive: false, value: null };
+    }
     const lines = buf.toString('utf8', 0, bytesRead).split('\n');
     let scanned = 0;
     for (let i = lines.length - 1; i >= 0 && scanned < EFFORT_SIGNAL_MAX_LINES; i--) {
@@ -174,15 +205,11 @@ function scanTranscriptEffortSignal(resolved, size) {
         continue; // partial first line of the window or a corrupt line
       }
       const decision = decideEffortFromEntry(entry);
-      if (decision.decisive) return decision.value;
+      if (decision.decisive) return decision;
     }
-    return null;
+    return { decisive: false, value: null };
   } catch {
-    return null;
-  } finally {
-    if (fd !== null) {
-      try { fs.closeSync(fd); } catch { /* already closed */ }
-    }
+    return { decisive: false, value: null };
   }
 }
 
@@ -204,7 +231,46 @@ function getTranscriptEffortSignal(transcriptPath, cwd) {
     return null;
   }
   if (size <= 0) return null;
-  return scanTranscriptEffortSignal(resolved, size);
+
+  let fd = null;
+  try {
+    fd = fs.openSync(resolved, 'r');
+    // 1. 尾部优先扫描（Tail First）：维持 256KB 尾扫
+    const tailLen = Math.min(EFFORT_SIGNAL_TAIL_BYTES, size);
+    const tailOffset = size - tailLen;
+    const tailDecision = scanChunkForEffortSignal(fd, tailOffset, tailLen);
+    if (tailDecision.decisive) {
+      writeSessionEffortState(resolved, tailDecision.value);
+      return tailDecision.value;
+    }
+
+    // 2. 会话缓存继承（Cache Fallback）：若尾部未见任何 effort 决策，读取 Session 缓存
+    const cached = readSessionEffortState(resolved);
+    if (cached.exists) {
+      return cached.effort;
+    }
+
+    // 3. 首扫大文件正向冷启动兜底（Bounded Head Scan on Cache Miss）
+    // 仅当 size > 256KB 且本地完全无 Session 缓存时，读取前 64KB
+    if (size > EFFORT_SIGNAL_TAIL_BYTES) {
+      const headLen = Math.min(EFFORT_SIGNAL_HEAD_BYTES, size);
+      const headDecision = scanChunkForEffortSignal(fd, 0, headLen);
+      if (headDecision.decisive) {
+        writeSessionEffortState(resolved, headDecision.value);
+        return headDecision.value;
+      }
+    }
+
+    // 无论是否找到，记录空状态防止重复进行 head scan，并杜绝后续幽灵复活
+    writeSessionEffortState(resolved, null);
+    return null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch { /* already closed */ }
+    }
+  }
 }
 
 function resolveEffortLevel(cbData, config) {

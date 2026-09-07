@@ -38,11 +38,29 @@ function getSessionStatsStateDir() {
   return resolveCodeBuddyPath('codebuddy-hud-session-state');
 }
 
+/**
+ * Normalize path for platform-specific comparisons and hashing.
+ * On Windows, paths are case-insensitive, so drive letters and paths are
+ * lowercased to prevent hash fragmentation (e.g. d:\ vs D:\).
+ * On POSIX platforms, case sensitivity is preserved.
+ * @param {string} p
+ * @returns {string}
+ */
+function normalizePlatformPath(p) {
+  if (typeof p !== 'string' || !p || p.includes('\0')) return '';
+  try {
+    const resolved = path.resolve(p);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  } catch {
+    return String(p);
+  }
+}
+
 // Keep usage checkpoints independent for each transcript. The HUD is spawned
 // by the host for every refresh and multiple workspaces may refresh at once;
 // a single shared checkpoint would allow one transcript to overwrite another.
 function getTranscriptUsageStatePath(transcriptPath) {
-  const normalized = typeof transcriptPath === 'string' ? path.resolve(transcriptPath) : '';
+  const normalized = normalizePlatformPath(transcriptPath);
   const digest = crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');
   return path.join(getTranscriptUsageStateDir(), `${digest}.json`);
 }
@@ -56,8 +74,15 @@ function getSessionStatsStatePath(identity) {
 // state. This cwd-scoped handoff record survives the swap and lets the next
 // identity inherit the process-cumulative cost baseline.
 function getSessionStatsHandoffPath(cwd) {
-  const digest = crypto.createHash('sha256').update(String(cwd || ''), 'utf8').digest('hex');
+  const normalized = normalizePlatformPath(cwd);
+  const digest = crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');
   return path.join(getSessionStatsStateDir(), `handoff-${digest}.json`);
+}
+
+function getSessionEffortStatePath(transcriptPath) {
+  const normalized = normalizePlatformPath(transcriptPath);
+  const digest = crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');
+  return path.join(getSessionStatsStateDir(), `effort-${digest}.json`);
 }
 
 function getUserConfigPath() {
@@ -86,6 +111,8 @@ module.exports = {
   getSessionStatsStateDir,
   getSessionStatsStatePath,
   getSessionStatsHandoffPath,
+  getSessionEffortStatePath,
   getUpdateStatusPath,
+  normalizePlatformPath,
 };
 

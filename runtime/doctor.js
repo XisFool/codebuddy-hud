@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const { getCodeBuddyHome, getSettingsPath, getErrorLogPath, getTranscriptUsageStateDir } = require('./paths');
+const { getCodeBuddyHome, getSettingsPath, getErrorLogPath, getTranscriptUsageStateDir, normalizePlatformPath } = require('./paths');
 const { supportsUnicode } = require('./encoding');
 const { detectThemeMode, loadConfig } = require('./config');
 const { getGitStatus } = require('./git');
@@ -190,6 +190,29 @@ function checkTranscriptAccess(i18n) {
   }];
 }
 
+function checkPathNormalization(i18n, cwd) {
+  if (process.platform !== 'win32') return [];
+  const rawCwd = cwd || process.cwd();
+  const normalized = normalizePlatformPath(rawCwd);
+  return [{
+    category: 'terminal',
+    name: i18n.t('windowsPathNormalization'),
+    status: 'ok',
+    detail: `Raw: ${rawCwd} | Normalized: ${normalized}`,
+    message: null,
+  }];
+}
+
+function checkHostRefreshProtocol(i18n) {
+  return [{
+    category: 'codebuddy',
+    name: i18n.t('hostRefreshProtocol'),
+    status: 'ok',
+    detail: 'Event-driven One-shot CLI (~300ms post-turn debounced; idle during long workflow, no daemon)',
+    message: null,
+  }];
+}
+
 function runDoctor(options) {
   const opts = options || {};
   const cwd = opts.cwd || process.cwd();
@@ -199,7 +222,9 @@ function runDoctor(options) {
   const checks = [
     checkNodeEnvironment(i18n),
     ...checkCodeBuddyConfig(i18n),
+    ...checkHostRefreshProtocol(i18n),
     ...checkEncodingEnvironment(i18n, config),
+    ...checkPathNormalization(i18n, cwd),
     ...checkGitEnvironment(i18n, cwd),
     ...checkTranscriptAccess(i18n),
   ];

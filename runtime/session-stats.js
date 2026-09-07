@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { getSessionStatsStatePath, getSessionStatsHandoffPath } = require('./paths');
+const { getSessionStatsStatePath, getSessionStatsHandoffPath, normalizePlatformPath } = require('./paths');
 
 const SESSION_STATS_VERSION = 1;
 // Adaptive /clear detection thresholds: balance long initial prompts (3-4k tokens
@@ -44,7 +44,7 @@ function resolveTranscriptPath(transcriptPath, cwd) {
 // one checkpoint lets us spot that transition and reset the visible counters.
 function getSessionIdentity(cbData, cwd) {
   const transcriptPath = resolveTranscriptPath(cbData && cbData.transcript_path, cwd);
-  if (transcriptPath) return `transcript:${transcriptPath}`;
+  if (transcriptPath) return `transcript:${normalizePlatformPath(transcriptPath)}`;
   if (cbData && typeof cbData.session_id === 'string' && cbData.session_id && !cbData.session_id.includes('\0')) {
     return `session:${cbData.session_id}`;
   }
@@ -186,6 +186,8 @@ function subtractBaseline(cost, baseline) {
   };
 }
 
+const HANDOFF_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes TTL
+
 // /clear may swap the transcript file entirely, which orphans the per-identity
 // state (a brand-new identity hash finds no checkpoint and the process-cumulative
 // cost leaks through as if it belonged to the new session). The handoff record is
@@ -196,11 +198,26 @@ function subtractBaseline(cost, baseline) {
 function readHandoffBaseline(handoffPath, cost, cwd) {
   if (!handoffPath || typeof cwd !== 'string' || !cwd) return null;
   try {
-    const handoff = JSON.parse(fs.readFileSync(handoffPath, 'utf8'));
+    const raw = fs.readFileSync(handoffPath, 'utf8');
+    const handoff = JSON.parse(raw);
     if (!handoff || handoff.version !== SESSION_STATS_VERSION) return null;
-    if (handoff.cwd !== cwd) return null;
+
+    // 防线 1: TTL 检查，防止昨天或很久以前的残存 handoff 劫持冷启动新进程
+    if (typeof handoff.updatedAt === 'number') {
+      if (Date.now() - handoff.updatedAt > HANDOFF_MAX_AGE_MS) {
+        return null;
+      }
+    }
+
+    // 防线 2: 平台感知路径比对（消除 Windows 下 d:\ 与 D:\ 死锁）
+    if (normalizePlatformPath(handoff.cwd) !== normalizePlatformPath(cwd)) {
+      return null;
+    }
+
+    // 防线 3: 单调性掉落检查
     const lastCost = normalizeBaseline(handoff.cost);
     if (!lastCost || costCounterDropped(cost, lastCost)) return null;
+
     return createBaseline(lastCost);
   } catch {
     return null;

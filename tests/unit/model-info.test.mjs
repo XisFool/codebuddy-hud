@@ -387,3 +387,87 @@ describe('resolveCreditSpend', () => {
     assert.equal(resolveCreditSpend(null), null);
   });
 });
+
+describe('Large transcript (>256KB) effort retention & monotonicity', () => {
+  const usageLine = {
+    type: 'message', role: 'assistant',
+    providerData: { rawUsage: { prompt_tokens: 10 } },
+  };
+  const effortCommand = (level) => ({
+    type: 'message', role: 'user',
+    content: [{ type: 'input_text', text: `<command-name>/effort</command-name><command-args>${level}</command-args>` }],
+    providerData: { skipRun: true },
+  });
+  const stdoutRecord = (marker) => ({
+    type: 'message', role: 'user',
+    content: [{ type: 'input_text', text: `<local-command-stdout><system-reminder data-role="ultra_effort_${marker}">\n</system-reminder></local-command-stdout>` }],
+    providerData: { skipRun: true },
+  });
+
+  function dataWithTranscript(transcriptPath) {
+    return { transcript_path: transcriptPath, cwd: tmpDir, model: { id: 'unknown-model-xyz' } };
+  }
+
+  function useSettings(value) {
+    const settingsPath = path.join(tmpDir, 'settings.json');
+    fs.writeFileSync(settingsPath, JSON.stringify({ reasoningEffort: value }));
+    process.env.CODEBUDDY_SETTINGS_PATH = settingsPath;
+    resetModelInfoCache();
+  }
+
+  it('retains ultracode in a 1.2MB transcript where command is far outside tail window', () => {
+    useSettings('max');
+    const transcriptPath = path.join(tmpDir, 'large-transcript.jsonl');
+    const padLine = JSON.stringify({
+      type: 'message',
+      role: 'assistant',
+      content: [{ type: 'text', text: 'x'.repeat(10000) }],
+    }) + '\n';
+
+    // 130 lines * 10KB ≈ 1.3MB padding between command and EOF
+    const headLines = [
+      JSON.stringify(effortCommand('ultracode')),
+      JSON.stringify(stdoutRecord('enter')),
+    ].join('\n') + '\n';
+    const tailLines = JSON.stringify(usageLine) + '\n';
+
+    fs.writeFileSync(transcriptPath, headLines + padLine.repeat(130) + tailLines);
+    assert.ok(fs.statSync(transcriptPath).size > 1.2 * 1024 * 1024);
+
+    const level = resolveEffortLevel(dataWithTranscript(transcriptPath));
+    assert.equal(level, 'ultracode');
+  });
+
+  it('monotonicity: preserves exit signal and does not ghost-resurrect ultracode from head after growth', () => {
+    useSettings('max');
+    const transcriptPath = path.join(tmpDir, 'large-exit.jsonl');
+    const padLine = JSON.stringify({
+      type: 'message',
+      role: 'assistant',
+      content: [{ type: 'text', text: 'y'.repeat(10000) }],
+    }) + '\n';
+
+    // Step 1: Initial ultracode, followed by 500KB+ of conversation, then exit
+    const part1 = [
+      JSON.stringify(effortCommand('ultracode')),
+      JSON.stringify(stdoutRecord('enter')),
+      padLine.repeat(55),
+      JSON.stringify(stdoutRecord('exit')),
+      JSON.stringify(usageLine),
+    ].join('\n') + '\n';
+    fs.writeFileSync(transcriptPath, part1);
+
+    // Verify exit signal was recognized and saved (falls back to settings 'max')
+    const levelAtExit = resolveEffortLevel(dataWithTranscript(transcriptPath));
+    assert.equal(levelAtExit, 'max');
+
+    // Step 2: Session grows by another 300KB+ (total > 800KB).
+    // Exit marker is now pushed 350KB away from tail (outside the 256KB tail window).
+    fs.appendFileSync(transcriptPath, padLine.repeat(35) + JSON.stringify(usageLine) + '\n');
+    assert.ok(fs.statSync(transcriptPath).size > 800 * 1024);
+
+    // Verify subsequent resolution does NOT ghost-resurrect ultracode from the file head!
+    const levelAfterGrowth = resolveEffortLevel(dataWithTranscript(transcriptPath));
+    assert.equal(levelAfterGrowth, 'max');
+  });
+});
