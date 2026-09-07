@@ -242,6 +242,130 @@ describe('resolveEffortLevel', () => {
   });
 });
 
+describe('resolveEffortLevel transcript signal', () => {
+  // Real entry shapes, mirrored from a live transcript: the host persists each
+  // /effort invocation as a skipRun user record whose whole text is the command
+  // markup, plus a stdout record carrying an enter/exit system reminder. All
+  // other entry types (reasoning, function_call, assistant messages) are echo
+  // pollution and must be ignored.
+  const usageLine = {
+    type: 'message', role: 'assistant',
+    providerData: { rawUsage: { prompt_tokens: 10 } },
+  };
+  const effortCommand = (level) => ({
+    type: 'message', role: 'user',
+    content: [{ type: 'input_text', text: `<command-name>/effort</command-name><command-args>${level}</command-args>` }],
+    providerData: { skipRun: true },
+  });
+  const stdoutRecord = (marker) => ({
+    type: 'message', role: 'user',
+    content: [{ type: 'input_text', text: `<local-command-stdout><system-reminder data-role="ultra_effort_${marker}">\n</system-reminder></local-command-stdout>` }],
+    providerData: { skipRun: true },
+  });
+  const echoEntry = (type, role) => ({
+    type, role,
+    content: [{ type: 'text', text: 'analyzing <command-name>/effort</command-name><command-args>xhigh</command-args> markers' }],
+  });
+
+  function writeTranscript(lines) {
+    const transcriptPath = path.join(tmpDir, 'transcript.jsonl');
+    fs.writeFileSync(transcriptPath, lines.map((line) => JSON.stringify(line)).join('\n') + '\n');
+    return transcriptPath;
+  }
+
+  function dataWithTranscript(transcriptPath) {
+    return { transcript_path: transcriptPath, cwd: tmpDir, model: { id: 'unknown-model-xyz' } };
+  }
+
+  function useSettings(value) {
+    const settingsPath = path.join(tmpDir, 'settings.json');
+    fs.writeFileSync(settingsPath, JSON.stringify({ reasoningEffort: value }));
+    process.env.CODEBUDDY_SETTINGS_PATH = settingsPath;
+    resetModelInfoCache();
+  }
+
+  it("shows ultracode from the /effort record even when settings.json still says 'max'", () => {
+    useSettings('max');
+    const transcriptPath = writeTranscript([usageLine, effortCommand('ultracode'), usageLine]);
+    assert.equal(resolveEffortLevel(dataWithTranscript(transcriptPath)), 'ultracode');
+  });
+
+  it('detects ultracode from the enter stdout record alone', () => {
+    useSettings('max');
+    const transcriptPath = writeTranscript([stdoutRecord('enter'), usageLine]);
+    assert.equal(resolveEffortLevel(dataWithTranscript(transcriptPath)), 'ultracode');
+  });
+
+  it('lets the newest /effort command win over older markers', () => {
+    useSettings('max');
+    const transcriptPath = writeTranscript([
+      effortCommand('ultracode'),
+      stdoutRecord('enter'),
+      usageLine,
+      effortCommand('max'),
+      usageLine,
+    ]);
+    assert.equal(resolveEffortLevel(dataWithTranscript(transcriptPath)), 'max');
+  });
+
+  it('lets a session override beat the settings value', () => {
+    useSettings('max');
+    const transcriptPath = writeTranscript([effortCommand('high'), usageLine]);
+    assert.equal(resolveEffortLevel(dataWithTranscript(transcriptPath)), 'high');
+  });
+
+  it('ignores empty-args /effort records (picker open) and keeps the older signal', () => {
+    useSettings('max');
+    const transcriptPath = writeTranscript([stdoutRecord('enter'), effortCommand(''), usageLine]);
+    assert.equal(resolveEffortLevel(dataWithTranscript(transcriptPath)), 'ultracode');
+  });
+
+  it('ignores the host unresolved ${level} template record', () => {
+    useSettings('max');
+    const transcriptPath = writeTranscript([stdoutRecord('enter'), effortCommand('${level}'), usageLine]);
+    assert.equal(resolveEffortLevel(dataWithTranscript(transcriptPath)), 'ultracode');
+  });
+
+  it('ignores effort markup echoed in reasoning, tool-call and assistant entries', () => {
+    useSettings('max');
+    const transcriptPath = writeTranscript([
+      effortCommand('ultracode'),
+      stdoutRecord('enter'),
+      usageLine,
+      echoEntry('reasoning'),
+      echoEntry('function_call'),
+      echoEntry('message', 'assistant'),
+      usageLine,
+    ]);
+    assert.equal(resolveEffortLevel(dataWithTranscript(transcriptPath)), 'ultracode');
+  });
+
+  it('falls back to settings when the transcript has no effort markers', () => {
+    useSettings('max');
+    const transcriptPath = writeTranscript([usageLine, usageLine]);
+    assert.equal(resolveEffortLevel(dataWithTranscript(transcriptPath)), 'max');
+  });
+
+  it('falls back to settings when the transcript file is missing', () => {
+    useSettings('max');
+    const data = { transcript_path: path.join(tmpDir, 'nope.jsonl'), cwd: tmpDir, model: { id: 'unknown-model-xyz' } };
+    assert.equal(resolveEffortLevel(data), 'max');
+  });
+
+  it('finds markers far back in a transcript larger than the tail budget', () => {
+    useSettings('max');
+    const padding = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'pad '.repeat(6 * 1024) }] };
+    const transcriptPath = writeTranscript([effortCommand('ultracode'), padding, usageLine]);
+    assert.equal(resolveEffortLevel(dataWithTranscript(transcriptPath)), 'ultracode');
+  });
+
+  it('treats an exited ultracode as no session override', () => {
+    useSettings('xhigh');
+    const transcriptPath = writeTranscript([stdoutRecord('enter'), stdoutRecord('exit'), usageLine]);
+    assert.equal(resolveEffortLevel(dataWithTranscript(transcriptPath)), 'xhigh');
+  });
+});
+
 describe('resolveCreditSpend', () => {
   it('returns actual credits from the payload', () => {
     const data = { cost: { credits: 2.5 } };

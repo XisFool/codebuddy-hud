@@ -98,6 +98,115 @@ function normalizeEffort(value) {
   return null;
 }
 
+// --- Session effort signal from the conversation transcript -----------------
+//
+// `/effort ultracode` is stored ONLY in the host's in-memory session meta
+// (workflowEffortLevel is not part of the persisted meta subset), while
+// non-ultracode levels are also persisted to settings.json's reasoningEffort.
+// The statusLine payload itself carries no effort field, so with ultracode
+// active the stale settings value would win. The durable per-session source
+// is the transcript, where the host persists two entry shapes, both as
+// `type:'message'` / `role:'user'` records flagged `providerData.skipRun`:
+//   1. the command record whose whole text is `<command-name>/effort
+//      </command-name><command-args>LEVEL</command-args>`,
+//   2. its stdout record carrying a `data-role="ultra_effort_enter"` /
+//      `"ultra_effort_exit"` system reminder.
+// Entries are parsed structurally and scanned newest-first. Raw text matching
+// is NOT viable: reasoning / tool-call / assistant entries routinely echo
+// these marker strings in agent sessions (measured on a real session: every
+// tail marker was an echo, and the newest echo won with an arbitrary value).
+// The active-mode reminder (`ultra_effort_active`) is never persisted and is
+// therefore not a signal at all.
+
+const EFFORT_SIGNAL_TAIL_BYTES = 256 * 1024;
+const EFFORT_SIGNAL_MAX_LINES = 400;
+
+const EFFORT_COMMAND_RE = /^<command-name>\/effort<\/command-name><command-args>([^<]{0,40})<\/command-args>$/;
+
+function entryText(entry) {
+  if (typeof entry.content === 'string') return entry.content;
+  if (!Array.isArray(entry.content)) return '';
+  let text = '';
+  for (const block of entry.content) {
+    if (block && typeof block.text === 'string') text += block.text;
+  }
+  return text;
+}
+
+// Returns { decisive, value }: value is a whitelisted effort level, or null
+// when the newest record proves no session override (e.g. ultracode exited).
+// Non-decisive results keep the scan going at older records.
+function decideEffortFromEntry(entry) {
+  if (!entry || entry.type !== 'message' || entry.role !== 'user') return { decisive: false, value: null };
+  if (!entry.providerData || entry.providerData.skipRun !== true) return { decisive: false, value: null };
+  const text = entryText(entry);
+  const command = EFFORT_COMMAND_RE.exec(text.trim());
+  if (command) {
+    // An empty or non-whitelisted argument (picker opened, a rejected level,
+    // or the host's own unresolved `${level}` template) never changed the
+    // session state, so older records still describe the current effort.
+    const normalized = normalizeEffort(command[1]);
+    return normalized ? { decisive: true, value: normalized } : { decisive: false, value: null };
+  }
+  if (text.includes('ultra_effort_exit')) return { decisive: true, value: null };
+  if (text.includes('ultra_effort_enter')) return { decisive: true, value: 'ultracode' };
+  return { decisive: false, value: null };
+}
+
+function scanTranscriptEffortSignal(resolved, size) {
+  let fd = null;
+  try {
+    fd = fs.openSync(resolved, 'r');
+    const len = Math.min(EFFORT_SIGNAL_TAIL_BYTES, size);
+    const buf = Buffer.alloc(len);
+    const bytesRead = fs.readSync(fd, buf, 0, len, size - len);
+    if (!Number.isSafeInteger(bytesRead) || bytesRead <= 0) return null;
+    const lines = buf.toString('utf8', 0, bytesRead).split('\n');
+    let scanned = 0;
+    for (let i = lines.length - 1; i >= 0 && scanned < EFFORT_SIGNAL_MAX_LINES; i--) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      scanned++;
+      let entry;
+      try {
+        entry = JSON.parse(line);
+      } catch {
+        continue; // partial first line of the window or a corrupt line
+      }
+      const decision = decideEffortFromEntry(entry);
+      if (decision.decisive) return decision.value;
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch { /* already closed */ }
+    }
+  }
+}
+
+function getTranscriptEffortSignal(transcriptPath, cwd) {
+  if (!transcriptPath || typeof transcriptPath !== 'string' || transcriptPath.includes('\0')) return null;
+  let resolved;
+  try {
+    resolved = path.isAbsolute(transcriptPath)
+      ? transcriptPath
+      : path.resolve(cwd || process.cwd(), transcriptPath);
+  } catch {
+    return null;
+  }
+
+  let size = 0;
+  try {
+    size = fs.statSync(resolved).size;
+  } catch {
+    return null;
+  }
+  if (size <= 0) return null;
+  return scanTranscriptEffortSignal(resolved, size);
+}
+
 function resolveEffortLevel(cbData, config) {
   if (!cbData) return null;
 
@@ -108,6 +217,16 @@ function resolveEffortLevel(cbData, config) {
     effort = normalizeEffort(cbData.model.effort) || normalizeEffort(cbData.model.reasoning_effort);
     if (effort) return effort;
   }
+
+  // Session-scoped override from the transcript. Mirrors the host's own
+  // resolveEffectiveLevel order: the session selection wins over the
+  // settings.json reasoningEffort fallback. This is what keeps `ultracode`
+  // (which is never persisted to settings) visible on Line 1.
+  effort = getTranscriptEffortSignal(
+    cbData.transcript_path,
+    cbData.cwd || (cbData.workspace && cbData.workspace.current_dir),
+  );
+  if (effort) return effort;
 
   effort = normalizeEffort(getSettingsReasoningEffort());
   if (effort) return effort;
