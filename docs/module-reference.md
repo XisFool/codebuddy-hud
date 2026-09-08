@@ -1,6 +1,6 @@
 # CodeBuddy HUD 模块 API 参考手册 (Module Reference)
 
-> **版本：** `v0.1.0+`  
+> **版本：** `v0.2.0+`  
 > **根路径：** 所有模块相对路径均以仓库根目录或 `~/.codebuddy/codebuddy-hud-runtime/` 为基准。
 
 ---
