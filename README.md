@@ -4,11 +4,14 @@
 [![npm dependencies](https://img.shields.io/badge/npm%20dependencies-0-2ea44f)](#安装)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](#许可证)
 
-> CodeBuddy Code 的实时终端 statusLine HUD。每次会话刷新后，它在终端底部展示当前模型、上下文、Token、缓存命中、代码变更、会话 Credits 与工具活动。
->
-> 不需要 `npm install`，不会因为 HUD 出错而中断 CodeBuddy。仅在后台发起匿名轻量版本更新检查（24h/次，静默），不收集或上传任何代码与会话数据。
+> 专为 **CodeBuddy Code** 打造的实时终端 statusLine 看板。在终端底部以极简 3 行优雅呈现当前模型、Token 资源消耗、缓存命中、代码变更与实时工具活动。
 
-[GitHub 项目](https://github.com/XisFool/codebuddy-hud) · [最新稳定版](https://github.com/XisFool/codebuddy-hud/releases/latest) · [安装](#安装) · [主题换肤](#主题换肤) · [验证](#验证) · [诊断](#诊断) · [卸载](#卸载)
+- ⚡ **开箱即用 & 零依赖**：基于 Node.js 原生标准库开发，无需执行 `npm install`。
+- 🛡️ **轻量稳定 & 永不中断**：执行耗时通常 <200ms，内部异常静默降级，绝不因看板报错中断 CodeBuddy 交互。
+- 🎯 **真实遥测**：Token、Cache 命中率与 Credits 消费直接源自会话真实日志回溯，不虚构、不硬编码。
+- 🎨 **自由换肤**：内置 5 套精致 ANSI 配色主题，支持交互式实时所见即所得预览与深浅色终端自适应。
+
+[安装](#安装) · [显示效果](#显示效果) · [主题换肤](#主题换肤) · [配置指南](#配置指南) · [常见问题与排障](#常见问题与排障) · [卸载](#卸载) · [开发者文档](#开发者与深入参考)
 
 ---
 
@@ -20,327 +23,203 @@ Token 250.1k (in: 249k · out: 1.1k)  │  249k/1M [███░░░░░░�
 Δ +1.7k -161  │  82.04 credits  │  ⏱ 2h47m  │  ◐ Edit: parser.js  │  ✓ Read ×3  ✓ Grep ×2
 ```
 
-### 三行布局
+### 三行紧凑布局
 
-- **第 1 行：当前环境**。模型、推理强度、Git 分支、项目目录和权限模式。
-- **第 2 行：上下文资源**。本次上下文的输入/输出 Token、上下文进度和当前轮次缓存命中率。
-- **第 3 行：会话进度与工具活动**。代码新增/删除、当前会话 Credits、总耗时，以及当前工具活动（置前高亮正在执行的工具如 `◐ Edit: parser.js`，并聚合展示本轮已完成工具频次如 `✓ Read ×3  ✓ Grep ×2`）。
+- **Line 1：运行环境** — 智能展示当前模型、推理强度（effort）、Git 分支与变更标记、当前项目目录及权限模式。
+- **Line 2：Token 与缓存** — 本轮上下文 Token 消耗（输入/输出拆分）、图形化进度条与真实 Cache 命中率。
+- **Line 3：产出与工具** — 当前会话代码变更增删量（`Δ +N -M`）、实际累计 Credits 消费、总耗时，以及置前高亮的当前工具状态（如 `◐ Edit: parser.js`）与本轮工具频次聚合（如 `✓ Read ×3  ✓ Grep ×2`）。
 
-没有对应数据的行或片段会自动隐藏。HUD 最多输出 3 行。
-
-> CodeBuddy Code v2.146.0 实测将 statusLine 的 stdout 切分后仅保留前 3 行（`stdout.split("\n").slice(0, 3)`，stdout 捕获上限 10KB/10240 字节）。HUD 将工具活动直接并入第 3 行展示，确保在宿主截断限制下所有关键信息完整可见。宿主在会话事件后约 300ms 去抖刷新，空闲时不会周期重刷。
-
-
-支持 Unicode 的终端会显示 `Δ`、`█` 与暗灰 `░` 进度条；不支持时自动使用 `[D]`、`#`、`-` 等 ASCII 回退，不会显示乱码。Markdown 代码块不保留 ANSI 颜色，实际终端中的填充部分会按阈值显示绿色、黄色或红色。
+> **无感极简**：HUD 输出严格保持在 ≤3 行之内，无对应数据的行或片段自动隐藏，绝不遮挡主对话区。在不支持 Unicode 的终端自动平滑降级为 ASCII 字符，绝不乱码。
 
 ---
 
-## 一键极速安装（推荐）
+## 安装
 
-### Windows (PowerShell)
+### 方式一：一键极速安装（推荐）
+
+无需手动克隆代码，复制以下命令并在终端中运行：
+
+#### Windows (PowerShell)
 ```powershell
-irm https://raw.githubusercontent.com/XisFool/codebuddy-hud/v0.2.0/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.ps1 | iex
 ```
 
-### Linux / macOS (Bash)
+#### Linux / macOS (Bash)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/v0.2.0/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.sh | bash
 ```
 
-安装器会解析 [Latest Release](https://github.com/XisFool/codebuddy-hud/releases/latest) 并从其不可变 tag 下载运行时文件。若需固定到特定版本，可在执行安装命令前设置 `CODEBUDDY_HUD_VERSION`，例如 `v0.2.0`。
+安装脚本会自动检测 Node.js 环境，将运行时安装至 `~/.codebuddy/codebuddy-hud-runtime/`，并安全配置 CodeBuddy `settings.json`（首次安装会自动备份原配置）。
+
+> **安装成功后**：直接重启或新开一个 CodeBuddy Code 会话，终端底部即可实时看到 HUD！
 
 ---
 
-## 手动从源码安装
+### 方式二：从源码安装（开发者）
 
-前提：已安装 **Node.js >= 18**，并且本机已使用 CodeBuddy Code。
-
-### Windows PowerShell 或 cmd.exe
-
-```powershell
-git clone https://github.com/XisFool/codebuddy-hud.git
-cd codebuddy-hud
-node runtime/bin/codebuddy-hud.js --setup
-npm link  # 推荐：注册全局 codebuddy-hud 命令，方便在任意目录下换肤
-```
-
-### Linux、macOS 与 WSL
-
-```sh
-git clone https://github.com/XisFool/codebuddy-hud.git
-cd codebuddy-hud
-node runtime/bin/codebuddy-hud.js --setup
-npm link  # 推荐：注册全局 codebuddy-hud 命令，方便在任意目录下换肤
-```
-
-安装器会：
-
-1. 写入 CodeBuddy `settings.json` 的 `statusLine.command`。
-2. 首次覆盖已有 statusLine 前，备份原 settings 为 `settings.json.bak.codebuddy-hud`。
-3. 在 Windows 生成本机专用的 `runtime/bin/codebuddy-hud.cmd`。
-
-重新运行 `--setup` 是安全的：它会修复路径和 Windows Node 版本变更，但不会覆盖第一次安装留下的原始 settings 备份。
-
-安装器接受 BOM、JSONC 注释和尾逗号，保留字段值并写成标准 JSON；注释和原排版不会保留在写回文件中，首次备份保留原始文本。卸载成功后会移除已使用的备份。
-
-> Windows 的 `.cmd` shim 内含安装时的 Node 绝对路径，因此从 GUI 启动的 CodeBuddy 不依赖当前终端的 `PATH`。不要从其他电脑复制这个文件；切换 nvm、fnm、Volta 的 Node 版本后重新执行 `--setup`。
-
-> CodeBuddy Code v2.146.0 的 Windows 启动器存在引号二次转义问题。当前安装器会对安全 ASCII 路径省略引号；使用该宿主时建议将仓库放在类似 `D:\tools\codebuddy-hud` 的路径。含空格、Unicode 或 shell 特殊字符的安装路径仍可能无法通过宿主启动链。
-
----
-
-## 验证
-
-安装完成后，先在仓库目录运行：
+前提：本机已安装 **Node.js >= 18**。
 
 ```bash
-node runtime/bin/codebuddy-hud.js --status
+git clone https://github.com/XisFool/codebuddy-hud.git
+cd codebuddy-hud
+
+# 执行安装并注册 statusLine
+node runtime/bin/codebuddy-hud.js --setup
+
+# 推荐：注册全局命令，方便随时换肤与排障
+npm link
 ```
-
-它应输出示例 HUD。随后新开或刷新一个 CodeBuddy Code 会话，HUD 会出现在终端底部。
-
-也可以检查 `settings.json` 是否已包含 `statusLine`：
-
-```powershell
-Get-Content "$env:USERPROFILE\.codebuddy\settings.json"
-```
-
-```sh
-cat "$HOME/.codebuddy/settings.json"
-```
-
-默认 settings 路径：
-
-| 平台 | 默认路径 |
-| --- | --- |
-| Windows | `%USERPROFILE%\.codebuddy\settings.json` |
-| Linux / macOS / WSL | `$HOME/.codebuddy/settings.json` |
-
-settings 会保存安装时的仓库和 Node 绝对路径。因此仓库被移动、删除，或者 Node 安装路径变化后，只需回到仓库重新执行 `--setup`。
 
 ---
 
 ## 主题换肤
 
-`codebuddy-cli-hud` 内置 5 套经典 ANSI 主题，支持暗/亮色自适应与全局/项目级配置：
+`codebuddy-hud` 内置 5 套精心调色的 ANSI 主题：
 
 | 主题名称 | 风格定位 | 主色调 |
-| --- | --- | --- |
-| `ocean`（默认） | 深海青蓝 | 青蓝科技风，高可读性 |
-| `emerald` | 翡翠绿 | 清新护眼，自然舒适 |
+| :--- | :--- | :--- |
+| `ocean`（默认） | 深海青蓝 | 清爽科技风，高对比度易读 |
+| `emerald` | 翡翠绿 | 清新护眼，自然柔和 |
 | `cyberpunk` | 赛博朋克 | 炫酷粉紫 + 荧光青 |
-| `amber` | 琥珀金 | 沉稳金黄，复古终端 |
-| `monochrome` | 黑白极简 | 经典终端灰白 |
+| `amber` | 琥珀金 | 沉稳金黄，复古终端质感 |
+| `monochrome` | 黑白极简 | 经典灰白，纯粹无干扰 |
 
 ### 交互式“所见即所得”实时预览
 
-在任意终端运行以下命令，使用方向键 `↑` / `↓` 移动光标，屏幕下方将**实时动态渲染**出该主题的真实 ANSI 彩色看板效果，按 `Enter` 即可一键保存：
+运行主题选择器，使用方向键 `↑` / `↓` 移动，终端将**实时动态渲染**对应的 ANSI 看板效果，按 `Enter` 即可保存生效：
 
 ```bash
+# 源码安装（或已执行 npm link）
 codebuddy-hud --theme
+
+# 一键安装用户（Windows）
+& "$env:USERPROFILE\.codebuddy\codebuddy-hud-runtime\runtime\bin\codebuddy-hud.cmd" --theme
+
+# 一键安装用户（Linux / macOS）
+node "$HOME/.codebuddy/codebuddy-hud-runtime/runtime/bin/codebuddy-hud.js" --theme
 ```
 
-### 命令行快速切换
+> **小提示**：在 CodeBuddy 会话内，你也可以直接对 AI 助手说：`帮我更换 HUD 主题` 或输入 `/hud-config` 触发可视化配置。
+
+### 命令行快捷切换
 
 ```bash
-# 切换为赛博朋克主题
+# 切换至赛博朋克主题
 codebuddy-hud --theme cyberpunk
 
-# 查看所有主题列表与当前激活主题
+# 查看所有主题与当前激活状态
 codebuddy-hud --theme list
 ```
 
-### 暗/亮色自适应
+### 深浅色终端自适应
 
-HUD 会自动感知 CodeBuddy 全局主题配置与终端背景环境变量（`COLORFGBG`）。在浅色/白底终端下，HUD 会自动启用高对比度深色阶，杜绝文本看不清问题。
-
----
-
-## 诊断与环境检查
-
-### 运行内置环境体检器 (`--doctor`)
-
-HUD 内置一键诊断工具，可全面排查 Node 版本、Settings 配置、终端编码、Git 耗时与 Transcript 日志权限：
-
-```bash
-codebuddy-hud --doctor
-# 或者输出 JSON 结构（用于 Issue 报告）
-codebuddy-hud --doctor --json
-```
-
-### 没有看到 HUD
-
-最常见原因是 `statusLine.command` 指向了已移动的仓库或旧 Node 路径。进入仓库后重新执行：
-
-```bash
-node runtime/bin/codebuddy-hud.js --setup
-```
-
-若手动 `--status` 正常但宿主仍无 HUD，检查 `runtime/bin/codebuddy-hud.cmd` 是否存在，并核对上面的 Windows 路径限制。恢复入口后，在原会话发一条消息触发刷新。`--status` 只验证 HUD 渲染，不会验证宿主启动器。
-
-### Unicode 图标或进度条乱码 / 强制切换
-
-强制使用 ASCII（兼容纯文本终端）：
-
-```powershell
-$env:CODEBUDDY_HUD_FORCE_ASCII = '1'
-```
-
-```sh
-export CODEBUDDY_HUD_FORCE_ASCII=1
-```
-
-强制启用 Unicode（在支持 UTF-8 的终端强制开启）：
-
-```powershell
-$env:CODEBUDDY_HUD_FORCE_UNICODE = '1'
-```
-
-```sh
-export CODEBUDDY_HUD_FORCE_UNICODE=1
-```
-
-也可以删除 CodeBuddy 根目录中的 `codebuddy-hud-cache-state.json` 后重新打开会话，让 HUD 重新检测终端编码。
-
-### Credits 未显示或看起来不是账号总消费
-
-Credits 只针对当前 `transcript_path`，不是账户历史总消费。请确认 transcript 中包含数值型 `providerData.rawUsage.credit`；没有 `transcript_path` 时，HUD 无法读取 transcript 累计值。
-
-### `/clear` 后 Diff 或计时没有重置
-
-等待下一次 statusLine 刷新。HUD 通过 `session_id` 变化、上下文累计回退或当前上下文回到初始小值识别清空边界。若宿主不提供任何这些边界信号，HUD 会保留原始统计，避免把正常上下文压缩误判为 `/clear`。
-
-### HOME、settings 或状态目录不可写
-
-HUD 会静默降级并保持 CodeBuddy 正常运行。若要完成安装或保存状态，请把 `CODEBUDDY_HOME` 或 `CODEBUDDY_SETTINGS_PATH` 指向可写位置。
+HUD 会自动识别 CodeBuddy 全局主题与终端背景环境（`COLORFGBG`）。在浅色/白底终端下，自动切换至高对比度深色阶，彻底杜绝浅底看不清字的问题。
 
 ---
 
-## 卸载
+## 配置指南
 
-在仓库目录执行：
-
-```bash
-node runtime/bin/codebuddy-hud.js --uninstall
-```
-
-卸载器只从首次备份恢复 `statusLine` 字段，保留安装后新增的其他 settings。没有可用备份时，仅移除本项目写入的 statusLine。HUD 缓存、Credits checkpoint、会话统计基线和 Windows `.cmd` shim 会被清理；用户主题配置 `codebuddy-hud.config.json` 会保留。配置写入失败时保留备份以便恢复。
-
----
-
-## 配置（可选）
-
-默认配置已经适合日常使用。需要按项目调整时，在项目根目录创建 `codebuddy-hud.config.json`：
+默认配置已经适配绝大多数日常开发场景。若需要针对特定项目或全局个性化调整，可在项目根目录（或 `~/.codebuddy/` 目录）创建 `codebuddy-hud.config.json`：
 
 ```json
 {
-  "theme": "cyberpunk",
+  "theme": "ocean",
   "themeMode": "auto",
   "display": {
     "showToolActivity": true,
     "showCacheHitRate": true,
     "showDiffStats": true,
+    "showCost": true,
+    "useNerdFonts": false,
     "unicode": "auto"
-  }
+  },
+  "language": "zh"
 }
 ```
 
-| 配置 | 类型 / 默认值 | 作用 |
-| --- | --- | --- |
-| `theme` | `string` / `"ocean"` | 主题名称（`"ocean"`、`"emerald"`、`"cyberpunk"`、`"amber"`、`"monochrome"`）或自定义调色对象。 |
-| `themeMode` | `string` / `"auto"` | 模式自适应（`"auto"`、`"dark"`、`"light"`）。 |
-| `display.showTokenBar` | `boolean` / `true` | 显示或隐藏 Token 与上下文进度条。 |
-| `display.showDiffStats` | `boolean` / `true` | 显示或隐藏代码变更统计（Line 3）。 |
-| `display.showCost` | `boolean` / `true` | 显示或隐藏 Credits / 成本消费（Line 3）。 |
-| `display.showDuration` | `boolean` / `true` | 显示或隐藏总耗时与 API 耗时（Line 3）。 |
-| `display.showCurrentDir` | `boolean` / `true` | 显示或隐藏当前目录名（Line 1）。 |
-| `display.showGitBranch` | `boolean` / `true` | 显示或隐藏 Git 分支名与脏标记（Line 1）。 |
-| `display.showPermissionMode` | `boolean` / `true` | 显示或隐藏权限模式（Line 1）。 |
-| `display.showVersion` | `boolean` / `false` | 显示或隐藏宿主版本号（Line 1）。 |
-| `display.showToolActivity` | `boolean` / `true` | 显示或隐藏最近工具活动与聚合频次（Line 3 尾部）。 |
-| `display.toolActivityTailBytes` | `number` / `16384` | transcript 回扫初始滑窗字节数。 |
-| `display.progressBarWidth` | `number` / `10` | 上下文进度条字符宽度。 |
-| `display.maxLines` | `number` / `3` | 最大输出行数（结构上限 ≤3 行）。 |
-| `display.unicode` | `string|boolean` / `"auto"` | `"auto"`、`true` 或 `false`。 |
-| `display.useNerdFonts` | `boolean` / `false` | 设为 `true` 时使用 Nerd Fonts 图标。 |
-| `thresholds` | `object` | 上下文使用率进度条颜色阈值，默认 `{ "warning": 0.7, "critical": 0.9 }`。 |
-| `cacheHitThresholds` | `object` | Cache 命中率四级色阶阈值，默认 `{ "excellent": 80, "partial": 50 }`。 |
-| `defaultEffortLevel` | `string` / `"medium"` | 默认思考推理强度兜底（`"low"`, `"medium"`, `"high"`, `"xhigh"`, `"max"`, `"ultracode"`）。 |
-| `language` | `string` / `"en"` | HUD 界面语言（`"en"` 英文、`"zh"` 中文）。 |
+### 常用配置选项
 
-无论怎样配置，HUD 都不会超过 3 行。
-
+| 配置项 | 类型 / 默认值 | 说明 |
+| :--- | :--- | :--- |
+| `theme` | `string` / `"ocean"` | 主题名称（`"ocean"`, `"emerald"`, `"cyberpunk"`, `"amber"`, `"monochrome"`） |
+| `themeMode` | `string` / `"auto"` | 颜色自适应模式（`"auto"`, `"dark"`, `"light"`） |
+| `language` | `string` / `"en"` | 界面语言（`"zh"` 中文、`"en"` 英文） |
+| `display.showToolActivity` | `boolean` / `true` | 是否在第 3 行展示后台工具活动与调用频次 |
+| `display.showCacheHitRate` | `boolean` / `true` | 是否展示 Prompt Cache 命中率 |
+| `display.showDiffStats` | `boolean` / `true` | 是否展示本次会话代码修改增删量 |
+| `display.showCost` | `boolean` / `true` | 是否展示当前会话 Credits 消费统计 |
+| `display.showDuration` | `boolean` / `true` | 是否展示会话累计耗时 |
+| `display.showTokenBar` | `boolean` / `true` | 是否展示 Token 消耗与进度条 |
+| `display.useNerdFonts` | `boolean` / `false` | 是否开启 Nerd Fonts 矢量小图标（需终端字体支持） |
+| `display.unicode` | `string` / `"auto"` | 图标字符集（`"auto"` 自动探测、`true` 强制 Unicode、`false` 纯 ASCII） |
 
 ---
 
-## 数据口径
+## 常见问题与排障
 
-### Token 与 cache
+### 1. 一键环境诊断体检（--doctor）
+当状态栏未正常显示或怀疑环境配置有异常时，请运行内置体检器：
 
-`Token` 显示的是当前 `context_window.current_usage` 的输入和输出，不是整个会话累计。上下文进度条也使用当前上下文数据，因此不会出现累计 Token 与进度百分比不一致的情况。
+```bash
+# 源码安装或已 link
+codebuddy-hud --doctor
 
-`cache` 优先使用 transcript 中当前对话轮次的 provider telemetry 聚合计算。遥测缺失时显示 `cache --`，不会把未知状态伪装成 0%。
+# 一键安装用户（Windows）
+& "$env:USERPROFILE\.codebuddy\codebuddy-hud-runtime\runtime\bin\codebuddy-hud.cmd" --doctor
 
-### Diff 与耗时
+# 一键安装用户（macOS / Linux）
+node "$HOME/.codebuddy/codebuddy-hud-runtime/runtime/bin/codebuddy-hud.js" --doctor
+```
+体检器会自动检查 Node 版本、配置文件语法、终端代码页编码、Git 耗时与日志访问权限。
 
-`Δ +N -M`、总耗时和 API 耗时都代表当前逻辑会话。执行 `/clear` 后，HUD 识别到会话边界时会从零开始统计。
+### 2. 安装后没有看到 HUD 状态栏？
+- **触发交互**：CodeBuddy Code 在空闲时不会主动重绘状态栏。请在会话中随便发送一条消息，触发事件去抖后状态栏即会呈现。
+- **Windows 路径限制**：请尽量避免将仓库或运行时放在包含空格、引号或特殊字符的目录中，以免触发 Windows 启动链转义异常。
 
-### Credits
+### 3. 终端出现乱码或进度条方块不正常？
+HUD 会自动探测终端编码，但在部分 Windows 默认 GBK 终端中可能受限：
+- **方案 A（推荐）**：在终端运行 `chcp 65001` 开启 UTF-8 支持；
+- **方案 B（强制纯文本）**：设置环境变量 `$env:CODEBUDDY_HUD_FORCE_ASCII = '1'` (PowerShell) 或 `export CODEBUDDY_HUD_FORCE_ASCII=1` (Bash)。
 
-Credits 是当前 `transcript_path` 对应会话的**累计实际消费**：它汇总所有合法的 `providerData.rawUsage.credit`，不是模型倍率、不是单轮消费、也不是整个用户历史的总额。
+### 4. Credits 显示为 `--` 或与账户总额不一致？
+- Credits 显示的是**当前会话的实际累计消费**，不是账户历史总额。
+- 当处于全新会话或当前模型服务商未返回费用遥测时，HUD 会优雅显示 `cache --` 或隐藏消费段，绝不伪造假数据。
 
-- `credit: 0` 会被保留为真实零消费。
-- 缺失、负数、字符串、`NaN` 和无限值不会计入。
-- 每个 transcript 独立累计；新 transcript 即新会话。
-- 有有效 transcript credit 时，优先显示它，而不是 payload 的美元估值。
-- 重建累计值采用约 100ms 的分块扫描预算。尚未扫描完成时暂时隐藏 Credits，下一次事件刷新继续扫描；不会把已扫描部分显示为会话总额。
-- 没有 `transcript_path` 时，只能回退使用 payload 明示的 `cost.credits`。
+### 5. 执行 `/clear` 后变更量与耗时没有重置？
+HUD 具备会话重置识别机制。在执行 `/clear` 后，向 AI 发送下一条新指令时，HUD 会自动重置基线并重新开始统计。
 
 ---
 
-## 高级路径与环境变量设置
+## 卸载
 
-默认 CodeBuddy 根目录为 `~/.codebuddy`。需要隔离测试、便携安装或排障时，可以使用：
+如果你想卸载 HUD 并还原终端设置，执行以下命令即可：
 
-这些变量只隔离配置与状态目录。安装或卸载仍会操作所调用 runtime 旁的 Windows shim；自动化验证请使用 `npm run verify:install`，它会同时复制 runtime 到临时目录。
+```bash
+# 源码安装
+node runtime/bin/codebuddy-hud.js --uninstall
 
-| 变量 | 用途 |
-| --- | --- |
-| `CODEBUDDY_HOME` | 覆盖 CodeBuddy 根目录；HUD 缓存与 transcript 状态放在其中。 |
-| `CODEBUDDY_SETTINGS_PATH` | 直接指定 `settings.json`，优先级高于 `CODEBUDDY_HOME`。 |
-| `CODEBUDDY_HUD_FORCE_ASCII` | 设为 `1` 时强制使用 ASCII 字符，禁用 Unicode 图标与进度条。 |
-| `CODEBUDDY_HUD_FORCE_UNICODE` | 设为 `1` 时强制开启 Unicode 图标与进度条。 |
-| `CODEBUDDY_HUD_VERSION` | 安装时固定下载的 Release tag，例如 `v0.2.0`。 |
-| `CODEBUDDY_HUD_RAW_BASE` | 安装时覆盖运行时下载源，仅用于镜像或测试。 |
+# 一键安装（Windows）
+& "$env:USERPROFILE\.codebuddy\codebuddy-hud-runtime\runtime\bin\codebuddy-hud.cmd" --uninstall
 
-PowerShell：
-
-```powershell
-$env:CODEBUDDY_HOME = 'D:\temp\codebuddy-home'
-node runtime/bin/codebuddy-hud.js --setup
+# 一键安装（Linux / macOS）
+node "$HOME/.codebuddy/codebuddy-hud-runtime/runtime/bin/codebuddy-hud.js" --uninstall
 ```
 
-Bash、zsh 或 WSL：
-
-```sh
-export CODEBUDDY_HOME="/tmp/codebuddy-home"
-node runtime/bin/codebuddy-hud.js --setup
-```
+> **安全还原保障**：卸载器会自动从安装时生成的备份中恢复原 `statusLine` 配置，并清理 HUD 生成的缓存与 shim，完全不会触碰你的其他 CodeBuddy 个人偏好设置。
 
 ---
 
-## 隐私、兼容性与限制
+## 开发者与深入参考
 
-- 仅在后台发起匿名轻量版本更新检查（每 24 小时最多一次，静默 HTTPS 查询 Latest Release），不收集或上传任何代码、会话或用户数据。不读取 transcript 以外的会话内容。
-- 所有输出到终端的外部文本都会经过 `sanitizeTerminalText()`；ANSI/OSC 注入、控制字符和 bidi/RTL 控制字符会被移除。
-- Credits checkpoint 和会话基线只保存在本机 CodeBuddy 根目录。缓存损坏、文件截断或状态不可写时会自动降级，不会中断 HUD。
-- Windows、Linux、macOS、WSL 均有运行时支持；宿主 v2.146.0 的 Windows 引号限制见安装说明。
-- 配置写入保留现有 POSIX 权限并跟随有效符号链接；新配置及首次备份默认 `0600`。多硬链接配置不做原子替换，以免悄悄断开链接关系。
-- 单次运行目标小于 1500ms，所有内部异常静默处理并以 exit code `0` 结束。
-- 特别巨大的单条 transcript 记录可能使较早的工具活动或当前轮 cache telemetry 不可见；HUD 会省略该段或回退到 payload。
+本项目为 AI Agent 与终端极客提供了透明且详尽的架构与模块设计文档：
+
+- [**AGENTS.md**](AGENTS.md) — 面向 AI 编码助手的系统硬约束、避坑指南与提交契约。
+- [**架构设计全景说明 (architecture_zh.md)**](docs/architecture_zh.md) — 物理双层架构、逆向遥测状态机与性能预算设计。
+- [**模块 API 参考手册 (module-reference.md)**](docs/module-reference.md) — 22 个核心模块职责、接口定义与状态流转。
+- [**版本变更记录 (CHANGELOG.md)**](CHANGELOG.md) — 历史版本演进与发布记录。
 
 ---
 
 ## 许可证
 
-MIT
+本项目基于 [MIT License](LICENSE) 开源发布。
