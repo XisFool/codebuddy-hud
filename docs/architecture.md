@@ -15,7 +15,7 @@
 2. **Statusline Host Contract**:
    - **Execution Budget**: $\le 1500\text{ms}$ total, with an internal stdin read timeout of $800\text{ms}$. Timers cannot preempt synchronous filesystem calls or JSON parsing.
    - **Constant Zero Exit Code**: The process must **always** terminate with `process.exitCode = 0`. Uncaught runtime exceptions are redirected to `~/.codebuddy/codebuddy-hud-error.log` (capped at 1MB with auto-rotation) to prevent host terminal disruption.
-   - **Output Height Boundary**: Strictly $\le 4$ ANSI-formatted terminal lines. Unused or empty lines are dynamically pruned.
+   - **Output Height Boundary**: Strictly $\le 3$ ANSI-formatted terminal lines, aligned with the host's 3-line truncation limit. Unused or empty lines are dynamically pruned.
 3. **Truthful & Non-Fabricated Telemetry**: Prompt Cache hit percentages and cumulative Credit expenditures are extracted directly from authentic session `transcript.jsonl` records, gracefully degrading to `cache --` when telemetry is absent.
 
 ---
@@ -37,7 +37,7 @@
 │   parser.js · config.js · paths.js · encoding.js · git.js · sanitize.js │
 │   doctor.js · update-checker.js · session-stats.js · uninstall.js       │
 │   transcript.js (Reverse sliding-window & SHA-256 telemetry scanner)     │
-│   renderer.js (4-Line orchestration) ──> renderer/ (format, diff, agents)│
+│   renderer.js (3-Line orchestration) ──> renderer/ (format, diff, agents)│
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 

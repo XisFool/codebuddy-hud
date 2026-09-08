@@ -39,8 +39,8 @@ scripts/verify-install.js      隔离宿主安装/卸载生命周期契约验证
 ```
 
 > **深度参考指针（按需查阅，避免全量预载）**：
-> - 模块 API 签名、内部状态与导出函数：查阅 [docs/module-reference.md](docs/module-reference.md)。
-> - 系统物理两层设计与数据流拓扑：查阅 [docs/architecture_zh.md](docs/architecture_zh.md)。
+> - **模块契约与状态机**（修改接口签名、状态落盘格式、会话基线与 handoff 逻辑）：查阅 [docs/module-reference.md](docs/module-reference.md)。
+> - **系统架构与数据流**（理解物理双层隔离、宿主时序、逆向滑窗遥测与故障降级）：查阅 [docs/architecture_zh.md](docs/architecture_zh.md)。
 
 ## 测试与验证命令
 

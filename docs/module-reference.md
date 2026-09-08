@@ -21,14 +21,17 @@
 12. [`runtime/encoding.js` — 终端字符集探测与 Windows 代码页缓存](#12-runtimeencodingjs--终端字符集探测与编码缓存)
 13. [`runtime/sanitize.js` — 终端文本安全清洗与 ANSI/Bidi 注入防御](#13-runtimesanitizejs--终端文本安全清洗器)
 14. [`runtime/paths.js` — 跨平台路径解析与状态目录管理](#14-runtimepathsjs--跨平台路径解析与目录管理)
-15. [`runtime/statusline-installer.js` — 状态栏注册与 Windows Shim 烘焙器](#15-runtimestatusline-installerjs--状态栏注册与-shim-烘焙)
-16. [`runtime/doctor.js` — 环境体检与排障诊断子系统](#16-runtimedoctorjs--环境体检与排障诊断)
-17. [`runtime/update-checker.js` — 24h 异步更新检查与防惊群预占位锁](#17-runtimeupdate-checkerjs--异步更新检查与防惊群锁)
-18. [`runtime/theme-selector.js` — 交互式终端主题选择器](#18-runtimetheme-selectorjs--交互式主题选择器)
-19. [`runtime/uninstall.js` — 卸载还原与状态深度清理器](#19-runtimeuninstalljs--卸载还原与深度清理)
-20. [`scripts/bootstrap.js` — 跨平台原子安装引导程序](#20-scriptsbootstrapjs--跨平台原子安装引导)
-21. [`scripts/verify-display.js` — 看板端到端验证](#21-scriptsverify-displayjs--看板端到端验证)
-22. [`skills/hud-config/SKILL.md` — HUD 配置技能](#22-skillshud-configskillmd--hud-配置技能)
+15. [`runtime/settings-file.js` — JSONC 安全解析与配置原子写入](#15-runtimesettings-filejs--jsonc-安全解析与配置原子写入)
+16. [`runtime/statusline-installer.js` — 状态栏注册与 Windows Shim 烘焙器](#16-runtimestatusline-installerjs--状态栏注册与-shim-烘焙)
+17. [`runtime/doctor.js` — 环境体检与排障诊断子系统](#17-runtimedoctorjs--环境体检与排障诊断)
+18. [`runtime/update-checker.js` — 24h 异步更新检查与防惊群预占位锁](#18-runtimeupdate-checkerjs--异步更新检查与防惊群锁)
+19. [`runtime/theme-selector.js` — 交互式终端主题选择器](#19-runtimetheme-selectorjs--交互式主题选择器)
+20. [`runtime/uninstall.js` — 卸载还原与状态深度清理器](#20-runtimeuninstalljs--卸载还原与深度清理)
+21. [`scripts/bootstrap.js` — 跨平台原子安装引导程序](#21-scriptsbootstrapjs--跨平台原子安装引导)
+22. [`scripts/run-tests.js` — 跨平台测试分发驱动脚本](#22-scriptsrun-testsjs--跨平台测试分发驱动)
+23. [`scripts/verify-display.js` — 看板端到端验证](#23-scriptsverify-displayjs--看板端到端验证)
+24. [`scripts/verify-install.js` — 隔离宿主生命周期验证](#24-scriptsverify-installjs--隔离宿主生命周期验证)
+25. [`skills/hud-config/SKILL.md` — HUD 配置技能](#25-skillshud-configskillmd--hud-配置技能)
 
 ---
 
@@ -339,7 +342,7 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 
 ## 14. `runtime/paths.js` — 跨平台路径解析与目录管理
 
-**职责：** 统一定位 CodeBuddy 配置目录（优先支持 `CODEBUDDY_HOME` 与 `CODEBUDDY_SETTINGS_PATH` 环境变量）。
+**职责：** 统一定位 CodeBuddy 配置目录（优先支持 `CODEBUDDY_HOME` 与 `CODEBUDDY_SETTINGS_PATH` 环境变量），并提供跨平台文件哈希与状态路径解析。
 
 ### 核心路径查询函数
 - `getCodeBuddyHome(): string`: 返回 `~/.codebuddy` 或覆盖路径。
@@ -347,16 +350,42 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 - `getUserConfigPath(): string`: 返回 `codebuddy-hud.config.json` 路径。
 - `getErrorLogPath(): string`: 返回 `codebuddy-hud-error.log` 路径。
 - `getUpdateStatusPath(): string`: 返回 `codebuddy-hud-update-status.json` 路径。
+- `getGitCachePath(): string`: 返回 `codebuddy-hud-git-cache.json` 路径。
 - `getTranscriptUsageStateDir(): string`: 返回 `codebuddy-hud-usage-state/` 目录。
+- `getTranscriptUsageStatePath(transcriptPath: string): string`: 按 transcript 绝对路径 SHA-256 哈希隔离的增量遥测 checkpoint 路径。
 - `getSessionStatsStateDir(): string`: 返回 `codebuddy-hud-session-state/` 目录。
-- `normalizePlatformPath(p: string): string`: 平台感知路径归一化——Windows 下 resolve 后整体小写（消除盘符 `d:`/`D:` 哈希分裂），POSIX 保留大小写语义。
+- `getSessionStatsStatePath(identity: string): string`: 按会话 identity 哈希隔离的基线状态路径。
+- `getSessionStatsHandoffPath(cwd: string): string`: 会话 `/clear` 跨文件切换时的进程级 cost 累计交接状态路径（`handoff-<sha256(cwd)>.json`）。宿主 `/clear` 会产生新 transcript 文件，通过此 cwd 作用域文件在新旧 identity 之间交接基线，避免累计 Δ/⏱ 计数全额丢失。
 - `getSessionEffortStatePath(transcriptPath: string): string`: 返回按 transcript 路径哈希寻址的会话 effort 状态文件 `codebuddy-hud-session-state/effort-<sha256>.json`。
+- `normalizePlatformPath(p: string): string`: 平台感知路径归一化——Windows 下 resolve 后整体小写（消除盘符 `d:`/`D:` 哈希分裂），POSIX 保留大小写语义。
 
 ---
 
-## 15. `runtime/statusline-installer.js` — 状态栏注册与 Shim 烘焙
+## 15. `runtime/settings-file.js` — JSONC 安全解析与配置原子写入
 
-**职责：** 将 HUD 配置写入 `settings.json`，并在 Windows 上烘焙固化 Node 绝对路径的 `.cmd` shim。
+**职责：** 针对宿主 `settings.json` 进行安全读取、注释剥离、符号链接目标解析、原子写盘与权限保全。
+
+### 接口定义
+```typescript
+export function parseSettingsJson(raw: string): object;
+export function stripJsonComments(text: string): string;
+export function atomicWriteSettingsFile(targetPath: string, content: string): void;
+export function resolveWriteTarget(filePath: string): { realPath: string; stat: fs.Stats | null };
+export function isSettingsObject(value: unknown): boolean;
+export function writePrivateFileIfAbsent(filePath: string, content: string): boolean;
+```
+
+### 核心安全契约
+- **严格保护字符串内容**：`stripJsonComments()` 仅剔除双引号字符串外的单行 `//` 与块级 `/* */` 注释，保留换行符与空格以确保 JSON 语法报错行号对齐；绝不误改字符串内部的路径或 URL。
+- **符号链接解析跟随**：`resolveWriteTarget()` 循环解引用符号链接（上限 40 层防环），确保写操作直接作用于最终真实目标文件。
+- **原子替换与硬链接保护**：通过临时文件（`.tmp-<pid>-<time>`）写入后执行 `fs.renameSync()` 原子替换；检测到硬链接数 `nlink > 1` 时主动拒绝原子替换，防止意外破坏硬链接。
+- **POSIX 权限保全**：继承目标文件原有的 mode/uid/gid；新创建的配置文件与首次备份默认赋予严格的 `0600` 私有权限。
+
+---
+
+## 16. `runtime/statusline-installer.js` — 状态栏注册与 Shim 烘焙器
+
+**职责：** 将 HUD 注册进 CodeBuddy `settings.json` 的 `statusLine` 配置项，并在 Windows 平台生成固化 Node 绝对路径的 `.cmd` shim 启动脚本。
 
 ### 接口定义
 ```typescript
@@ -369,18 +398,16 @@ export function setup(options?: {
 
 export function buildStatusLineCommand(platform: string, hudBin: string, nodeExe: string): string;
 export function buildCmdShimContent(nodeExe: string, hudBin?: string): string;
-export function parseSettingsJson(raw: string): object;
 ```
 
-`runtime/settings-file.js` 提供共享的 JSONC 解析与配置写入：仅处理字符串外的注释和尾逗号；跟随有效符号链接写入真实目标；保留 POSIX mode/uid/gid，新配置及首次备份默认 `0600`。多硬链接目标拒绝原子替换。首次备份不会覆盖，卸载写入失败时不删除备份。
-
-安装和卸载成功时使用 `JSON.stringify` 写回标准 JSON，保证字段值而非注释/排版的保真；首次备份保留原始文本，成功恢复后删除。读取 settings 失败时不进入配置修改。
-
-Windows shim 使用 UTF-8 和安装时的 Node 路径。v2.146.0 containment 不兼容字面引号的二次转义，只有安全 ASCII 命令路径可以省略引号。
+### 关键机制
+- **Windows Shim 路径固化与转义**：将安装时刻的 `process.execPath` 烘焙入 `.cmd` 启动器，路径中的 `%` 统一转义为 `%%` 阻断变量展开；在包含非 ASCII 字符时前置 `@chcp 65001 >nul`。
+- **宿主引号容灾**：CodeBuddy Code v2.146.0 的 Windows containment 启动器存在二次转义字面引号的已知缺陷，纯 ASCII 安全命令路径直接省略外层引号。
+- **无损配置恢复保障**：首次安装前将原始 `settings.json` 备份为 `settings.json.bak`（仅备份一次，永不覆盖老备份）。安装成功后通过 `settings-file.js` 以原子写入写回标准格式。
 
 ---
 
-## 16. `runtime/doctor.js` — 环境体检与排障诊断
+## 17. `runtime/doctor.js` — 环境体检与排障诊断
 
 **职责：** 采集 Node、CodeBuddy 配置、终端编码、Git 与 Transcript 状态，执行物理路径真实存在性校验。
 
@@ -399,7 +426,7 @@ export function printDoctorReport(report: DoctorReport, isJson?: boolean): void;
 
 ---
 
-## 17. `runtime/update-checker.js` — 异步更新检查与防惊群锁
+## 18. `runtime/update-checker.js` — 异步更新检查与防惊群锁
 
 **职责：** 后台非阻塞检查 GitHub 最新版本，前置预占位锁防并发进程爆炸。
 
@@ -411,11 +438,11 @@ export function compareVersions(v1: string, v2: string): 1 | -1 | 0;
 export function parseSemver(v: string): [number, number, number];
 ```
 
-网络失败保留最后一次有效更新信息，只刷新检查时间。spawn 前写 `lastCheck` 是节流，不是跨进程互斥锁。
+网络失败保留最后一次有效更新信息，只刷新检查时间。spawn 前写 `lastCheck` 作为本地并发节流阀。
 
 ---
 
-## 18. `runtime/theme-selector.js` — 交互式主题选择器
+## 19. `runtime/theme-selector.js` — 交互式主题选择器
 
 **职责：** 终端 Raw 模式下方向键交互式选择主题，实时动态刷新 ANSI 看板预览，退出时释放 stdin 句柄。
 
@@ -427,7 +454,7 @@ export function printThemesList(): void;
 
 ---
 
-## 19. `runtime/uninstall.js` — 卸载还原与深度清理
+## 20. `runtime/uninstall.js` — 卸载还原与深度清理
 
 **职责：** 从首次备份仅还原 `statusLine`，保留其他 settings 及用户主题配置；移除对应 runtime 的 Windows shim 与用户缓存。有效备份在配置写入成功后才删除。
 
@@ -438,7 +465,7 @@ export function uninstall(options?: object): void;
 
 ---
 
-## 20. `scripts/bootstrap.js` — 跨平台原子安装引导
+## 21. `scripts/bootstrap.js` — 跨平台原子安装引导
 
 **职责：** 支持本地与 GitHub Raw 远程安装，通过临时目录 `.tmp-<pid>` + 原子重命名完成无缝安装覆盖。默认从 GitHub Latest Release 读取 `tag_name`，再从对应不可变 tag 下载；`CODEBUDDY_HUD_VERSION` 可固定 tag。
 
@@ -451,12 +478,24 @@ export function uninstall(options?: object): void;
 
 ---
 
-## 21. `scripts/verify-display.js` — 看板端到端验证
+## 22. `scripts/run-tests.js` — 跨平台测试分发驱动
 
-**职责：** 执行 `npm run verify` 的 10 个 CLI、payload 与边界场景，验证看板行数、命令形态与容错契约。
+**职责：** `npm test` 底层执行驱动。通过深度遍历搜集所有单元测试文件的绝对路径，直接向 `node --test` 喂入全量文件参数，彻底规避 Node 18/20 glob 在 Windows 路径反斜杠下的跨平台匹配陷阱与 `MODULE_NOT_FOUND` 假阳性。
 
 ---
 
-## 22. `skills/hud-config/SKILL.md` — HUD 配置技能
+## 23. `scripts/verify-display.js` — 看板端到端验证
+
+**职责：** 执行 `npm run verify` 的 10 个 CLI、payload 与边界场景，验证看板行数（严格 $\le 3$ 行）、命令形态与容错契约。
+
+---
+
+## 24. `scripts/verify-install.js` — 隔离宿主生命周期验证
+
+**职责：** 执行 `npm run verify:install`，在全隔离的临时沙箱中验证真实环境下的安装与卸载闭环。必须同时三重隔离 `CODEBUDDY_HOME`、`CODEBUDDY_SETTINGS_PATH` 与运行时目录，防止测试执行污染或误删工作区开发中的真实 `.cmd` shim。
+
+---
+
+## 25. `skills/hud-config/SKILL.md` — HUD 配置技能
 
 **职责：** 为 AI Agent 提供主题、图标与显示项配置的交互式引导，并将选择写入项目或全局 `codebuddy-hud.config.json`。
