@@ -15,7 +15,7 @@
 ## 显示效果
 
 ```text
-DeepSeek V4 Flash ⚡max  │  main*  │  my-project  │  default
+DeepSeek V4 Flash ● max  │  main*  │  my-project  │  default
 Token 250.1k (in: 249k · out: 1.1k)  │  249k/1M [███░░░░░░░] 25%  │  cache 96.8%
 Δ +1.7k -161  │  82.04 credits  │  ⏱ 2h47m  │  ◐ Edit: parser.js  │  ✓ Read ×3  ✓ Grep ×2
 ```
