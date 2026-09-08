@@ -26,7 +26,6 @@ const RUNTIME_FILES = [
   'runtime/renderer/agents-render.js',
   'runtime/renderer/diff-render.js',
   'runtime/renderer/format.js',
-  'runtime/renderer/lang.js',
   'runtime/sanitize.js',
   'runtime/session-stats.js',
   'runtime/settings-file.js',

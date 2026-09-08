@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { DICTIONARY, detectLanguage, getI18n } = require('../../runtime/renderer/lang.js');
+const { DICTIONARY, detectLanguage, getI18n } = require('../../runtime/lang.js');
 
 describe('i18n lang module', () => {
   test('defines both zh and en dictionaries', () => {
@@ -13,11 +13,11 @@ describe('i18n lang module', () => {
     assert.ok(DICTIONARY.en.themeSelectTitle);
   });
 
-  test('runtime/lang.js re-exports runtime/renderer/lang.js', () => {
+  test('runtime/lang.js exports expected helpers and dictionary', () => {
     const rootLang = require('../../runtime/lang.js');
-    const rendererLang = require('../../runtime/renderer/lang.js');
-    assert.equal(rootLang, rendererLang);
     assert.equal(typeof rootLang.getI18n, 'function');
+    assert.equal(typeof rootLang.detectLanguage, 'function');
+    assert.ok(rootLang.DICTIONARY);
   });
 
   test('detectLanguage respects explicit configuration', () => {

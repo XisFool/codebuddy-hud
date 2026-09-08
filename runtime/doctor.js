@@ -7,7 +7,7 @@ const { getCodeBuddyHome, getSettingsPath, getErrorLogPath, getTranscriptUsageSt
 const { supportsUnicode } = require('./encoding');
 const { detectThemeMode, loadConfig } = require('./config');
 const { getGitStatus } = require('./git');
-const { getI18n } = require('./renderer/lang');
+const { getI18n } = require('./lang');
 const { sanitizeTerminalText } = require('./sanitize');
 
 function getConsoleCodePage() {

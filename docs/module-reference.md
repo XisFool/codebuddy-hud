@@ -14,7 +14,7 @@
 5. [`runtime/renderer/format.js` — 格式化、进度条与 Cache 徽标](#5-runtimerendererformatjs--格式化进度条与-cache-徽标)
 6. [`runtime/renderer/diff-render.js` — 代码变更、Credits 与耗时渲染器](#6-runtimerendererdiff-renderjs--代码变更credits-与耗时渲染)
 7. [`runtime/renderer/agents-render.js` — 工具活动频次聚合渲染器](#7-runtimerendereragents-renderjs--工具活动聚合渲染)
-8. [`runtime/renderer/lang.js` & `runtime/lang.js` — 多语言国际化字典与探测器](#8-runtimerendererlangjs--runtimelangjs--多语言国际化)
+8. [`runtime/lang.js` — 多语言国际化字典与探测器](#8-runtimelangjs--多语言国际化)
 9. [`runtime/transcript.js` — 逆向滑窗遥测与增量 Checkpoint 状态机](#9-runtimetranscriptjs--逆向滑窗遥测与-checkpoint-状态机)
 10. [`runtime/session-stats.js` — 会话基线捕获与 `/clear` 重置状态机](#10-runtimesession-statsjs--会话基线与-clear-重置状态机)
 11. [`runtime/git.js` — Git 分支与 Dirty 状态非阻塞探测器](#11-runtimegitjs--git-分支与状态探测器)
@@ -210,7 +210,7 @@ export function renderToolActivity(activity: ToolActivity, glyphs: GlyphSet): st
 
 ---
 
-## 8. `runtime/renderer/lang.js` & `runtime/lang.js` — 多语言国际化
+## 8. `runtime/lang.js` — 多语言国际化
 
 **职责：** 提供集中化中英双语词典，自动探测系统环境语言并提供 `t()` 翻译辅助函数。
 

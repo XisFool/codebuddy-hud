@@ -67,14 +67,13 @@ graph TD
     Renderer --> Format["runtime/renderer/format.js"]
     Renderer --> DiffRender["runtime/renderer/diff-render.js"]
     Renderer --> AgentsRender["runtime/renderer/agents-render.js"]
-    Renderer --> Lang["runtime/renderer/lang.js"]
     Renderer --> Encoding["runtime/encoding.js"]
     Renderer --> Git["runtime/git.js"]
     Renderer --> Sanitize["runtime/sanitize.js"]
 
     Transcript --> Sanitize
     Transcript --> Paths
-    Doctor --> Lang
+    Doctor --> Lang["runtime/lang.js"]
     Doctor --> Paths
     Doctor --> Encoding
     Doctor --> Git
