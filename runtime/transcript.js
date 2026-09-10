@@ -9,6 +9,18 @@ const { getTranscriptUsageStatePath } = require('./paths');
 const DEFAULT_TAIL_BYTES = 16384;
 const MAX_TOTAL_BYTES = 262144;
 const MAX_SCAN_LINES = 40;
+const MIN_TAIL_BYTES = 64;
+
+// A fractional tail window either dead-locks the backward scan
+// (Math.floor(x) === 0 makes every read zero bytes long, so the loop never
+// advances) or degrades into one readSync per byte (a 256KB budget becomes
+// ~260k syscalls). Normalize at every entry point instead of trusting the
+// caller/config value.
+function normalizeTailBytes(value) {
+  if (!Number.isFinite(value)) return DEFAULT_TAIL_BYTES;
+  const n = Math.floor(value);
+  return n >= MIN_TAIL_BYTES ? n : DEFAULT_TAIL_BYTES;
+}
 
 function parseArguments(argValue) {
   if (argValue && typeof argValue === 'object') return argValue;
@@ -63,14 +75,17 @@ function scanEntry(entry, calls, resultIds) {
   }
 }
 
-// Collect complete lines from newest to oldest. The text must contain only
-// complete lines (window-partials are spliced via carry before this call).
-function collectCompleteLines(text) {
+// Collect complete lines from newest to oldest within the supplied line
+// budget. The text must contain only complete lines (window-partials are
+// spliced via carry before this call). Returns how many lines were examined
+// so the caller can keep one global budget across window boundaries.
+function collectCompleteLines(text, budget) {
   const calls = [];
   const resultIds = new Set();
   const lines = text.split('\n');
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (lines.length - i > MAX_SCAN_LINES) break;
+  let scanned = 0;
+  for (let i = lines.length - 1; i >= 0 && scanned < budget; i--) {
+    scanned++;
     const line = lines[i].trim();
     if (!line) continue;
     let entry;
@@ -81,20 +96,24 @@ function collectCompleteLines(text) {
     }
     scanEntry(entry, calls, resultIds);
   }
-  return { calls, resultIds };
+  return { calls, resultIds, scanned };
 }
 
 // Slide a window backwards from EOF until the newest tool call is found.
 // Entries can be several KB (providerData carries full usage stats), so a
 // fixed 16KB tail may contain only results without their calls. A line that
-// straddles a window boundary is reconstructed via carry.
+// straddles a window boundary is reconstructed via carry. The line budget is
+// global (MAX_SCAN_LINES across all windows): a per-window cap would skip
+// lines inside a window while still scanning older windows, surfacing a call
+// older than one that was never examined.
 function scanBackwards(fd, size, tailBytes) {
   const resultIds = new Set();
   let end = size;
   let totalRead = 0;
   let carryBuffer = Buffer.alloc(0);
+  let scannedTotal = 0;
 
-  while (end > 0 && totalRead < MAX_TOTAL_BYTES) {
+  while (end > 0 && totalRead < MAX_TOTAL_BYTES && scannedTotal < MAX_SCAN_LINES) {
     const len = Math.min(tailBytes, end);
     const start = end - len;
     const buf = Buffer.alloc(len);
@@ -120,7 +139,8 @@ function scanBackwards(fd, size, tailBytes) {
       text = combinedBuf.toString('utf8');
     }
 
-    const { calls, resultIds: ids } = collectCompleteLines(text);
+    const { calls, resultIds: ids, scanned } = collectCompleteLines(text, MAX_SCAN_LINES - scannedTotal);
+    scannedTotal += scanned;
     for (const id of ids) resultIds.add(id);
     if (calls.length > 0) return { newest: calls[0], resultIds };
     end = start;
@@ -228,9 +248,7 @@ function collectUsageBackwards(transcriptPath, opts, limit, stopOnUserTurn) {
     resolved = path.resolve(options.cwd, resolved);
   }
 
-  const tailBytes = Number.isFinite(options.tailBytes) && options.tailBytes > 0
-    ? Math.floor(options.tailBytes)
-    : DEFAULT_TAIL_BYTES;
+  const tailBytes = normalizeTailBytes(options.tailBytes);
   const maxLines = stopOnUserTurn ? MAX_TURN_SCAN_LINES : MAX_SCAN_LINES;
 
   const collected = [];
@@ -633,9 +651,7 @@ function getRecentToolActivity(transcriptPath, opts) {
     resolved = path.resolve(options.cwd, resolved);
   }
 
-  const tailBytes = Number.isFinite(options.tailBytes) && options.tailBytes > 0
-    ? Math.floor(options.tailBytes)
-    : DEFAULT_TAIL_BYTES;
+  const tailBytes = normalizeTailBytes(options.tailBytes);
 
   let fd = null;
   try {
@@ -670,9 +686,7 @@ function getTurnMetricsAndActivity(transcriptPath, opts) {
     resolved = path.resolve(options.cwd, resolved);
   }
 
-  const tailBytes = Number.isFinite(options.tailBytes) && options.tailBytes > 0
-    ? Math.floor(options.tailBytes)
-    : DEFAULT_TAIL_BYTES;
+  const tailBytes = normalizeTailBytes(options.tailBytes);
 
   let fd = null;
   try {

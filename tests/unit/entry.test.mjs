@@ -132,6 +132,21 @@ test('--theme <invalid> prints error and exits 0', async () => {
   assert.match(r.err, /Unknown theme/);
 });
 
+test('--theme rejects prototype-chain names and never persists them', async () => {
+  for (const name of ['__proto__', 'constructor', 'toString']) {
+    const r = await run({ args: ['--theme', name] });
+    assert.equal(r.code, 0);
+    assert.match(r.err, /Unknown theme/, `${name} must be rejected`);
+    assert.ok(!r.out.includes('HUD theme set'), `${name} must not be saved`);
+  }
+  // A previously persisted valid theme (the 'ocean' test above) must remain
+  // untouched; a filtered single-test run may simply have no config yet.
+  const userConfigPath = path.join(TEST_HOME, 'codebuddy-hud.config.json');
+  if (fs.existsSync(userConfigPath)) {
+    assert.equal(JSON.parse(fs.readFileSync(userConfigPath, 'utf8')).theme, 'ocean');
+  }
+});
+
 test('--doctor and --doctor --json exit 0', async () => {
   const docText = await run({ args: ['--doctor'] });
   assert.equal(docText.code, 0);

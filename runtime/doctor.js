@@ -9,6 +9,7 @@ const { detectThemeMode, loadConfig } = require('./config');
 const { getGitStatus } = require('./git');
 const { getI18n } = require('./lang');
 const { sanitizeTerminalText } = require('./sanitize');
+const { parseSettingsJson } = require('./settings-file');
 
 function getConsoleCodePage() {
   if (process.platform !== 'win32') return null;
@@ -40,6 +41,36 @@ function checkNodeEnvironment(i18n) {
   };
 }
 
+// The statusLine command has two known install shapes: POSIX `"<node>" "<hud.js>"`
+// and win32 a .cmd shim that forwards to a sibling `codebuddy-hud.js`
+// (see statusline-installer). Checking only the first token let a missing HUD
+// entrypoint (or a shim whose forwarded script is gone) pass as healthy.
+function findMissingStatusLineTargets(command) {
+  const tokens = [];
+  const tokenRe = /"([^"]+)"|(\S+)/g;
+  let match;
+  while ((match = tokenRe.exec(command)) !== null) {
+    tokens.push(match[1] || match[2]);
+  }
+
+  const pathLike = tokens.filter(t => /[\\/]/.test(t));
+  if (pathLike.length === 0) {
+    const first = tokens[0];
+    return first && fs.existsSync(first) ? [] : [first];
+  }
+
+  const missing = [];
+  for (const token of pathLike) {
+    if (!fs.existsSync(token)) {
+      missing.push(token);
+    } else if (/\.cmd$/i.test(token)) {
+      const forwarded = path.join(path.dirname(token), 'codebuddy-hud.js');
+      if (!fs.existsSync(forwarded)) missing.push(forwarded);
+    }
+  }
+  return missing;
+}
+
 function checkCodeBuddyConfig(i18n) {
   const home = getCodeBuddyHome();
   const settingsPath = getSettingsPath();
@@ -53,13 +84,12 @@ function checkCodeBuddyConfig(i18n) {
 
   if (settingsExists) {
     try {
-      parsedSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      parsedSettings = parseSettingsJson(fs.readFileSync(settingsPath, 'utf8'));
       if (parsedSettings && parsedSettings.statusLine) {
         statusLineCmd = parsedSettings.statusLine.command;
         if (typeof statusLineCmd === 'string' && statusLineCmd.trim()) {
-          const match = statusLineCmd.match(/^\s*"([^"]+)"/) || statusLineCmd.match(/^\s*(\S+)/);
-          const exePath = match ? match[1] : null;
-          if (exePath && fs.existsSync(exePath)) {
+          const missing = findMissingStatusLineTargets(statusLineCmd);
+          if (missing.length === 0) {
             statusLineOk = true;
           } else {
             statusLineOk = false;

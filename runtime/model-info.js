@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getSettingsPath, getSessionEffortStatePath } = require('./paths');
+const { parseSettingsJson } = require('./settings-file');
 
 let _cachedSettingsEffort = null;
 let _cachedSettingsEffortLoaded = false;
@@ -29,7 +30,7 @@ function getSettingsReasoningEffort() {
   let effort = null;
   try {
     if (fs.existsSync(settingsPath)) {
-      const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      const data = parseSettingsJson(fs.readFileSync(settingsPath, 'utf8'));
       effort = (data && typeof data === 'object' && data.reasoningEffort) ? data.reasoningEffort : null;
     }
   } catch {

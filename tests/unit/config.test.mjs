@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { loadConfig, deepMerge, THEME_PRESETS, resolveTheme, detectThemeMode } = require('../../runtime/config.js');
+const { loadConfig, deepMerge, THEME_PRESETS, resolveTheme, detectThemeMode, isPresetName } = require('../../runtime/config.js');
 
 let tmpDir;
 let originalCodeBuddyHome;
@@ -187,6 +187,22 @@ describe('THEME_PRESETS and resolveTheme', () => {
     const fallback = resolveTheme({ theme: 'nonexistent-theme-xyz', themeMode: 'dark' });
     assert.equal(fallback.primary, 'cyan');
   });
+
+  it('rejects prototype-chain property names and keeps the ocean palette', () => {
+    for (const name of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+      const resolved = resolveTheme({ theme: name, themeMode: 'dark' });
+      assert.equal(resolved.name, 'ocean');
+      assert.equal(resolved.primary, 'cyan');
+    }
+  });
+
+  it('isPresetName only accepts own theme keys', () => {
+    assert.equal(isPresetName('ocean'), true);
+    assert.equal(isPresetName('__proto__'), false);
+    assert.equal(isPresetName('constructor'), false);
+    assert.equal(isPresetName(5), false);
+    assert.equal(isPresetName(null), false);
+  });
 });
 
 describe('detectThemeMode', () => {
@@ -206,6 +222,28 @@ describe('detectThemeMode', () => {
     } finally {
       if (orig === undefined) delete process.env.COLORFGBG;
       else process.env.COLORFGBG = orig;
+    }
+  });
+
+  it('reads a JSONC settings.json instead of silently falling back to dark', () => {
+    const settingsPath = path.join(tmpDir, 'jsonc-settings.json');
+    fs.writeFileSync(settingsPath, [
+      '{',
+      '  // user comment',
+      '  "theme": "codebuddy-light",',
+      '}',
+    ].join('\n'));
+    const originalSettings = process.env.CODEBUDDY_SETTINGS_PATH;
+    const originalFgbg = process.env.COLORFGBG;
+    process.env.CODEBUDDY_SETTINGS_PATH = settingsPath;
+    delete process.env.COLORFGBG;
+    try {
+      assert.equal(detectThemeMode({ themeMode: 'auto' }), 'light');
+    } finally {
+      if (originalSettings === undefined) delete process.env.CODEBUDDY_SETTINGS_PATH;
+      else process.env.CODEBUDDY_SETTINGS_PATH = originalSettings;
+      if (originalFgbg === undefined) delete process.env.COLORFGBG;
+      else process.env.COLORFGBG = originalFgbg;
     }
   });
 });

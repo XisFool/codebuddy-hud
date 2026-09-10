@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('path');
-const { color, bold, dim, formatTokens, createProgressBar, getThemeColor, RESET, calculateTurnCacheMetrics, formatTurnCacheBadge, metricsFromPromptCache } = require('./renderer/format');
+const { color, bold, dim, formatTokens, createProgressBar, getThemeColor, RESET, formatTurnCacheBadge, metricsFromPromptCache } = require('./renderer/format');
 const { renderDiffSegment } = require('./renderer/diff-render');
 const { renderToolActivity } = require('./renderer/agents-render');
 const { sanitizeTerminalText } = require('./sanitize');
@@ -158,19 +158,18 @@ function renderHUD(cbData, config) {
       // provider). A conversation turn spans many API calls (avg 19.3), so the
       // badge aggregates the whole current turn — sampling only the newest call
       // swings between ~0% (cold start) and ~99%.
-      let cacheMetrics = null;
-      if (turnUsage) {
-        cacheMetrics = metricsFromPromptCache(turnUsage.hitTokens, turnUsage.promptTokens);
-      }
+      // No payload fallback: cache_read_input_tokens is hard-zero on this
+      // provider, so re-reading it would fake a `cache 0.0%` readout. With no
+      // usable transcript telemetry the badge degrades to `cache --`.
+      let cacheMetrics = turnUsage
+        ? metricsFromPromptCache(turnUsage.hitTokens, turnUsage.promptTokens)
+        : null;
       if (cacheMetrics === null) {
-        const currentUsage = cbData.context_window && cbData.context_window.current_usage;
-        cacheMetrics = calculateTurnCacheMetrics(currentUsage);
+        cacheMetrics = { available: false };
       }
-      if (cacheMetrics !== null) {
-        const cacheThresholds = config.cacheHitThresholds || {};
-        const cacheBadge = formatTurnCacheBadge(cacheMetrics, 'cache', false, cacheThresholds);
-        line2Parts.push(cacheBadge);
-      }
+      const cacheThresholds = config.cacheHitThresholds || {};
+      const cacheBadge = formatTurnCacheBadge(cacheMetrics, 'cache', false, cacheThresholds);
+      line2Parts.push(cacheBadge);
     }
 
     lines.push(line2Parts.join(divider));

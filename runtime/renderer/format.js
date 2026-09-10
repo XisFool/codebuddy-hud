@@ -100,6 +100,9 @@ function normalizeTokenCount(v) {
   if (v === undefined || v === null) return null;
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
   if (typeof v === 'string') {
+    // Number('') === 0 would smuggle an empty payload field through as a
+    // genuine zero; missing stays missing.
+    if (v.trim() === '') return null;
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
   }

@@ -179,6 +179,14 @@ describe('resolveEffortLevel', () => {
     assert.equal(resolveEffortLevel(data), 'xhigh');
   });
 
+  it('reads reasoningEffort from a JSONC settings.json', () => {
+    const tmpSettings = path.join(tmpDir, 'jsonc-effort-settings.json');
+    fs.writeFileSync(tmpSettings, '{ // user comment\n  "reasoningEffort": "xhigh",\n}\n');
+    process.env.CODEBUDDY_SETTINGS_PATH = tmpSettings;
+    resetModelInfoCache();
+    assert.equal(resolveEffortLevel({ model: { id: 'unknown-model-xyz' } }), 'xhigh');
+  });
+
   it('keeps same-mtime settings files separate when the configured path changes', () => {
     const settingsA = path.join(tmpDir, 'settings-a.json');
     const settingsB = path.join(tmpDir, 'settings-b.json');

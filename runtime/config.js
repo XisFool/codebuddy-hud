@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getSettingsPath, getUserConfigPath } = require('./paths');
+const { parseSettingsJson } = require('./settings-file');
 
 const THEME_PRESETS = {
   ocean: {
@@ -235,7 +236,7 @@ function detectThemeMode(config) {
   try {
     const settingsPath = getSettingsPath();
     if (fs.existsSync(settingsPath)) {
-      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      const settings = parseSettingsJson(fs.readFileSync(settingsPath, 'utf8'));
       if (settings && typeof settings.theme === 'string') {
         const lower = settings.theme.toLowerCase();
         if (lower.includes('light')) return 'light';
@@ -248,6 +249,14 @@ function detectThemeMode(config) {
   return 'dark';
 }
 
+// Theme names must be own keys of THEME_PRESETS: a truthy lookup lets
+// prototype-chain names through (THEME_PRESETS['__proto__'] resolves to
+// Object.prototype), which breaks the palette and can persist a malformed
+// theme name into the user config.
+function isPresetName(name) {
+  return typeof name === 'string' && Object.hasOwn(THEME_PRESETS, name);
+}
+
 function resolveTheme(config) {
   const mode = detectThemeMode(config);
   let themeVal = config && config.theme;
@@ -255,11 +264,11 @@ function resolveTheme(config) {
   let overrides = {};
 
   if (typeof themeVal === 'string') {
-    if (THEME_PRESETS[themeVal]) {
+    if (isPresetName(themeVal)) {
       presetName = themeVal;
     }
   } else if (themeVal && typeof themeVal === 'object') {
-    if (typeof themeVal.name === 'string' && THEME_PRESETS[themeVal.name]) {
+    if (isPresetName(themeVal.name)) {
       presetName = themeVal.name;
     }
     overrides = themeVal;
@@ -300,5 +309,5 @@ function loadConfig(cwd) {
   return config;
 }
 
-module.exports = { loadConfig, deepMerge, DEFAULT_CONFIG, THEME_PRESETS, resolveTheme, detectThemeMode };
+module.exports = { loadConfig, deepMerge, DEFAULT_CONFIG, THEME_PRESETS, resolveTheme, detectThemeMode, isPresetName };
 

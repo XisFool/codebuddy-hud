@@ -96,7 +96,7 @@ if (args.includes('--setup')) {
 } else if (args.includes('--theme')) {
   (async () => {
     try {
-      const { THEME_PRESETS } = require('../config');
+      const { THEME_PRESETS, isPresetName } = require('../config');
       const { saveUserTheme, printThemesList, selectThemeInteractive } = require('../theme-selector');
       const themeIdx = args.indexOf('--theme');
       const themeArg = (themeIdx !== -1 && args[themeIdx + 1] && !args[themeIdx + 1].startsWith('--')) ? args[themeIdx + 1] : null;
@@ -104,7 +104,7 @@ if (args.includes('--setup')) {
       if (themeArg === 'list' || themeArg === '--help' || themeArg === '-h') {
         printThemesList();
       } else if (themeArg) {
-        if (THEME_PRESETS[themeArg]) {
+        if (isPresetName(themeArg)) {
           const savedPath = saveUserTheme(themeArg);
           console.log(`\x1b[32m✔\x1b[0m HUD theme set to '\x1b[1m${themeArg}\x1b[0m' (saved to ${savedPath})`);
         } else {
@@ -208,6 +208,9 @@ if (args.includes('--setup')) {
       clearTimeout(timer);
       handleRender('');
     }
+    // Same release as the timeout/oversize paths: a broken stream must not be
+    // the handle that keeps the loop alive.
+    process.stdin.destroy();
   });
 
   process.stdin.resume();

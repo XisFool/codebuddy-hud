@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { calculateTurnCacheMetrics, formatTurnCacheBadge, metricsFromPromptCache } = require('../../runtime/renderer/format.js');
+const { calculateTurnCacheMetrics, formatTurnCacheBadge, metricsFromPromptCache, normalizeTokenCount } = require('../../runtime/renderer/format.js');
 
 describe('calculateTurnCacheMetrics', () => {
   it('handles standard input with cache included (in >= cacheTotal)', () => {
@@ -63,6 +63,11 @@ describe('calculateTurnCacheMetrics', () => {
   it('tolerates non-numeric strings by treating them as missing', () => {
     const usage = { input_tokens: 'NaN', cache_read_input_tokens: 'abc' };
     const m = calculateTurnCacheMetrics(usage);
+    assert.equal(m.available, false);
+  });
+
+  it('treats an empty-string hit field as missing rather than a genuine 0%', () => {
+    const m = calculateTurnCacheMetrics({ prompt_tokens: 5000, prompt_cache_hit_tokens: '' });
     assert.equal(m.available, false);
   });
 
@@ -189,6 +194,16 @@ describe('cache field priority (real provider trap)', () => {
     assert.equal(m.available, true);
     assert.equal(m.source, 'cache_read_input_tokens');
     assert.equal(m.hitRate, 60);
+  });
+});
+
+describe('normalizeTokenCount', () => {
+  it('treats empty and whitespace-only strings as missing, not as zero', () => {
+    assert.equal(normalizeTokenCount(''), null);
+    assert.equal(normalizeTokenCount('   '), null);
+    assert.equal(normalizeTokenCount('0'), 0);
+    assert.equal(normalizeTokenCount(0), 0);
+    assert.equal(normalizeTokenCount(null), null);
   });
 });
 

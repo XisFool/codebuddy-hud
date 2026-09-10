@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { THEME_PRESETS, resolveTheme } = require('./config');
+const { THEME_PRESETS, resolveTheme, isPresetName } = require('./config');
 const { getUserConfigPath, getSettingsPath } = require('./paths');
 const { sanitizeTerminalText } = require('./sanitize');
 const { color, bold, dim, RESET, BOLD, DIM } = require('./renderer/format');
@@ -19,7 +19,7 @@ const THEMES = [
 ];
 
 function saveUserTheme(themeName) {
-  if (!THEME_PRESETS[themeName]) {
+  if (!isPresetName(themeName)) {
     throw new Error(`Invalid theme name: "${themeName}"`);
   }
   const configPath = getUserConfigPath();
@@ -60,7 +60,7 @@ function getActiveThemeName() {
     if (fs.existsSync(configPath)) {
       const userConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
       if (userConfig && typeof userConfig === 'object' && !Array.isArray(userConfig)
-          && typeof userConfig.theme === 'string' && THEME_PRESETS[userConfig.theme]) {
+          && isPresetName(userConfig.theme)) {
         return userConfig.theme;
       }
     }

@@ -212,6 +212,45 @@ test('setup preserves the first backup, refreshes the Windows shim, and uninstal
   }
 });
 
+test('uninstall keeps the Windows shim when settings.json cannot be cleaned', () => {
+  const originalSettingsPath = process.env.CODEBUDDY_SETTINGS_PATH;
+  const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-shim-keep-'));
+  const settingsPath = path.join(tempRoot, 'settings.json');
+  const settingsLink = path.join(tempRoot, 'settings-hardlink.json');
+  const runtimeDir = path.join(tempRoot, 'runtime');
+  const hudBin = path.join(runtimeDir, 'bin', 'codebuddy-hud.js');
+  const cmdShim = hudBin.replace(/\.js$/, '.cmd');
+  fs.mkdirSync(path.dirname(hudBin), { recursive: true });
+  fs.writeFileSync(hudBin, '#!/usr/bin/env node\n');
+  fs.writeFileSync(cmdShim, '@echo off\r\n');
+  const installedSettings = { statusLine: { type: 'command', command: `"${cmdShim}"` } };
+  fs.writeFileSync(settingsPath, JSON.stringify(installedSettings, null, 2));
+  fs.linkSync(settingsPath, settingsLink); // nlink > 1 → atomic replace refused
+  process.env.CODEBUDDY_SETTINGS_PATH = settingsPath;
+  process.env.CODEBUDDY_HOME = path.join(tempRoot, 'home');
+
+  const logs = [];
+  const originalLog = console.log;
+  try {
+    console.log = (...args) => { logs.push(args.join(' ')); };
+    uninstall({ settingsPath, runtimeDir, platform: 'win32' });
+
+    assert.equal(fs.existsSync(cmdShim), true,
+      `shim must survive a failed settings cleanup:\n${logs.join('\n')}`);
+    assert.deepEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), installedSettings,
+      'settings.json must be left untouched');
+    assert.ok(logs.join('\n').includes('kept Windows shim'), logs.join('\n'));
+  } finally {
+    console.log = originalLog;
+    if (originalSettingsPath === undefined) delete process.env.CODEBUDDY_SETTINGS_PATH;
+    else process.env.CODEBUDDY_SETTINGS_PATH = originalSettingsPath;
+    if (originalCodeBuddyHome === undefined) delete process.env.CODEBUDDY_HOME;
+    else process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test('POSIX setup does not create or remove a Windows shim', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-posix-'));
   const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;

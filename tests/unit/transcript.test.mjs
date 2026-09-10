@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
 const { getRecentToolActivity, getTurnToolActivity, getRecentUsageMetrics, getTurnUsageMetrics, getSessionUsageMetrics, extractUsageMetrics, MAX_TOTAL_BYTES } = require('../../runtime/transcript.js');
@@ -194,6 +195,43 @@ describe('getRecentToolActivity — resilience', () => {
     const r = getRecentToolActivity(p);
     assert.ok(r !== null);
     assert.equal(r.tool, 'CapTestTool');
+  });
+
+  it('applies one global line budget across windows instead of skipping lines', () => {
+    const lines = [cbCall('call-old', 'OldTool', { file_path: '/a/old.ts' })];
+    for (let i = 0; i < 60; i++) lines.push(cbMessage);
+    lines.push(cbCall('call-new', 'NewTool', { file_path: '/a/new.ts' }));
+    for (let i = 0; i < 45; i++) lines.push(cbMessage);
+    const p = writeTmp('window-budget.jsonl', lines.join('\n') + '\n');
+    // call-new sits beyond the newest 40 lines. The old per-window cap skipped
+    // the middle of a window and could surface an even older window's call;
+    // the global budget must return null instead (and never the older call).
+    assert.equal(getRecentToolActivity(p, { tailBytes: 512 }), null);
+  });
+});
+
+describe('getRecentToolActivity — tailBytes normalization', () => {
+  it('does not spin when tailBytes is a sub-1 fraction (regression: dead loop)', () => {
+    const p = writeTmp('fraction.jsonl', [cbCall('c1', 'Read', { file_path: '/a/f.txt' }), cbMessage].join('\n') + '\n');
+    const transcriptModule = require.resolve('../../runtime/transcript.js');
+    const script = [
+      `const t = require(${JSON.stringify(transcriptModule)});`,
+      `const r = t.getRecentToolActivity(${JSON.stringify(p)}, { tailBytes: 0.5 });`,
+      `const m = t.getTurnMetricsAndActivity(${JSON.stringify(p)}, { tailBytes: 0.5 });`,
+      `const u = t.getRecentUsageMetrics(${JSON.stringify(p)}, { tailBytes: 0.5 });`,
+      `process.stdout.write(JSON.stringify({ tool: r && r.tool, hasTurn: !!m, usage: u }));`,
+    ].join('\n');
+    // A regression would block synchronously forever, so probe in a child
+    // process with an explicit kill timeout instead of hanging the runner.
+    const child = spawnSync(process.execPath, ['-e', script], { timeout: 5000, encoding: 'utf8' });
+    assert.equal(child.error, undefined, `child failed: ${child.error && child.error.message}`);
+    assert.equal(child.status, 0, child.stderr);
+    assert.equal(JSON.parse(child.stdout).tool, 'Read');
+  });
+
+  it('falls back to the default window for integers below MIN_TAIL_BYTES', () => {
+    const p = writeTmp('tiny-window.jsonl', [cbCall('c1', 'Read', { file_path: '/a/f.txt' }), cbMessage].join('\n'));
+    assert.equal(getRecentToolActivity(p, { tailBytes: 1 }).tool, 'Read');
   });
 });
 

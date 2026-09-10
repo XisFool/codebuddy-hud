@@ -31,9 +31,15 @@ function uninstall(options) {
 
   let cleaned = [];
 
-  // Restore backup or remove statusLine precisely
+  // Restore backup or remove statusLine precisely. `settingsCleaned` records
+  // whether settings.json is confirmed free of a statusLine reference
+  // afterwards; the Windows shim must only be deleted when it is, otherwise a
+  // failed write leaves the host pointing at a command that no longer exists.
+  let settingsCleaned = false;
   try {
-    if (fs.existsSync(settingsPath)) {
+    if (!fs.existsSync(settingsPath)) {
+      settingsCleaned = true;
+    } else {
       let rawSettings = '';
       try {
         rawSettings = fs.readFileSync(settingsPath, 'utf8');
@@ -101,6 +107,7 @@ function uninstall(options) {
             }
           }
         }
+        settingsCleaned = true;
       }
     }
   } catch {
@@ -110,13 +117,17 @@ function uninstall(options) {
   // A POSIX install never creates a .cmd shim. Avoid deleting an unrelated
   // Windows artifact merely because a checkout is shared through WSL.
   if (platform === 'win32') {
-    try {
-      if (fs.existsSync(cmdShim)) {
-        fs.unlinkSync(cmdShim);
-        cleaned.push(`Removed Windows shim: ${sanitizeTerminalText(cmdShim, 512)}`);
+    if (!settingsCleaned) {
+      cleaned.push('Warning: kept Windows shim because settings.json could not be cleaned');
+    } else {
+      try {
+        if (fs.existsSync(cmdShim)) {
+          fs.unlinkSync(cmdShim);
+          cleaned.push(`Removed Windows shim: ${sanitizeTerminalText(cmdShim, 512)}`);
+        }
+      } catch {
+        cleaned.push('Warning: could not remove .cmd shim');
       }
-    } catch {
-      cleaned.push('Warning: could not remove .cmd shim');
     }
   }
 

@@ -125,11 +125,41 @@ describe('renderHUD', () => {
     assert.ok(renderHUD(fullPayload, config).split('\n').length <= 3);
   });
 
-  it('line 2 contains cache hit rate when cacheRead > 0', () => {
-    const output = renderHUD(fullPayload, defaultConfig);
+  it('line 2 contains the transcript-sourced cache hit rate', () => {
+    const dir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'cbhud-layout-cache-'));
+    try {
+      const transcript = nodePath.join(dir, 'cache.jsonl');
+      fs.writeFileSync(transcript, JSON.stringify({
+        type: 'function_call', callId: 'cache-1', name: 'Read',
+        providerData: { rawUsage: { prompt_tokens: 1000, prompt_cache_hit_tokens: 900 } },
+      }) + '\n');
+      // Unique cwd keeps session-stats state isolated from the shared
+      // fullPayload cwd used by the diff assertions later in this file.
+      const output = renderHUD({ ...fullPayload, cwd: dir, transcript_path: transcript }, defaultConfig);
+      const line2 = output.split('\n')[1];
+      assert.ok(line2.includes('cache 90.0%'), line2);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('degrades to cache -- instead of faking 0.0% when the transcript is missing', () => {
+    const payload = {
+      ...fullPayload,
+      cwd: nodePath.join(os.tmpdir(), 'cbhud-missing-transcript-proj'),
+      transcript_path: nodePath.join(os.tmpdir(), 'cbhud-definitely-missing.jsonl'),
+      context_window: {
+        ...fullPayload.context_window,
+        current_usage: {
+          input_tokens: 10000, output_tokens: 500,
+          cache_read_input_tokens: 0, cache_creation_input_tokens: 0,
+        },
+      },
+    };
+    const output = renderHUD(payload, defaultConfig);
     const line2 = output.split('\n')[1];
-    assert.ok(line2.includes('cache'));
-    assert.ok(line2.includes('%'));
+    assert.ok(line2.includes('cache --'), line2);
+    assert.ok(!/cache \d+\.\d+%/.test(line2), line2);
   });
 
   it('showCacheHitRate false disables cache badge', () => {
