@@ -14,24 +14,25 @@
 5. [`runtime/renderer/format.js` — 格式化、进度条与 Cache 徽标](#5-runtimerendererformatjs--格式化进度条与-cache-徽标)
 6. [`runtime/renderer/diff-render.js` — 代码变更、Credits 与耗时渲染器](#6-runtimerendererdiff-renderjs--代码变更credits-与耗时渲染)
 7. [`runtime/renderer/agents-render.js` — 工具活动频次聚合渲染器](#7-runtimerendereragents-renderjs--工具活动聚合渲染)
-8. [`runtime/lang.js` — 多语言国际化字典与探测器](#8-runtimelangjs--多语言国际化)
-9. [`runtime/transcript.js` — 逆向滑窗遥测与增量 Checkpoint 状态机](#9-runtimetranscriptjs--逆向滑窗遥测与-checkpoint-状态机)
-10. [`runtime/session-stats.js` — 会话基线捕获与 `/clear` 重置状态机](#10-runtimesession-statsjs--会话基线与-clear-重置状态机)
-11. [`runtime/git.js` — Git 分支与 Dirty 状态非阻塞探测器](#11-runtimegitjs--git-分支与状态探测器)
-12. [`runtime/encoding.js` — 终端字符集探测与 Windows 代码页缓存](#12-runtimeencodingjs--终端字符集探测与编码缓存)
-13. [`runtime/sanitize.js` — 终端文本安全清洗与 ANSI/Bidi 注入防御](#13-runtimesanitizejs--终端文本安全清洗器)
-14. [`runtime/paths.js` — 跨平台路径解析与状态目录管理](#14-runtimepathsjs--跨平台路径解析与目录管理)
-15. [`runtime/settings-file.js` — JSONC 安全解析与配置原子写入](#15-runtimesettings-filejs--jsonc-安全解析与配置原子写入)
-16. [`runtime/statusline-installer.js` — 状态栏注册与 Windows Shim 烘焙器](#16-runtimestatusline-installerjs--状态栏注册与-shim-烘焙)
-17. [`runtime/doctor.js` — 环境体检与排障诊断子系统](#17-runtimedoctorjs--环境体检与排障诊断)
-18. [`runtime/update-checker.js` — 24h 异步更新检查与防惊群预占位锁](#18-runtimeupdate-checkerjs--异步更新检查与防惊群锁)
-19. [`runtime/theme-selector.js` — 交互式终端主题选择器](#19-runtimetheme-selectorjs--交互式主题选择器)
-20. [`runtime/uninstall.js` — 卸载还原与状态深度清理器](#20-runtimeuninstalljs--卸载还原与深度清理)
-21. [`scripts/bootstrap.js` — 跨平台原子安装引导程序](#21-scriptsbootstrapjs--跨平台原子安装引导)
-22. [`scripts/run-tests.js` — 跨平台测试分发驱动脚本](#22-scriptsrun-testsjs--跨平台测试分发驱动)
-23. [`scripts/verify-display.js` — 看板端到端验证](#23-scriptsverify-displayjs--看板端到端验证)
-24. [`scripts/verify-install.js` — 隔离宿主生命周期验证](#24-scriptsverify-installjs--隔离宿主生命周期验证)
-25. [`skills/hud-config/SKILL.md` — HUD 配置技能](#25-skillshud-configskillmd--hud-配置技能)
+8. [`runtime/model-info.js` — 推理强度归一化与额度回退](#8-runtimemodel-infojs--推理强度归一化与额度回退)
+9. [`runtime/lang.js` — 多语言国际化字典与探测器](#9-runtimelangjs--多语言国际化)
+10. [`runtime/transcript.js` — 逆向滑窗遥测与增量 Checkpoint 状态机](#10-runtimetranscriptjs--逆向滑窗遥测与-checkpoint-状态机)
+11. [`runtime/session-stats.js` — 会话基线捕获与 `/clear` 重置状态机](#11-runtimesession-statsjs--会话基线与-clear-重置状态机)
+12. [`runtime/git.js` — Git 分支与 Dirty 状态非阻塞探测器](#12-runtimegitjs--git-分支与状态探测器)
+13. [`runtime/encoding.js` — 终端字符集探测与 Windows 代码页缓存](#13-runtimeencodingjs--终端字符集探测与编码缓存)
+14. [`runtime/sanitize.js` — 终端文本安全清洗与 ANSI/Bidi 注入防御](#14-runtimesanitizejs--终端文本安全清洗器)
+15. [`runtime/paths.js` — 跨平台路径解析与状态目录管理](#15-runtimepathsjs--跨平台路径解析与目录管理)
+16. [`runtime/settings-file.js` — JSONC 安全解析与配置原子写入](#16-runtimesettings-filejs--jsonc-安全解析与配置原子写入)
+17. [`runtime/statusline-installer.js` — 状态栏注册与 Windows Shim 烘焙器](#17-runtimestatusline-installerjs--状态栏注册与-shim-烘焙)
+18. [`runtime/doctor.js` — 环境体检与排障诊断子系统](#18-runtimedoctorjs--环境体检与排障诊断)
+19. [`runtime/update-checker.js` — 24h 异步更新检查与防惊群预占位锁](#19-runtimeupdate-checkerjs--异步更新检查与防惊群锁)
+20. [`runtime/theme-selector.js` — 交互式终端主题选择器](#20-runtimetheme-selectorjs--交互式主题选择器)
+21. [`runtime/uninstall.js` — 卸载还原与状态深度清理器](#21-runtimeuninstalljs--卸载还原与深度清理)
+22. [`scripts/bootstrap.js` — 跨平台原子安装引导程序](#22-scriptsbootstrapjs--跨平台原子安装引导)
+23. [`scripts/run-tests.js` — 跨平台测试分发驱动脚本](#23-scriptsrun-testsjs--跨平台测试分发驱动)
+24. [`scripts/verify-display.js` — 看板端到端验证](#24-scriptsverify-displayjs--看板端到端验证)
+25. [`scripts/verify-install.js` — 隔离宿主生命周期验证](#25-scriptsverify-installjs--隔离宿主生命周期验证)
+26. [`skills/hud-config/SKILL.md` — HUD 配置技能](#26-skillshud-configskillmd--hud-配置技能)
 
 ---
 
@@ -189,7 +190,7 @@ export function renderDiffSegment(
   config: ResolvedConfig,
   glyphs: GlyphSet,
   creditSpend?: number | null,
-  legacyCreditSpend?: number | null
+  toolSegment?: string
 ): string;
 
 export function formatCreditSpend(creditSpend: number): string; // "82.04 credits"
@@ -213,7 +214,25 @@ export function renderToolActivity(activity: ToolActivity, glyphs: GlyphSet): st
 
 ---
 
-## 8. `runtime/lang.js` — 多语言国际化
+## 8. `runtime/model-info.js` — 推理强度归一化与额度回退
+
+**职责：** 对会话推理强度（effort）做白名单归一化与多级解析，为 Line 1 的 effort 图标提供取值；并从 payload 提取明示的实际 Credits 消费。
+
+### 接口定义
+```typescript
+export function resolveEffortLevel(cbData: CodeBuddyPayload, config?: ResolvedConfig): string | null;
+export function resolveCreditSpend(cbData: CodeBuddyPayload): number | null;
+export function resetModelInfoCache(): void;
+```
+
+### 关键机制
+- **白名单归一化**：仅接受 `low` / `medium` / `high` / `xhigh` / `max` / `ultracode`（含 `med`、`extra-high`、`maximum`、`ultra` 等别名映射）；未知值视为不可信输入，沿解析链下探。
+- **effort 解析链**：`cbData.reasoning_effort` → `cbData.model.effort` → transcript 会话信号（按 transcript 哈希持久化于会话状态目录）→ `settings.json` 的 `reasoningEffort`（仅进程内缓存）→ 模型名推断 → `config.defaultEffortLevel`。
+- **Credits 回退**：仅提取 payload `cost.credits` 明示的实际消费；缺失返回 `null`，不基于模型费率元数据推算。
+
+---
+
+## 9. `runtime/lang.js` — 多语言国际化
 
 **职责：** 提供集中化中英双语词典，自动探测系统环境语言并提供 `t()` 翻译辅助函数。
 
@@ -229,7 +248,7 @@ export function getI18n(config?: ResolvedConfig): {
 
 ---
 
-## 9. `runtime/transcript.js` — 逆向滑窗遥测与 Checkpoint 状态机
+## 10. `runtime/transcript.js` — 逆向滑窗遥测与 Checkpoint 状态机
 
 **职责：** 高性能逆向滑窗读取 `transcript.jsonl`，聚合当前轮次 API Usage，并以增量 Checkpoint 计算累计 Credits。
 
@@ -277,7 +296,7 @@ export function getTurnMetricsAndActivity(
 
 ---
 
-## 10. `runtime/session-stats.js` — 会话基线与 `/clear` 重置状态机
+## 11. `runtime/session-stats.js` — 会话基线与 `/clear` 重置状态机
 
 **职责：** 监控上下文与指标单调性，识别 `/clear` 场景并扣除历史基线。
 
@@ -297,7 +316,7 @@ export function getLogicalSessionCostData(
 
 ---
 
-## 11. `runtime/git.js` — Git 分支与状态探测器
+## 12. `runtime/git.js` — Git 分支与状态探测器
 
 **职责：** 单次 `git status --porcelain -b` 快速获取分支名与脏文件标记（`*`）。
 
@@ -316,7 +335,7 @@ export function getGitStatus(
 
 ---
 
-## 12. `runtime/encoding.js` — 终端字符集探测与编码缓存
+## 13. `runtime/encoding.js` — 终端字符集探测与编码缓存
 
 **职责：** 探测终端 Unicode/NerdFonts 支持，Windows 下自动探测 `chcp 65001` 并缓存。
 
@@ -329,7 +348,7 @@ export function resetCache(): void;
 
 ---
 
-## 13. `runtime/sanitize.js` — 终端文本安全清洗器
+## 14. `runtime/sanitize.js` — 终端文本安全清洗器
 
 **职责：** 剥离外部输入中的 ANSI CSI/OSC 控制序列、Unicode Bidi 伪装字符与 C0/C1 控制符。
 
@@ -340,7 +359,7 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 
 ---
 
-## 14. `runtime/paths.js` — 跨平台路径解析与目录管理
+## 15. `runtime/paths.js` — 跨平台路径解析与目录管理
 
 **职责：** 统一定位 CodeBuddy 配置目录（优先支持 `CODEBUDDY_HOME` 与 `CODEBUDDY_SETTINGS_PATH` 环境变量），并提供跨平台文件哈希与状态路径解析。
 
@@ -361,14 +380,13 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 
 ---
 
-## 15. `runtime/settings-file.js` — JSONC 安全解析与配置原子写入
+## 16. `runtime/settings-file.js` — JSONC 安全解析与配置原子写入
 
 **职责：** 针对宿主 `settings.json` 进行安全读取、注释剥离、符号链接目标解析、原子写盘与权限保全。
 
 ### 接口定义
 ```typescript
 export function parseSettingsJson(raw: string): object;
-export function stripJsonComments(text: string): string;
 export function atomicWriteSettingsFile(targetPath: string, content: string): void;
 export function resolveWriteTarget(filePath: string): { realPath: string; stat: fs.Stats | null };
 export function isSettingsObject(value: unknown): boolean;
@@ -383,7 +401,7 @@ export function writePrivateFileIfAbsent(filePath: string, content: string): boo
 
 ---
 
-## 16. `runtime/statusline-installer.js` — 状态栏注册与 Shim 烘焙器
+## 17. `runtime/statusline-installer.js` — 状态栏注册与 Shim 烘焙器
 
 **职责：** 将 HUD 注册进 CodeBuddy `settings.json` 的 `statusLine` 配置项，并在 Windows 平台生成固化 Node 绝对路径的 `.cmd` shim 启动脚本。
 
@@ -403,11 +421,11 @@ export function buildCmdShimContent(nodeExe: string, hudBin?: string): string;
 ### 关键机制
 - **Windows Shim 路径固化与转义**：将安装时刻的 `process.execPath` 烘焙入 `.cmd` 启动器，路径中的 `%` 统一转义为 `%%` 阻断变量展开；在包含非 ASCII 字符时前置 `@chcp 65001 >nul`。
 - **宿主引号容灾**：CodeBuddy Code v2.146.0 的 Windows containment 启动器存在二次转义字面引号的已知缺陷，纯 ASCII 安全命令路径直接省略外层引号。
-- **无损配置恢复保障**：首次安装前将原始 `settings.json` 备份为 `settings.json.bak`（仅备份一次，永不覆盖老备份）。安装成功后通过 `settings-file.js` 以原子写入写回标准格式。
+- **无损配置恢复保障**：首次安装前将原始 `settings.json` 备份为 `settings.json.bak.codebuddy-hud`（仅备份一次，永不覆盖老备份）。安装成功后通过 `settings-file.js` 以原子写入写回标准格式。
 
 ---
 
-## 17. `runtime/doctor.js` — 环境体检与排障诊断
+## 18. `runtime/doctor.js` — 环境体检与排障诊断
 
 **职责：** 采集 Node、CodeBuddy 配置、终端编码、Git 与 Transcript 状态，执行物理路径真实存在性校验。
 
@@ -426,7 +444,7 @@ export function printDoctorReport(report: DoctorReport, isJson?: boolean): void;
 
 ---
 
-## 18. `runtime/update-checker.js` — 异步更新检查与防惊群锁
+## 19. `runtime/update-checker.js` — 异步更新检查与防惊群锁
 
 **职责：** 后台非阻塞检查 GitHub 最新版本，前置预占位锁防并发进程爆炸。
 
@@ -442,7 +460,7 @@ export function parseSemver(v: string): [number, number, number];
 
 ---
 
-## 19. `runtime/theme-selector.js` — 交互式主题选择器
+## 20. `runtime/theme-selector.js` — 交互式主题选择器
 
 **职责：** 终端 Raw 模式下方向键交互式选择主题，实时动态刷新 ANSI 看板预览，退出时释放 stdin 句柄。
 
@@ -454,7 +472,7 @@ export function printThemesList(): void;
 
 ---
 
-## 20. `runtime/uninstall.js` — 卸载还原与深度清理
+## 21. `runtime/uninstall.js` — 卸载还原与深度清理
 
 **职责：** 从首次备份仅还原 `statusLine`，保留其他 settings 及用户主题配置；移除对应 runtime 的 Windows shim 与用户缓存。有效备份在配置写入成功后才删除。
 
@@ -465,7 +483,7 @@ export function uninstall(options?: object): void;
 
 ---
 
-## 21. `scripts/bootstrap.js` — 跨平台原子安装引导
+## 22. `scripts/bootstrap.js` — 跨平台原子安装引导
 
 **职责：** 支持本地与 GitHub Raw 远程安装，通过临时目录 `.tmp-<pid>` + 原子重命名完成无缝安装覆盖。默认从 GitHub Latest Release 读取 `tag_name`，再从对应不可变 tag 下载；`CODEBUDDY_HUD_VERSION` 可固定 tag。
 
@@ -478,24 +496,24 @@ export function uninstall(options?: object): void;
 
 ---
 
-## 22. `scripts/run-tests.js` — 跨平台测试分发驱动
+## 23. `scripts/run-tests.js` — 跨平台测试分发驱动
 
 **职责：** `npm test` 底层执行驱动。通过深度遍历搜集所有单元测试文件的绝对路径，直接向 `node --test` 喂入全量文件参数，彻底规避 Node 18/20 glob 在 Windows 路径反斜杠下的跨平台匹配陷阱与 `MODULE_NOT_FOUND` 假阳性。
 
 ---
 
-## 23. `scripts/verify-display.js` — 看板端到端验证
+## 24. `scripts/verify-display.js` — 看板端到端验证
 
 **职责：** 执行 `npm run verify` 的 10 个 CLI、payload 与边界场景，验证看板行数（严格 $\le 3$ 行）、命令形态与容错契约。
 
 ---
 
-## 24. `scripts/verify-install.js` — 隔离宿主生命周期验证
+## 25. `scripts/verify-install.js` — 隔离宿主生命周期验证
 
 **职责：** 执行 `npm run verify:install`，在全隔离的临时沙箱中验证真实环境下的安装与卸载闭环。必须同时三重隔离 `CODEBUDDY_HOME`、`CODEBUDDY_SETTINGS_PATH` 与运行时目录，防止测试执行污染或误删工作区开发中的真实 `.cmd` shim。
 
 ---
 
-## 25. `skills/hud-config/SKILL.md` — HUD 配置技能
+## 26. `skills/hud-config/SKILL.md` — HUD 配置技能
 
 **职责：** 为 AI Agent 提供主题、图标与显示项配置的交互式引导，并将选择写入项目或全局 `codebuddy-hud.config.json`。

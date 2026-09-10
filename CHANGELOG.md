@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] (待发布)
 
 ### Documentation (文档优化)
-- **面向用户重构**：全面重写 `README.md`，打通一键安装用户在换肤、体检与卸载时的真实 CLI 调用路径，消除底层逆向工程细节泄漏，修复失效导航锚点。
+- **文档漂移修正**：将 `docs/module-reference.md`（补 `model-info.js` 条目、修正 `renderDiffSegment` 签名与 `settings-file` 导出清单、更正备份文件名）与 `docs/architecture*.md`（`/clear` 判定阈值、依赖图缺边、sanitize 过滤范围、空 Stdin 行为）对齐至当前实现；同步修正 v0.2.0 i18n 条目措辞与 `skills/hud-config/SKILL.md` 中的过时配置项。
+- **双语 README 与规范化重构**：重写 `README.md` 并新增英文版 `README_en.md`（顶部双语互链），按「安装 → 验证 → 诊断 → 卸载 → 配置」运维主线重构章节，补齐安装器行为说明、自定义安装源、命令行参考、文件结构与 CI 验证矩阵，移除标题 emoji 与营销化措辞，全部示例输出与运行时真实格式对齐。
+- **面向用户重构**：打通一键安装用户在换肤、体检与卸载时的真实 CLI 调用路径，消除底层逆向工程细节泄漏，修复失效导航锚点。
 - **Agent 契约规范化**：优化 `AGENTS.md`，引入 `lang.js` 模块声明，移除硬编码行号，强化测试驱动与验证闭环，建立指向 `docs/` 深度参考手册的上下文指针。
 
 ---
@@ -24,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **三行看板布局对齐 (3-Line Layout Alignment)**：严格对齐宿主 statusLine 的 3 行输出截断限制，将最近工具活动与本轮频次聚合优雅并入第 3 行尾部展示。
 
 ### Added (新增功能)
-- **多语言国际化体系 (i18n)**：新增 `runtime/lang.js` 字典模块，`--doctor` 体检、`--theme` 换肤与 `--uninstall` 卸载全面支持中文 (`zh`) 与英文 (`en`) 自适应切换。
+- **多语言国际化体系 (i18n)**：新增 `runtime/lang.js` 字典模块；`--doctor` 体检报告支持中文 (`zh`) 与英文 (`en`) 自适应切换，`--theme` 选择器与快捷提示采用中英双语固定文案。
 - **会话基线跨文件交接 (Session Baseline Handoff)**：通过基于工作目录（cwd）哈希寻址的 handoff 状态机，解决 `/clear` 切换新 transcript 文件导致的 Δ 代码变更与 ⏱ 耗时全额漏显问题。
 
 ### Fixed (缺陷修复)

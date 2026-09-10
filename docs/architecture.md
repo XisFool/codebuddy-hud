@@ -68,6 +68,9 @@ graph TD
     Renderer --> Encoding["runtime/encoding.js"]
     Renderer --> Git["runtime/git.js"]
     Renderer --> Sanitize["runtime/sanitize.js"]
+    Renderer --> Parser
+    Renderer --> ModelInfo["runtime/model-info.js"]
+    Renderer --> UpdateChecker
 
     Transcript --> Sanitize
     Transcript --> Paths
@@ -148,11 +151,14 @@ sequenceDiagram
 - **Problem**: When a user executes `/clear`, the host context window resets, but cumulative tokens or added lines in the raw payload may report non-monotonic drops or retain stale session history.
 - **State Machine**:
   1. Persists logical session baselines in `~/.codebuddy/codebuddy-hud-session-state/<hash>.json`.
-  2. Detects a clear boundary if:
-     - Current `input_tokens` drops to $\le 2048$ while previous current input was $\ge 8192$, or cumulative `total_input_tokens` decreases;
-     - Current `session_id` changes for the same transcript path;
+  2. Detects a clear boundary when any of the following holds:
+     - **Cliff drop**: current `input_tokens` drops ≥50% relatively and ≥3000 absolutely;
+     - **Return to initial**: current input $\le 4096$ with previous $\ge 6000$ (a ≥35% drop);
+     - Cumulative `total_input_tokens` decreases;
+     - A new `session_id` for the same transcript, a physically truncated transcript (file size shrinks), or an explicit host `clear_signal` / `is_clear`;
      - Lines added/removed or duration counters drop below their stored baselines (the cost baseline then resets to zero).
   3. Subtracts the established baseline from raw host stats to display accurate turn-relative diffs and elapsed durations.
+  4. **Cross-file handoff**: when `/clear` swaps in a new transcript and the identity misses, the cwd-scoped `handoff-<sha256(cwd)>.json` is read; if the cumulative cost sequence has not regressed (same host process), it is inherited as the new baseline with Δ/duration reset to zero.
 
 ### 5.3 Incremental SHA-256 Checkpointing for Credits (`transcript.js`)
 - **Problem**: Recomputing full-session credits on every event repeats parsing of existing records, especially in long transcripts.
@@ -209,9 +215,9 @@ CodeBuddy Code v2.146.0 retains only the first three stdout lines. The HUD's own
 | :--- | :--- | :--- |
 | **ANSI CSI Escape Injection** | `\x1b[2J\x1b[H` (Clear screen exploit) | Strips all CSI sequences matching `/\x1b\[[0-?]*[ -/]*[@-~]/g`. |
 | **OSC Escape Payloads** | `\x1b]52;c;...\x07` (Clipboard hijack) | Strips all OSC sequences matching `/\x1b\][^\x07]*?(?:\x07|\x1b\\|$)/g`. |
-| **Bidi Text Disguise** | `\u202E` (Right-to-Left Override) | Removes bidirectional Trojan characters (`U+202A` through `U+202E`, `U+2066`-`U+2069`). |
-| **Terminal Control Chars** | `\x00-\x08`, `\x0B-\x1F`, `\x7F` | Strips ASCII C0/C1 control codes and NUL bytes. |
-| **Oversized String Floods** | 50,000 char git branch name | Hard length truncation to safe viewport boundaries (e.g. 64/128 chars). |
+| **Bidi Text Disguise** | `\u202E` (Right-to-Left Override) | Removes bidirectional/format Trojan characters (`U+200B`-`U+200F`, `U+202A`-`U+202E`, `U+2028`/`U+2029`, `U+2060`, `U+2066`-`U+206F`, `U+061C`). |
+| **Terminal Control Chars** | `\x00-\x1F`, `\x7F-\x9F` | Strips all C0/C1 control codes (including NUL and the single-byte CSI `0x9B`). |
+| **Oversized String Floods** | 50,000 char git branch name | Hard truncation to safe viewport boundaries (default cap 120 chars; call sites tighten to 10-1024). |
 
 ---
 
@@ -219,7 +225,7 @@ CodeBuddy Code v2.146.0 retains only the first three stdout lines. The HUD's own
 
 | Failure Event | Root Cause | System Degradation Behavior | Exit Code |
 | :--- | :--- | :--- | :---: |
-| **Empty Stdin** | Early hook trigger / absent payload | Handles empty input without inventing telemetry. | `0` |
+| **Empty Stdin** | Early hook trigger / absent payload | Exits safely with no output (0 bytes); no invented telemetry. | `0` |
 | **Stdin Hang** | Host pipe remains open without sending EOF | $800\text{ms}$ timeout timer fires, forcibly closes stdin and renders collected input. | `0` |
 | **EPIPE Error** | Host kills statusline process while stdout writing | `process.stdout.on('error', () => {})` swallows error cleanly. | `0` |
 | **Missing Transcript** | First turn / remote headless session | Omits tool activity and falls back to payload-supplied token counts. | `0` |

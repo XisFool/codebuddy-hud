@@ -70,6 +70,9 @@ graph TD
     Renderer --> Encoding["runtime/encoding.js"]
     Renderer --> Git["runtime/git.js"]
     Renderer --> Sanitize["runtime/sanitize.js"]
+    Renderer --> Parser
+    Renderer --> ModelInfo["runtime/model-info.js"]
+    Renderer --> UpdateChecker
 
     Transcript --> Sanitize
     Transcript --> Paths
@@ -150,11 +153,14 @@ sequenceDiagram
 - **痛点**：用户在宿主输入 `/clear` 时，上下文窗口被清空，但宿主累积的总 token 或行数可能出现负增量或残留历史数据。
 - **状态机**：
   1. 在 `~/.codebuddy/codebuddy-hud-session-state/<hash>.json` 记录会话基线。
-  2. 触发判定规则：
-     - 当前 `input_tokens` 降至不超过 2048，且此前当前输入至少 8192；或者累计 `total_input_tokens` 下降；
-     - 同一文件路径被赋予了全新的 `session_id`；
+  2. 触发判定（任一命中）：
+     - **Cliff Drop**：当前 `input_tokens` 相对降幅 ≥50%，且绝对降幅 ≥3000；
+     - **Return to Initial**：当前输入 ≤4096，且此前 ≥6000（相对降幅 ≥35%）；
+     - 累计 `total_input_tokens` 下降；
+     - 同一 transcript 的 `session_id` 变化、transcript 文件物理截断（size 变小），或宿主显式 `clear_signal` / `is_clear`；
      - 代码增删或耗时计数低于已存基线，此时将 cost 基线归零。
   3. 识别到重置后自动建立新基线，使看板显示的耗时与变更严格反映当前会话增量。
+  4. **跨文件交接（handoff）**：`/clear` 切换新 transcript 导致 identity 未命中时，读取按 cwd 寻址的 `handoff-<sha256(cwd)>.json`；若 cost 累计序列未回退（同一宿主进程延续），继承其值为新基线，Δ/⏱ 归零。
 
 ### 5.3 增量 SHA-256 Credits Checkpoint 机制 (`transcript.js`)
 - **痛点**：每次事件刷新全量遍历长 JSONL 会重复解析已有消费记录。
@@ -211,9 +217,9 @@ sequenceDiagram
 | :--- | :--- | :--- |
 | **ANSI CSI 注入** | `\x1b[2J\x1b[H` (清屏覆盖攻击) | 正则剔除 `/\x1b\[[0-?]*[ -/]*[@-~]/g` |
 | **OSC 剪贴板/标题劫持** | `\x1b]52;c;...\x07` (剪贴板注入) | 正则剔除 `/\x1b\][^\x07]*?(?:\x07|\x1b\\|$)/g` |
-| **Unicode Bidi 伪装** | `\u202E` (从右向左覆盖伪装) | 剔除 `U+202A` ~ `U+202E` 与 `U+2066` ~ `U+2069` 控制符 |
-| **C0/C1 控制符污染** | `\x00-\x08`, `\x0B-\x1F`, `\x7F` | 剔除 NUL 字节与非常规控制符 |
-| **超长字符串溢出** | 50,000 字符的畸形 Git 分支名 | 强制根据视口安全边界截断（如 64/128 字符） |
+| **Unicode Bidi 伪装** | `\u202E` (从右向左覆盖伪装) | 剔除 `U+200B` ~ `U+200F`、`U+202A` ~ `U+202E`、`U+2028/U+2029`、`U+2060`、`U+2066` ~ `U+206F`、`U+061C` 等格式控制符 |
+| **C0/C1 控制符污染** | `\x00-\x1F`, `\x7F-\x9F` | 剔除全部 C0/C1 控制符（含 NUL 与单字节 CSI `0x9B`） |
+| **超长字符串溢出** | 50,000 字符的畸形 Git 分支名 | 按视口安全边界强制截断（默认上限 120 字符，调用点按场景收紧至 10~1024） |
 
 ---
 
@@ -221,7 +227,7 @@ sequenceDiagram
 
 | 故障场景 | 诱发原因 | 系统降级表现 | Exit Code |
 | :--- | :--- | :--- | :---: |
-| **空 Stdin** | Windows 宿主启动时序抖动 | 优雅回退至最小 Payload 渲染，输出基础行 | `0` |
+| **空 Stdin** | Windows 宿主启动时序抖动 | 不输出任何行（0 字节）并安全退出，不伪造遥测 | `0` |
 | **Stdin 管道悬挂** | 宿主未按时发送 EOF 结束管道 | $800\text{ms}$ 定时器触发，强行切断 Stdin 并按已收数据渲染 | `0` |
 | **EPIPE 错误** | 宿主提前关闭 Stdout 接收管道 | `process.stdout.on('error')` 静默捕获，安全退出 | `0` |
 | **Transcript 缺失** | 首轮会话 / 远程无盘环境 | 隐藏工具活动，Token 回退使用 payload；Credits 仅使用 payload 明示的实际值 | `0` |
