@@ -14,7 +14,7 @@
 
 ---
 
-## 它长什么样
+## 效果预览
 
 ```text
 DeepSeek V4 Flash ● max  │  main*  │  my-project  │  default

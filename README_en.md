@@ -14,7 +14,7 @@
 
 ---
 
-## What it looks like
+## Preview
 
 ```text
 DeepSeek V4 Flash ● max  │  main*  │  my-project  │  default
