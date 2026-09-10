@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] (待发布)
 
+### Fixed (缺陷修复)
+- **遥测真实性加固**：移除对 payload `cache_read_input_tokens` 的兜底回退，无真实遥测时降级 `cache --`，杜绝伪造 `cache 0.0%`。
+- **滑窗扫描防御**：修正小数 `tailBytes` 导致的回扫死循环与逐字节 I/O 雪崩；工具活动兜底回扫收敛为全局连续 40 行预算，消除跨窗口跳行返回陈旧调用。
+- **配置读写加固**：`settings.json` 解析统一使用 JSONC 解析器（注释与尾逗号容错）；主题名经 `Object.hasOwn` 白名单校验，阻断原型链污染。
+- **卸载与体检加固**：卸载在 settings 清理成功前保留 Windows shim，杜绝半卸载悬空；`--doctor` 增加对 statusLine 命令目标脚本与 shim 转发路径的存在性校验。
+- **入口健壮性**：补齐 stdin error 分支的流句柄释放；修正空字符串被误转为数字 0 的解析问题。
+- **回归测试**：为上述修复新增 15 条单元测试，锁定行为。
+
 ### Documentation (文档优化)
 - **文档漂移修正**：将 `docs/module-reference.md`（补 `model-info.js` 条目、修正 `renderDiffSegment` 签名与 `settings-file` 导出清单、更正备份文件名）与 `docs/architecture*.md`（`/clear` 判定阈值、依赖图缺边、sanitize 过滤范围、空 Stdin 行为）对齐至当前实现；同步修正 v0.2.0 i18n 条目措辞与 `skills/hud-config/SKILL.md` 中的过时配置项。
 - **双语 README 与规范化重构**：重写 `README.md` 并新增英文版 `README_en.md`（顶部双语互链），按「安装 → 验证 → 诊断 → 卸载 → 配置」运维主线重构章节，补齐安装器行为说明、自定义安装源、命令行参考、文件结构与 CI 验证矩阵，移除标题 emoji 与营销化措辞，全部示例输出与运行时真实格式对齐。

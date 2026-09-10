@@ -63,7 +63,7 @@ node runtime/bin/codebuddy-hud.js --theme list
 4. **错误日志轮转**：`~/.codebuddy/codebuddy-hud-error.log` 超过 1MB 自动重置，防高频刷新写满磁盘。
 5. **Cache 命中率口径**：
    - 遥测仅存在于 transcript 的 `providerData.rawUsage`（避开 `cache_read_input_tokens: 0` 陷阱字段）；
-   - `rawUsage.prompt_tokens` 有效时依次取 `prompt_cache_hit_tokens`、`prompt_tokens_details.cached_tokens`、`cached_tokens`，缺失则为 0；否则以 `usage.inputTokens` 和 `inputTokensDetails[].cached_tokens` 聚合兜底。不要使用该 provider 的陷阱字段 `cache_read_input_tokens`；
+   - `rawUsage.prompt_tokens` 有效时依次取 `prompt_cache_hit_tokens`、`prompt_tokens_details.cached_tokens`、`cached_tokens`，缺失则为 0；否则以 `usage.inputTokens` 和 `inputTokensDetails[].cached_tokens` 聚合兜底；
    - 聚合范围：`getTurnUsageMetrics()` 从 EOF 回扫至 `role: 'user'`，展示本轮聚合（`sum(hitTokens) / sum(promptTokens)`），非单次调用瞬时值；
    - 三态契约：`null`（不渲染）、`{available:false}`（`cache --`）、`{available:true, X%}`（正常数值）。
 6. **Token、变更与 Credits 口径**：
@@ -84,6 +84,10 @@ node runtime/bin/codebuddy-hud.js --theme list
     - `session-stats.js` 另存按 cwd 寻址的 handoff 记录（`codebuddy-hud-session-state/handoff-<sha256(cwd)>.json`），每次刷新写入最新原始累计 cost；
     - identity 未命中时读取 handoff：cost 累计序列未下跌（同宿主进程延续）→ 继承其值为新基线，Δ/⏱ 归零；cost 下跌（新宿主进程启动）或 cwd 不同 → 不继承。
     - 已漏显的旧会话状态无法自愈，下一次 /clear 起生效。
+12. **/compact 后 context 显示旧值（宿主刷新时序）**：
+    - 宿主 payload 的 `context_window.current_usage` 来自 `UsageUtils.getLatestUsage()`：取活跃链最近一条真实 API 调用的 usage，跳过 `agent === "compact"` 的条目；
+    - 故 /compact 完成后、下一次真实 API 响应落盘前，payload 携带压缩前旧值（实测可达十余分钟）；
+    - HUD 为一次性进程（无进程内缓存）；此滞后属宿主刷新时序，定位宿主侧即可。
 
 ## 提交与工作流契约
 

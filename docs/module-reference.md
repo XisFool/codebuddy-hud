@@ -74,6 +74,10 @@ export function parseCodeBuddyInput(rawStdin: string | null | undefined): CodeBu
 export function extractTokenData(cbData: CodeBuddyPayload): {
   inTokens: number;
   outTokens: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalInput: number;
+  totalOutput: number;
   ctxSize: number;
   ctxPercent: number;
 } | null;
@@ -173,8 +177,8 @@ export function renderHUD(
 - `formatTokens(num: number): string`: 格式化数字为 `1.2k`、`3.5M`。特别处理 `999.5` 边界防止四舍五入溢出为 `1000k`。
 - `formatDurationMs(ms: number): string`: 格式化毫秒数为 `12s`、`5m20s`、`2h15m`。
 - `createProgressBar(pct: number, width: number, thresholds: object, glyphs: object): string`: 生成自适应色阶进度条。
-- `calculateTurnCacheMetrics(usageMetrics, currentUsage): TurnCacheMetrics`: 计算综合缓存命中率。
-- `formatTurnCacheBadge(metrics, glyphs, config): string`: 渲染三态徽标：`cache 98.5%`、`cache --` 或空。
+- `calculateTurnCacheMetrics(usage): TurnCacheMetrics | null`: 从单条 usage 计算缓存命中指标（运行时渲染走 `metricsFromPromptCache`，本函数由单元测试覆盖）。
+- `formatTurnCacheBadge(metrics, label, isCompact, thresholds): string`: 渲染缓存徽标：可用时 `cache 98.5%`（按 `thresholds` 分色），无遥测时降级为 `cache --`。
 
 ---
 
@@ -209,7 +213,7 @@ export function renderToolActivity(activity: ToolActivity, glyphs: GlyphSet): st
 
 ### 工具聚合输出格式
 ```
-✓ Edit ×3    ✓ View ×12    ◐ RunCommand: "npm test"
+◐ RunCommand: npm test    ✓ Edit ×3    ✓ View ×12
 ```
 
 ---
@@ -258,9 +262,12 @@ export function getTurnUsageMetrics(
   transcriptPath: string | null,
   opts?: { cwd?: string; tailBytes?: number }
 ): {
-  hitTokens: number | null;
-  promptTokens: number | null;
-  credit: number | null;
+  hitTokens: number;
+  promptTokens: number;
+  callCount: number;
+  credits: number | null;
+  creditCallCount: number;
+  source: 'turn';
 } | null;
 
 export function getSessionUsageMetrics(
@@ -305,7 +312,7 @@ export function getTurnMetricsAndActivity(
 export function getLogicalSessionCostData(
   cbData: CodeBuddyPayload,
   rawCostData: CostData,
-  opts?: { statePath?: string }
+  opts?: { statePath?: string; cwd?: string; handoffPath?: string }
 ): {
   linesAdded: number;
   linesRemoved: number;
@@ -313,6 +320,8 @@ export function getLogicalSessionCostData(
   apiDurationMs: number;
 };
 ```
+
+`cwd` 用于派生 `/clear` handoff 状态文件路径（`handoff-<sha256(cwd)>.json`）。
 
 ---
 
