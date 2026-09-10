@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] (待发布)
 
+## [v0.2.1] - 2026-09-10
+
 ### Fixed (缺陷修复)
 - **遥测真实性加固**：移除对 payload `cache_read_input_tokens` 的兜底回退，无真实遥测时降级 `cache --`，杜绝伪造 `cache 0.0%`。
 - **滑窗扫描防御**：修正小数 `tailBytes` 导致的回扫死循环与逐字节 I/O 雪崩；工具活动兜底回扫收敛为全局连续 40 行预算，消除跨窗口跳行返回陈旧调用。
@@ -23,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **双语 README 与规范化重构**：重写 `README.md` 并新增英文版 `README_en.md`（顶部双语互链），按「安装 → 验证 → 诊断 → 卸载 → 配置」运维主线重构章节，补齐安装器行为说明、自定义安装源、命令行参考、文件结构与 CI 验证矩阵，移除标题 emoji 与营销化措辞，全部示例输出与运行时真实格式对齐。
 - **面向用户重构**：打通一键安装用户在换肤、体检与卸载时的真实 CLI 调用路径，消除底层逆向工程细节泄漏，修复失效导航锚点。
 - **Agent 契约规范化**：优化 `AGENTS.md`，引入 `lang.js` 模块声明，移除硬编码行号，强化测试驱动与验证闭环，建立指向 `docs/` 深度参考手册的上下文指针。
+- **避坑条目与接口对齐**：`AGENTS.md` 新增 `/compact` 后 context 显示旧值的宿主刷新时序条目；`docs/module-reference.md` 对齐当前实现（`extractTokenData` 返回字段、缓存函数签名、`getTurnUsageMetrics` 返回结构、`getLogicalSessionCostData` opts、工具聚合示例）；README 预览小节标题规范化。
 
 ---
 
@@ -56,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 提供跨平台一键安装、卸载、环境体检诊断与隔离环境安装验证闭环。
 - 基于 GitHub Release 不变 tag 实现高可靠安装与静默后台更新检测。
 
-[Unreleased]: https://github.com/XisFool/codebuddy-hud/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/XisFool/codebuddy-hud/compare/v0.2.1...HEAD
+[v0.2.1]: https://github.com/XisFool/codebuddy-hud/compare/v0.2.0...v0.2.1
 [v0.2.0]: https://github.com/XisFool/codebuddy-hud/compare/v0.1.0...v0.2.0
 [v0.1.0]: https://github.com/XisFool/codebuddy-hud/releases/tag/v0.1.0
