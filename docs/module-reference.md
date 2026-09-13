@@ -397,7 +397,7 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 ```typescript
 export function parseSettingsJson(raw: string): object;
 export function atomicWriteSettingsFile(targetPath: string, content: string): void;
-export function resolveWriteTarget(filePath: string): { realPath: string; stat: fs.Stats | null };
+export function resolveWriteTarget(targetPath: string): string;
 export function isSettingsObject(value: unknown): boolean;
 export function writePrivateFileIfAbsent(filePath: string, content: string): boolean;
 ```
@@ -441,7 +441,7 @@ export function buildCmdShimContent(nodeExe: string, hudBin?: string): string;
 ### 接口定义
 ```typescript
 export function runDoctor(options?: { cwd?: string; env?: object }): DoctorReport;
-export function printDoctorReport(report: DoctorReport, isJson?: boolean): void;
+export function printDoctorReport(report: DoctorReport, isJson?: boolean, options?: { cwd?: string }): void;
 ```
 
 ### 诊断项分类 (Checks Categories)

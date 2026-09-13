@@ -20,6 +20,7 @@ HUD 同步输出 ≤3 行 ANSI 看板并退出。CommonJS，Node >=18。
 runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--doctor/-d
   ├ parser.js                  从 payload 提取 token/diff/cost
   ├ config.js                  内置 THEME_PRESETS、Dark/Light 模式解析与 deepMerge
+  ├ codebuddy-hud.config.json  默认内置配置模板与阈值预设
   ├ theme-selector.js          TTY 实时所见即所得交互主题选择器
   ├ renderer.js                3 行组装
   │ ├ renderer/format.js       调色板 / 进度条 / cache 命中率
@@ -29,13 +30,21 @@ runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--d
   ├ session-stats.js           /clear 会话重置识别与 Diff/耗时逻辑基线管理
   ├ doctor.js                  --doctor 环境诊断（Node/配置/编码/Git/transcript）
   ├ update-checker.js          后台版本更新检查（24h 间隔、detached 子进程）
-  ├ git.js / model-info.js / encoding.js / sanitize.js / paths.js / lang.js
-  ├ statusline-installer.js    --setup 写 settings.json
-  ├ settings-file.js          JSONC 解析、配置权限与符号链接保护
+  ├ git.js                     Git 状态探测与 direct HEAD 读取缓存
+  ├ model-info.js              推理深度 effort 解析与 credits 提取
+  ├ encoding.js                代码页探测与 Unicode/ASCII 字形回退
+  ├ sanitize.js                终端安全防御（过滤 ANSI/OSC/Bidi 注入）
+  ├ paths.js                   ~/.codebuddy 状态文件与 handoff 路径解析
+  ├ lang.js                    多语言 i18n 字典（zh/en）
+  ├ statusline-installer.js    --setup 写 settings.json 并生成 Windows shim
+  ├ settings-file.js           JSONC 解析、配置权限与符号链接保护
   └ uninstall.js               --uninstall 清理配置、shim、缓存与状态
 tests/fixtures/*.json          3 个 payload fixture
+tests/unit/*.test.mjs          22 个核心单元测试文件
+scripts/run-tests.js           跨平台测试驱动（全量路径参数转发）
 scripts/verify-display.js      E2E 看板与 CLI 命令形态契约验证
 scripts/verify-install.js      隔离宿主安装/卸载生命周期契约验证
+scripts/bootstrap.js           Release 远程在线安装与自举更新器
 ```
 
 > **深度参考指针（按需查阅，避免全量预载）**：

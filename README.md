@@ -65,7 +65,7 @@ curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/script
 安装链路支持以下可选环境变量：
 
 - `CODEBUDDY_HUD_BOOTSTRAP_URL` —— bootstrap.js 下载地址（install 脚本使用）
-- `CODEBUDDY_HUD_VERSION` —— 固定安装指定 tag（如 `v0.2.0`），默认取 Latest Release
+- `CODEBUDDY_HUD_VERSION` —— 固定安装指定 tag（如 `v0.2.1`），默认取 Latest Release
 - `CODEBUDDY_HUD_RAW_BASE` —— runtime 文件下载基址，指向 fork 的 raw 地址
 - `CODEBUDDY_HUD_LATEST_RELEASE_URL` —— release 查询 API，指向 fork 的 releases
 

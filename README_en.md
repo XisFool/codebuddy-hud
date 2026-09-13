@@ -65,7 +65,7 @@ A background update check runs every 24 hours and suggests re-running the instal
 The install chain supports the following optional environment variable overrides:
 
 - `CODEBUDDY_HUD_BOOTSTRAP_URL` — bootstrap.js download URL (used by the install scripts)
-- `CODEBUDDY_HUD_VERSION` — pin a specific tag (e.g. `v0.2.0`); defaults to the Latest Release
+- `CODEBUDDY_HUD_VERSION` — pin a specific tag (e.g. `v0.2.1`); defaults to the Latest Release
 - `CODEBUDDY_HUD_RAW_BASE` — base URL for runtime file downloads (your fork's raw base)
 - `CODEBUDDY_HUD_LATEST_RELEASE_URL` — release lookup API (your fork's releases)
 

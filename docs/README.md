@@ -13,5 +13,5 @@
 
 - **开发硬约束、避坑指南与验证闭环**：查阅 [AGENTS.md](../AGENTS.md)。
 - **终端用户安装、主题与排障指南**：查阅 [README.md](../README.md)。
-- **版本发布标准流程**：查阅 [AGENTS.md#发布流程](../AGENTS.md#发布流程)。
+- **版本发布标准流程**：查阅 [AGENTS.md#发布流程](../AGENTS.md#发布流程低频发布操作)。
 - **版本演进与发布历史**：查阅 [CHANGELOG.md](../CHANGELOG.md)。
