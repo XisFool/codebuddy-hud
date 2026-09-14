@@ -6,7 +6,9 @@
 [![npm dependencies](https://img.shields.io/badge/npm%20dependencies-0-2ea44f)](#安装)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> 面向 **CodeBuddy Code** 的终端 statusLine 实时看板。会话每次交互后刷新，以严格 ≤3 行 ANSI 展示模型与推理强度、Git 状态、上下文 Token、缓存命中率、代码变更、实际消费与工具活动。
+> 面向 **CodeBuddy Code** 的终端状态栏看板与插件（StatusLine HUD Plugin），带来类似 Claude Code `cc-hud` 的实时交互与监控体验。
+>
+> 会话每次交互后自动刷新，以严格 ≤3 行 ANSI 展示当前模型与推理强度、Git 分支状态、上下文 Token 用量、Prompt Cache 命中率、代码变更差异、实际会话消费（Credits）与工具活动调用频次。
 >
 > 纯 Node.js 内置模块实现（零 npm 依赖）；每次 push 均在 **macOS / Linux / Windows × Node 18/20/22** 矩阵上运行单元测试与安装验证。
 
@@ -15,6 +17,8 @@
 ---
 
 ## 效果预览
+
+![CodeBuddy HUD 预览](./assets/codebuddy-hud-preview.svg)
 
 ```text
 DeepSeek V4 Flash ● max  │  main*  │  my-project  │  default
@@ -34,7 +38,7 @@ Token 250.1k (in: 249k · out: 1.1k)  │  249k/1M [███░░░░░░�
 
 ## 安装
 
-要求：Node.js >= 18（安装脚本会先校验）。在普通终端中执行一条命令，无需克隆仓库或 `npm install`。
+要求：Node.js >= 18（安装脚本会先校验）。在普通终端中执行一条命令，无需克隆仓库或配置环境。
 
 **Windows（PowerShell）**
 
@@ -42,11 +46,19 @@ Token 250.1k (in: 249k · out: 1.1k)  │  249k/1M [███░░░░░░�
 irm https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.ps1 | iex
 ```
 
+**Windows（CMD）**
+
+```cmd
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.ps1 | iex"
+```
+
 **macOS / Linux（Bash）**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.sh | bash
 ```
+
+> **为什么不是一条 插件安装 命令？** 插件清单（`.codebuddy-plugin/plugin.json`）只声明元数据，不会下载运行时，也不会写入 `settings.json` 的 `statusLine`（宿主清单 schema 无 statusLine 字段）。安装脚本负责这两件事：把 runtime 落到 `~/.codebuddy/codebuddy-hud-runtime/runtime/`，再写入 `statusLine.command`。
 
 安装器行为：
 
@@ -60,14 +72,30 @@ curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/script
 
 内置每 24 小时一次的后台版本检查，发现新版本时提示重新运行安装命令升级。
 
-### 自定义安装源（镜像 / Fork）
+### Fork / 镜像安装
 
-安装链路支持以下可选环境变量：
+**macOS / Linux**：
 
-- `CODEBUDDY_HUD_BOOTSTRAP_URL` —— bootstrap.js 下载地址（install 脚本使用）
-- `CODEBUDDY_HUD_VERSION` —— 固定安装指定 tag（如 `v0.2.1`），默认取 Latest Release
-- `CODEBUDDY_HUD_RAW_BASE` —— runtime 文件下载基址，指向 fork 的 raw 地址
-- `CODEBUDDY_HUD_LATEST_RELEASE_URL` —— release 查询 API，指向 fork 的 releases
+```bash
+export CODEBUDDY_HUD_BOOTSTRAP_URL=https://your-mirror/scripts/bootstrap.js
+export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.2.1
+curl -fsSL https://your-mirror/scripts/install.sh | bash
+```
+
+**Windows（PowerShell）**：
+
+```powershell
+$env:CODEBUDDY_HUD_BOOTSTRAP_URL = 'https://your-mirror/scripts/bootstrap.js'
+$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.2.1'
+irm https://your-mirror/scripts/install.ps1 | iex
+```
+
+说明：
+
+- `CODEBUDDY_HUD_BOOTSTRAP_URL` 供安装脚本下载 bootstrap.js 使用，必须指向镜像上的 `scripts/bootstrap.js` 本体，不是镜像根目录；
+- `CODEBUDDY_HUD_RAW_BASE` 供 bootstrap.js 拉取 runtime 文件使用；**一旦设置会跳过 GitHub Latest Release 查询**，示例锁定 tag 路径（`vX.Y.Z`）以维持"安装固定到 release、不使用可变分支"的既有承诺（安装器行为第 1 条）；
+- 示例使用占位符 `your-mirror`，不写任何具体公共代理域名；
+- bash 下环境变量必须导出（作用于 `bash` 进程），不能只前缀给 `curl`。
 
 ---
 

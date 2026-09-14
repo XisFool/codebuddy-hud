@@ -6,7 +6,9 @@
 [![npm dependencies](https://img.shields.io/badge/npm%20dependencies-0-2ea44f)](#install)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> Real-time statusline HUD for **CodeBuddy Code**. Refreshes after every session interaction and renders strictly ≤3 ANSI lines: model and reasoning effort, Git status, context tokens, cache hit rate, code changes, actual spend, and tool activity.
+> A compact statusLine HUD and plugin for **CodeBuddy Code**, delivering a real-time terminal dashboard experience inspired by Claude Code's `cc-hud`.
+>
+> Automatically refreshes after every turn to display model & reasoning effort, Git branch, context tokens, prompt cache hit rate, diff stats, session spend (credits), and tool activity in strict ≤3 lines of ANSI.
 >
 > Built entirely on Node.js built-in modules (zero npm dependencies). Every push is verified by a **macOS / Linux / Windows × Node 18/20/22** matrix running unit tests and install verification.
 
@@ -15,6 +17,8 @@
 ---
 
 ## Preview
+
+![CodeBuddy HUD preview](./assets/codebuddy-hud-preview.svg)
 
 ```text
 DeepSeek V4 Flash ● max  │  main*  │  my-project  │  default
@@ -34,7 +38,7 @@ Token 250.1k (in: 249k · out: 1.1k)  │  249k/1M [███░░░░░░�
 
 ## Install
 
-Requires Node.js >= 18 (validated by the install script first). Run one command in a normal terminal — no repo clone, no `npm install`.
+Requires Node.js >= 18 (validated by the install script first). Run one command in a normal terminal — no repo clone, no environment setup.
 
 **Windows (PowerShell)**
 
@@ -42,11 +46,19 @@ Requires Node.js >= 18 (validated by the install script first). Run one command 
 irm https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.ps1 | iex
 ```
 
+**Windows (CMD)**
+
+```cmd
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.ps1 | iex"
+```
+
 **macOS / Linux (Bash)**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.sh | bash
 ```
+
+> **Why not a single plugin install command?** The plugin manifest (`.codebuddy-plugin/plugin.json`) only declares metadata — it does not download runtime files, nor does it write `statusLine` into `settings.json` (the host plugin manifest schema has no statusLine field). The installer script handles both: placing the runtime at `~/.codebuddy/codebuddy-hud-runtime/runtime/` and configuring `statusLine.command`.
 
 The installer:
 
@@ -60,14 +72,30 @@ The installer:
 
 A background update check runs every 24 hours and suggests re-running the install command when a new version is available.
 
-### Custom install source (mirrors / forks)
+### Fork / Mirror Install
 
-The install chain supports the following optional environment variable overrides:
+**macOS / Linux**:
 
-- `CODEBUDDY_HUD_BOOTSTRAP_URL` — bootstrap.js download URL (used by the install scripts)
-- `CODEBUDDY_HUD_VERSION` — pin a specific tag (e.g. `v0.2.1`); defaults to the Latest Release
-- `CODEBUDDY_HUD_RAW_BASE` — base URL for runtime file downloads (your fork's raw base)
-- `CODEBUDDY_HUD_LATEST_RELEASE_URL` — release lookup API (your fork's releases)
+```bash
+export CODEBUDDY_HUD_BOOTSTRAP_URL=https://your-mirror/scripts/bootstrap.js
+export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.2.1
+curl -fsSL https://your-mirror/scripts/install.sh | bash
+```
+
+**Windows (PowerShell)**:
+
+```powershell
+$env:CODEBUDDY_HUD_BOOTSTRAP_URL = 'https://your-mirror/scripts/bootstrap.js'
+$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.2.1'
+irm https://your-mirror/scripts/install.ps1 | iex
+```
+
+Notes:
+
+- `CODEBUDDY_HUD_BOOTSTRAP_URL` is used by the install script to download `bootstrap.js`; it must point directly to `scripts/bootstrap.js` on your mirror, not the mirror root directory.
+- `CODEBUDDY_HUD_RAW_BASE` is used by `bootstrap.js` to fetch runtime files. **Setting this skips the GitHub Latest Release lookup**, so the example pins a tag path (`vX.Y.Z`) to maintain the release-pinned guarantee (Installer behavior #1).
+- Examples use the `your-mirror` placeholder; do not hardcode third-party public proxies.
+- Under Bash, environment variables must be exported (so child `bash` processes inherit them), not just prepended to `curl`.
 
 ---
 
