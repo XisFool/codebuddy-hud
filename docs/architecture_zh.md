@@ -105,6 +105,10 @@ sequenceDiagram
     Host->>Entry: 派生 node codebuddy-hud.js 并喂入 stdin JSON
     activate Entry
     
+    opt 未设置 CODEBUDDY_HUD_NO_UPDATE_CHECK 且达到 24 小时检查周期
+        Entry->>Background: spawnBackgroundUpdateCheck() [预占位锁写盘 + detached unref]
+    end
+
     par 超时竞争与数据接收
         Entry->>Stdin: 启动 800ms 保底定时器 (TIMEOUT_MS)
         Entry->>Stdin: 累加接收 stdin 数据块 (上限 1MB)
@@ -118,13 +122,7 @@ sequenceDiagram
         Renderer->>Engine: getGitStatus() & getLogicalSessionCostData()
         Renderer->>Engine: getSessionUsageMetrics() & getTurnMetricsAndActivity()
         Renderer-->>Entry: 装配输出 ≤3 行 ANSI 看板字符串
-        Entry->>Host: stdout.write(renderedOutput)
-    else 管道异常断开 (EPIPE / 宿主提前关闭)
-        Entry->>Entry: 由 process.stdout.on('error') 静默捕获
-    end
-
-    opt 达到 24 小时检查周期
-        Entry->>Background: spawnBackgroundUpdateCheck() [预占位锁写盘 + detached unref]
+        Entry->>Host: stdout.write(renderedOutput) (EPIPE 由 stdout.on('error') 静默捕获)
     end
 
     Entry->>Host: process.exitCode = 0 (libuv 事件循环自然排空退出)
@@ -138,7 +136,7 @@ sequenceDiagram
 ### 5.1 逆向滑窗遥测扫描算法 (`transcript.js`)
 - **痛点**：Prompt Cache 真实命中数、实际 Credits 扣费与工具调用序列仅存在于 `transcript.jsonl` 中，长会话下该文件可能达数十 MB。
 - **算法细节**：
-  1. **尾部逆向读取**：`getTurnMetricsAndActivity()` 用一次回扫聚合本轮 usage 和工具活动；默认滑窗 16KB，全扫描上限 256KB。会话 Credits 另用前向增量扫描。
+  1. **尾部逆向读取**：`getTurnMetricsAndActivity()` 用一次回扫聚合本轮 usage 和工具活动；默认滑窗 16KB，全扫描上限 256KB（兼具行数硬预算：常规回扫上限 40 行，单轮聚合上限 200 行）。会话 Credits 另用前向增量扫描。
   2. **跨块断行拼装 (Straddle Reconstruction)**：当滑窗边界切断了单行 JSONL 时，将未完成的前半段暂存并在读取前一块时完成拼装。
   3. **Turn 轮次边界截断**：从后向前逆向回扫 API usage 记录，直到遇到 `role: 'user'` 时停止，确保指标展示的是**当前这一轮交互的聚合命中率**。
   4. **字段优先级判定**：
@@ -160,7 +158,7 @@ sequenceDiagram
      - 同一 transcript 的 `session_id` 变化、transcript 文件物理截断（size 变小），或宿主显式 `clear_signal` / `is_clear`；
      - 代码增删或耗时计数低于已存基线，此时将 cost 基线归零。
   3. 识别到重置后自动建立新基线，使看板显示的耗时与变更严格反映当前会话增量。
-  4. **跨文件交接（handoff）**：`/clear` 切换新 transcript 导致 identity 未命中时，读取按 cwd 寻址的 `handoff-<sha256(cwd)>.json`；若 cost 累计序列未回退（同一宿主进程延续），继承其值为新基线，Δ/⏱ 归零。
+  4. **跨文件交接（handoff）**：`/clear` 切换新 transcript 导致 identity 未命中时，读取按 cwd 寻址的 `handoff-<sha256(cwd)>.json`；若 cost 累计序列未回退（同一宿主进程延续），继承其值为新基线，Δ/⏱ 归零（具备 5 分钟 TTL 防过期、跨平台路径大小写归一化与 cost 下跌单调性防御）。
 
 ### 5.3 增量 SHA-256 Credits Checkpoint 机制 (`transcript.js`)
 - **痛点**：每次事件刷新全量遍历长 JSONL 会重复解析已有消费记录。
@@ -243,6 +241,7 @@ sequenceDiagram
 1. **Windows `.cmd` Shim 绝对路径烘焙**：
    - `statusline-installer.js` 在 `--setup` 时将当前环境的 `process.execPath` 绝对路径固化写入 `.cmd`。
    - 自动将路径中的 `%` 批量转义为 `%%`，免疫 `cmd.exe` 变量误展开。
+   - 当路径包含非 ASCII 字符时，通过 `resolveShortPath()` 解析 Windows 8.3 短路径并强制注入 `@chcp 65001 >nul`，彻底规避批处理对非 ASCII 路径解析崩溃。
    - shim 为 UTF-8，必要时先 `chcp 65001`；实测 cmd.exe 不支持 UTF-16LE 批处理文件。
    - v2.146.0 containment 会二次转义字面引号。安全 ASCII shim 路径省略引号；需要引号的路径保留引号，仍受宿主兼容限制。
 2. **终端编码自动探测与缓存**：

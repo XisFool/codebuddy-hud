@@ -103,6 +103,10 @@ sequenceDiagram
     Host->>Entry: spawn(node codebuddy-hud.js) & pipe stdin JSON
     activate Entry
     
+    opt CODEBUDDY_HUD_NO_UPDATE_CHECK not set & 24h Check Due
+        Entry->>Background: spawnBackgroundUpdateCheck() [Pre-lock timestamp & detached unref]
+    end
+
     par Race Timeout and Data
         Entry->>Stdin: Start 800ms Safety Timer (TIMEOUT_MS)
         Entry->>Stdin: Collect stdin chunks (max 1MB)
@@ -116,13 +120,7 @@ sequenceDiagram
         Renderer->>Engine: getGitStatus() & getLogicalSessionCostData()
         Renderer->>Engine: getSessionUsageMetrics() & getTurnMetricsAndActivity()
         Renderer-->>Entry: formatted ≤3 ANSI lines
-        Entry->>Host: stdout.write(renderedOutput)
-    else Pipe broken (EPIPE / early close)
-        Entry->>Entry: Swallowed via process.stdout.on('error')
-    end
-
-    opt Background 24h Check Due
-        Entry->>Background: spawnBackgroundUpdateCheck() [Pre-lock timestamp & detached unref]
+        Entry->>Host: stdout.write(renderedOutput) (EPIPE swallowed via stdout.on('error'))
     end
 
     Entry->>Host: process.exitCode = 0 (Natural Event Loop Drain)
@@ -136,7 +134,7 @@ sequenceDiagram
 ### 5.1 Reverse Sliding-Window Transcript Scanning (`transcript.js`)
 - **Problem**: Comprehensive telemetry (Prompt Cache hits, exact credit billing, tool names) is only recorded in the host's `transcript.jsonl`. However, transcript files can exceed hundreds of megabytes during long coding sessions.
 - **Scanning Algorithm**:
-  1. **Tail Seeking**: `getTurnMetricsAndActivity()` shares one reverse scan for turn usage and tool activity. It reads from `EOF` in 16KB chunks by default (`tailBytes: 16384`), capped at a 256KB total scan window. Session Credits use a separate forward checkpoint scan.
+  1. **Tail Seeking**: `getTurnMetricsAndActivity()` shares one reverse scan for turn usage and tool activity. It reads from `EOF` in 16KB chunks by default (`tailBytes: 16384`), capped at a 256KB total scan window (with hard line budgets: `MAX_SCAN_LINES = 40` for general scan, `MAX_TURN_SCAN_LINES = 200` for turn aggregation). Session Credits use a separate forward checkpoint scan.
   2. **Straddle Line Reconstruction**: When a sliding chunk boundary cuts across a JSON line, the trailing fragment is buffered and prepended to the preceding chunk to assemble valid JSON.
   3. **Turn Boundary Termination**: The scanner traverses backwards, aggregating API usage blocks until it encounters an entry with `role: 'user'`. This guarantees metrics reflect the **current turn aggregation**, not isolated burst steps.
   4. **Field Priority Resolution**:
@@ -158,7 +156,7 @@ sequenceDiagram
      - A new `session_id` for the same transcript, a physically truncated transcript (file size shrinks), or an explicit host `clear_signal` / `is_clear`;
      - Lines added/removed or duration counters drop below their stored baselines (the cost baseline then resets to zero).
   3. Subtracts the established baseline from raw host stats to display accurate turn-relative diffs and elapsed durations.
-  4. **Cross-file handoff**: when `/clear` swaps in a new transcript and the identity misses, the cwd-scoped `handoff-<sha256(cwd)>.json` is read; if the cumulative cost sequence has not regressed (same host process), it is inherited as the new baseline with Δ/duration reset to zero.
+  4. **Cross-file handoff**: when `/clear` swaps in a new transcript and the identity misses, the cwd-scoped `handoff-<sha256(cwd)>.json` is read; if the cumulative cost sequence has not regressed (same host process), it is inherited as the new baseline with Δ/duration reset to zero (protected by 5-minute TTL, cross-platform path normalization, and cost non-regression checks).
 
 ### 5.3 Incremental SHA-256 Checkpointing for Credits (`transcript.js`)
 - **Problem**: Recomputing full-session credits on every event repeats parsing of existing records, especially in long transcripts.
@@ -241,6 +239,7 @@ CodeBuddy Code v2.146.0 retains only the first three stdout lines. The HUD's own
 1. **Windows `.cmd` Shim Path Baking**:
    - `statusline-installer.js` bakes the exact `process.execPath` into `codebuddy-hud.cmd` during `--setup`.
    - Batch percent characters (`%`) in paths are automatically escaped as `%%` to avoid `cmd.exe` variable substitution corruption.
+   - When paths contain non-ASCII characters, `resolveShortPath()` resolves Windows 8.3 short paths and prepends `@chcp 65001 >nul` to prevent `cmd.exe` parse crashes.
    - The shim is UTF-8, with `chcp 65001` when needed; UTF-16LE batch files are not supported by the tested cmd.exe invocation.
    - v2.146.0 containment double-escapes literal quotes. Safe ASCII shim paths are left unquoted; paths requiring quotes retain them and remain subject to the host limitation.
 2. **Terminal UTF-8 Auto-Detection**:

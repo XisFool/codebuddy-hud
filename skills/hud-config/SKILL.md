@@ -22,6 +22,7 @@ description: 当用户想要配置、美化或自定义 codebuddy-hud 状态栏�
      - `showToolActivity`（最近工具调用活动，默认 true）
      - `showGitBranch`（Git 分支名与修改标记，默认 true）
      - `showCurrentDir`（当前工作区目录名，默认 true）
+     - `showVersion`（Line 1 客户端版本号，默认 false）
      - `showPermissionMode`（权限模式指示器，默认 true）
    - **图标字体**（同样置于 `display` 对象内）：
      - Nerd Fonts 精美图标：`"useNerdFonts": true, "unicode": "auto"`
@@ -29,7 +30,7 @@ description: 当用户想要配置、美化或自定义 codebuddy-hud 状态栏�
      - 纯 ASCII 字符（兼容低端终端）：`"useNerdFonts": false, "unicode": false`
 
 2. **写入配置文件**：
-   读取目标路径现有配置（若存在），与用户修改项合并，确保字段层级正确（显示项与字体选项必须置于 `display` 下），写入目标 JSON。完整配置结构示例：
+   读取目标路径现有配置（若存在），与用户修改项合并，确保字段层级正确（显示项与字体选项必须置于 `display` 下），写入目标 JSON。常用配置结构示例：
 
    ```json
    {

@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] (待发布)
 
+### Documentation (文档优化)
+- **文档与视觉契约对齐**：移除 `README.md`、`README_en.md` 与 `preview.svg` 中 Line 3 工具活动段多余的竖线分隔符，对齐真实渲染的双空格格式。
+- **架构时序与常量校准**：校准 `docs/architecture*.md` 时序图中后台更新检查的实际触发时序，补录 40/200 行扫描硬预算、Handoff 5 分钟 TTL 及 Windows 8.3 短路径机制。
+- **模块契约与 API 规范对齐**：补充 `format.js` 中 `metricsFromPromptCache` 导出与 `calculateTurnCacheMetrics` 的 `{ available: false }` 三态语义，纠正 `runDoctor`、`setup` 与 `selectThemeInteractive` 接口签名。
+- **规范与技能配置补齐**：`AGENTS.md` 架构树补齐 `install.ps1`/`install.sh` 并补充 `https, http` 内置模块说明；`skills/hud-config/SKILL.md` 补充 `showVersion` 显示项。
+- **首屏与元数据优化**：重构 README 首屏 SEO 语义、终端预览图与多平台镜像安装区，补齐 `plugin.json` 与 `package.json` 关键词。
+
 ## [v0.2.1] - 2026-09-10
 
 ### Fixed (缺陷修复)

@@ -177,7 +177,8 @@ export function renderHUD(
 - `formatTokens(num: number): string`: 格式化数字为 `1.2k`、`3.5M`。特别处理 `999.5` 边界防止四舍五入溢出为 `1000k`。
 - `formatDurationMs(ms: number): string`: 格式化毫秒数为 `12s`、`5m20s`、`2h15m`。
 - `createProgressBar(pct: number, width: number, thresholds: object, glyphs: object): string`: 生成自适应色阶进度条。
-- `calculateTurnCacheMetrics(usage): TurnCacheMetrics | null`: 从单条 usage 计算缓存命中指标（运行时渲染走 `metricsFromPromptCache`，本函数由单元测试覆盖）。
+- `calculateTurnCacheMetrics(usage, thresholds): TurnCacheMetrics | { available: false } | null`: 从单条 usage 计算缓存命中指标，字段缺失或总 prompt 为 0 时返回 `{ available: false }`（渲染为 `cache --`），无 usage 时返回 `null`。
+- `metricsFromPromptCache(hitTokens: number, promptTokens: number, thresholds?: object): TurnCacheMetrics | { available: false } | null`: 从本轮聚合命中数与 prompt 数构建三态缓存指标。
 - `formatTurnCacheBadge(metrics, label, isCompact, thresholds): string`: 渲染缓存徽标：可用时 `cache 98.5%`（按 `thresholds` 分色），无遥测时降级为 `cache --`。
 
 ---
@@ -419,8 +420,10 @@ export function writePrivateFileIfAbsent(filePath: string, content: string): boo
 export function setup(options?: {
   settingsPath?: string;
   runtimeDir?: string;
+  hudBin?: string;
   platform?: string;
   nodeExe?: string;
+  theme?: string;
 }): void;
 
 export function buildStatusLineCommand(platform: string, hudBin: string, nodeExe: string): string;
@@ -440,7 +443,7 @@ export function buildCmdShimContent(nodeExe: string, hudBin?: string): string;
 
 ### 接口定义
 ```typescript
-export function runDoctor(options?: { cwd?: string; env?: object }): DoctorReport;
+export function runDoctor(options?: { cwd?: string; json?: boolean }): DoctorReport;
 export function printDoctorReport(report: DoctorReport, isJson?: boolean, options?: { cwd?: string }): void;
 ```
 
@@ -475,7 +478,9 @@ export function parseSemver(v: string): [number, number, number];
 
 ### 接口定义
 ```typescript
-export function selectThemeInteractive(): Promise<string>;
+export function selectThemeInteractive(opts?: { initialTheme?: string }): Promise<string | null>;
+export function saveUserTheme(themeName: string): string;
+export function getActiveThemeName(): string;
 export function printThemesList(): void;
 ```
 

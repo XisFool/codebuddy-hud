@@ -5,7 +5,7 @@ HUD 同步输出 ≤3 行 ANSI 看板并退出。CommonJS，Node >=18。
 
 ## 硬约束（开发不可动摇规则）
 
-1. **零 npm 依赖**：仅使用 Node.js 内置模块（`fs`, `path`, `readline`, `crypto`, `os`, `child_process`）。
+1. **零 npm 依赖**：仅使用 Node.js 内置模块（`fs`, `path`, `readline`, `crypto`, `os`, `child_process`, `https`, `http`）。
 2. **极速响应与恒 `exit(0)`**：
    - 单次预算 <1500ms（实际 p50 ~200ms；入口 `TIMEOUT_MS` 设 800ms 管道保底超时）。
    - 任何内部异常静默降级，入口监听 `process.stdout/stderr.on('error')` 防 EPIPE 崩溃；
@@ -41,10 +41,12 @@ runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--d
   └ uninstall.js               --uninstall 清理配置、shim、缓存与状态
 tests/fixtures/*.json          3 个 payload fixture
 tests/unit/*.test.mjs          22 个核心单元测试文件
+scripts/install.ps1            Windows PowerShell 一键在线安装脚本
+scripts/install.sh             POSIX Shell 一键在线安装脚本
+scripts/bootstrap.js           Release 远程在线安装与自举更新器
 scripts/run-tests.js           跨平台测试驱动（全量路径参数转发）
 scripts/verify-display.js      E2E 看板与 CLI 命令形态契约验证
 scripts/verify-install.js      隔离宿主安装/卸载生命周期契约验证
-scripts/bootstrap.js           Release 远程在线安装与自举更新器
 ```
 
 > **深度参考指针（按需查阅，避免全量预载）**：
@@ -91,7 +93,7 @@ node runtime/bin/codebuddy-hud.js --theme list
 11. **/clear 换新 transcript 的基线交接（handoff）**：
     - 宿主 /clear 后会切换到全新 transcript 文件（实测换文件而非截断），per-identity 状态失联，且所有 reset 信号都要求 `previous` 存在，进程级累计 Δ/⏱ 会全额漏显；
     - `session-stats.js` 另存按 cwd 寻址的 handoff 记录（`codebuddy-hud-session-state/handoff-<sha256(cwd)>.json`），每次刷新写入最新原始累计 cost；
-    - identity 未命中时读取 handoff：cost 累计序列未下跌（同宿主进程延续）→ 继承其值为新基线，Δ/⏱ 归零；cost 下跌（新宿主进程启动）或 cwd 不同 → 不继承。
+    - identity 未命中时读取 handoff：存在 5 分钟 TTL（`HANDOFF_MAX_AGE_MS` 防跨天污染）；cost 累计序列未下跌（同宿主进程延续）且跨平台归一化 cwd 一致 → 继承其值为新基线，Δ/⏱ 归零；cost 下跌（新宿主进程启动）或 cwd 不同 → 不继承。
     - 已漏显的旧会话状态无法自愈，下一次 /clear 起生效。
 12. **/compact 后 context 显示旧值（宿主刷新时序）**：
     - 宿主 payload 的 `context_window.current_usage` 来自 `UsageUtils.getLatestUsage()`：取活跃链最近一条真实 API 调用的 usage，跳过 `agent === "compact"` 的条目；
