@@ -8,5 +8,6 @@
     "uninstall",
     "theme",
     "doctor"
-  ]
+  ],
+  "keywords": ["codebuddy", "codebuddy-code", "codebuddy-cli", "codebuddy-plugin", "statusline", "hud", "terminal-hud", "cli-dashboard", "token-tracker", "ai-coding"]
 }

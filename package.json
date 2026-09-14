@@ -11,7 +11,7 @@
     "verify": "node scripts/verify-display.js",
     "verify:install": "node scripts/verify-install.js"
   },
-  "keywords": ["codebuddy", "hud", "statusline", "terminal"],
+  "keywords": ["codebuddy", "codebuddy-code", "codebuddy-cli", "codebuddy-plugin", "statusline", "hud", "terminal-hud", "cli-dashboard", "token-tracker", "ai-coding"],
   "license": "MIT",
   "engines": {
     "node": ">=18"
