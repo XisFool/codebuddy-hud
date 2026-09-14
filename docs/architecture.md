@@ -198,7 +198,7 @@ sequenceDiagram
 
 ### 5.6 3-Line Adaptive Layout & Pruning (`renderer.js`)
 - **Line 1 (Identity & Status)**: Model Display Name · Reasoning Effort Icon · Git Branch & Dirty (`*`) · Workspace Name · Permission Mode · Version Badge.
-- **Line 2 (Tokens & Context)**: Total Tokens (In/Out breakdown) · Progress Bar (`[███░░░░░░░]`) · Percentage Used · Turn Cache Hit Badge.
+- **Line 2 (Tokens & Context)**: Current context input/capacity · progress bar and percentage · output tokens · turn cache hit badge; compact staleness is shown explicitly while awaiting fresh host usage.
 - **Line 3 (Diff & Cost & Latency & Tool Activity)**: `Δ +Added -Removed` · Actual Credits · Total Duration · Current tool activity and turn-aggregated tool badges (`◐ Edit: parser.js`, `✓ Edit ×3`). (Omitted if all are zero).
 
 CodeBuddy Code v2.146.0 retains only the first three stdout lines. The HUD's own three-line contract is strictly aligned with this truncation limit; tool activity is merged into Line 3 so every key segment stays visible.

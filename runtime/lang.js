@@ -2,6 +2,8 @@
 
 const DICTIONARY = {
   zh: {
+    contextPending: '压缩后待更新',
+    contextReported: '最近报告',
     // CLI & Theme
     themeSelectTitle: '请选择 HUD 主题 (Select HUD Theme):',
     themeSelectHint: '[↑/↓ 移动 | 1-5 选择 | Enter 确认 | Esc 取消]',
@@ -55,6 +57,8 @@ const DICTIONARY = {
     updateTip: '运行安装脚本即可更新',
   },
   en: {
+    contextPending: 'awaiting usage after compact',
+    contextReported: 'last reported',
     // CLI & Theme
     themeSelectTitle: 'Select HUD Theme:',
     themeSelectHint: '[↑/↓ Move | 1-5 Select | Enter Confirm | Esc Cancel]',

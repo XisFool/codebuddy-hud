@@ -22,14 +22,14 @@
 
 ```text
 Deepseek-V4.1-Flash ● max  │  main*  │  my-project  │  default
-Token 250.1k (in: 249k · out: 1.1k)  │  249k/1M [███░░░░░░░] 25%  │  cache 96.8%
+Context Token 249k/1M [███░░░░░░░] 25%  │  out 1.1k  │  cache 96.8%
 Δ +1.7k -161  │  82.04 credits  │  ⏱ 2h47m  │  ◐ Edit: parser.js  ✓ Read ×3  ✓ Grep ×2
 ```
 
 ### 布局说明
 
 - **Line 1（身份）**：模型名称、推理强度（如 `● max`）、Git 分支（`*` 表示有未提交改动）、工作区目录名、当前权限模式。
-- **Line 2（资源）**：上下文 Token 总量与输入/输出拆分、上下文窗口占用进度条与百分比（分子口径与宿主 `used_percentage` 一致）、Prompt Cache 本轮命中率；供应商未返回缓存字段时显示 `cache --`。
+- **Line 2（资源）**：当前上下文输入占用、窗口进度条与百分比（分子口径与宿主 `used_percentage` 一致）、输出 Token 与 Prompt Cache 本轮命中率；压缩后宿主尚未提供新 usage 时显示 `--` 和等待提示。
 - **Line 3（本轮活动）**：代码变更行数 `Δ +N -M`（ASCII 终端降级为 `[D]`）、会话实际消费（credits；不可得时回退 `$USD`）、会话耗时、AI 当前动作、本轮已完成工具调用频次（最多 3 项）。
 
 3 行为硬上限，对齐宿主 CodeBuddy Code（v2.146.0 实测按 stdout 前 3 行截断）；无数据的行或字段整体隐藏，不会输出多余空行。

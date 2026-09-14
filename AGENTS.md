@@ -99,6 +99,7 @@ node runtime/bin/codebuddy-hud.js --theme list
     - 宿主 payload 的 `context_window.current_usage` 来自 `UsageUtils.getLatestUsage()`：取活跃链最近一条真实 API 调用的 usage，跳过 `agent === "compact"` 的条目；
     - 故 /compact 完成后、下一次真实 API 响应落盘前，payload 携带压缩前旧值（实测可达十余分钟）；
     - HUD 为一次性进程（无进程内缓存）；此滞后属宿主刷新时序，定位宿主侧即可。
+    - HUD 现会读取 transcript 的成功 compact 摘要；在 payload 仍对应压缩前 usage 时显示 `--` 与等待提示，不把旧值伪装为当前值。
 
 ## 提交与工作流契约
 

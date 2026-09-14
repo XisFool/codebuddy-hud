@@ -22,14 +22,14 @@
 
 ```text
 Deepseek-V4.1-Flash ● max  │  main*  │  my-project  │  default
-Token 250.1k (in: 249k · out: 1.1k)  │  249k/1M [███░░░░░░░] 25%  │  cache 96.8%
+Context Token 249k/1M [███░░░░░░░] 25%  │  out 1.1k  │  cache 96.8%
 Δ +1.7k -161  │  82.04 credits  │  ⏱ 2h47m  │  ◐ Edit: parser.js  ✓ Read ×3  ✓ Grep ×2
 ```
 
 ### Layout breakdown
 
 - **Line 1 (identity)**: model name, reasoning effort (e.g. `● max`), Git branch (`*` means uncommitted changes), workspace directory name, current permission mode.
-- **Line 2 (resources)**: total context tokens with input/output split, context window bar and percentage (numerator aligned with the host's `used_percentage`), current-turn prompt cache hit rate; shows `cache --` when the provider returns no cache fields.
+- **Line 2 (resources)**: current context input usage, context window bar and percentage (numerator aligned with the host's `used_percentage`), output tokens and current-turn prompt cache hit rate; after compact, stale host data is marked as waiting for a fresh usage report.
 - **Line 3 (turn activity)**: diff stats `Δ +N -M` (falls back to `[D]` on ASCII terminals), actual session spend (credits, falling back to `$USD` when unavailable), session duration, current AI action, and completed tool-call counts (up to 3).
 
 3 lines is a hard cap, matching the host CodeBuddy Code stdout truncation (verified on v2.146.0: first 3 lines); lines or fields without data are omitted entirely, never rendered blank.

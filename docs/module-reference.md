@@ -164,7 +164,7 @@ export function renderHUD(
 
 ### 3 行输出排版规范
 - **Line 1 (Identity)**: `[ModelName] [EffortIcon] │ [Branch*] │ [Workspace] │ [Permission] [UpdateBadge]`
-- **Line 2 (Tokens)**: `Token 250.1k (in: 249k · out: 1.1k) │ 249k/1M [███░░░░░░░] 25% │ cache 96.8%`
+- **Line 2 (Tokens)**: `Context Token 249k/1M [███░░░░░░░] 25% │ out 1.1k │ cache 96.8%`; after compact, an unconfirmed host value is rendered with an explicit waiting marker.
 - **Line 3 (Diff/Cost/Tools)**: `Δ +1.7k -161 │ 82.04 credits │ ⏱ 2h47m │ ◐ Edit: parser.js │ ✓ Read ×3` (全空自动隐藏)
 
 ---

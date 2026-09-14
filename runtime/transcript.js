@@ -676,9 +676,101 @@ function getRecentToolActivity(transcriptPath, opts) {
   }
 }
 
+// Follow the newest supported history item's parent chain, not unrelated
+// appended branches. The payload has no active message id: mismatching usage,
+// missing parents/ids and damaged tails therefore stay explicitly unknown.
+function createContextTracker(contextWindow) {
+  const reported = contextWindow && contextWindow.current_usage;
+  let targetId = null;
+  let sawUsage = false;
+  const seen = new Set();
+  const tracker = {
+    status: 'unknown',
+    done: false,
+    invalidate() { this.done = true; },
+    consume(entry) {
+      if (this.done) return;
+      if (!entry || typeof entry !== 'object') return this.invalidate();
+      if (!['message', 'reasoning', 'function_call', 'function_call_result'].includes(entry.type)) return;
+      const pd = entry.providerData || {};
+      if (pd.isSubAgent === true) return;
+      if (typeof entry.id !== 'string' || !entry.id) return this.invalidate();
+      if (targetId !== null && entry.id !== targetId) return;
+      if (seen.has(entry.id)) return this.invalidate();
+      seen.add(entry.id);
+
+      // Both manual assistant summaries and automatic user replacements mark
+      // completed compaction. A compact command/start or failed run does not.
+      if (entry.type === 'message' && ['user', 'assistant'].includes(entry.role)
+          && pd.isCompacted === true && (pd.isSummary === true || pd.isCompactInternal === true)
+          && (pd.agent === 'compact' || (typeof pd.compactType === 'string' && pd.compactType))
+          && entry.status !== 'failed' && entry.status !== 'cancelled') {
+        this.status = 'stale';
+        this.done = true;
+        return;
+      }
+      if (pd.agent !== 'compact' && pd.usage) {
+        const input = pd.usage.inputTokens ?? pd.usage.input_tokens;
+        const output = pd.usage.outputTokens ?? pd.usage.output_tokens;
+        if (!sawUsage && Number.isFinite(input) && input >= 0
+            && Number.isFinite(output) && output >= 0
+            && reported && reported.input_tokens === input && reported.output_tokens === output) {
+          this.status = 'fresh';
+          this.done = true;
+          return;
+        }
+        // Never validate an old payload against an older call when a newer
+        // ordinary usage has already been found on this chain.
+        sawUsage = true;
+      }
+      const parent = entry.parentId ?? entry.logicalParentId;
+      if (typeof parent !== 'string' || !parent || parent === entry.id) return this.invalidate();
+      targetId = parent;
+    },
+  };
+  return tracker;
+}
+
+// Conservative fallback for hosts that do not preserve parent links on every
+// compact boundary: compare append order within the bounded tail. A newer
+// ordinary usage clears the stale marker; otherwise a successful compact summary
+// means the payload's context is potentially old.
+function getCompactContextStatus(transcriptPath, contextWindow, opts) {
+  if (!transcriptPath || !contextWindow) return 'unknown';
+  try {
+    const resolved = path.isAbsolute(transcriptPath) ? transcriptPath : path.resolve(opts?.cwd || process.cwd(), transcriptPath);
+    const fd = fs.openSync(resolved, 'r');
+    const size = fs.fstatSync(fd).size;
+    const start = Math.max(0, size - MAX_TOTAL_BYTES);
+    const text = Buffer.alloc(size - start);
+    fs.readSync(fd, text, 0, text.length, start);
+    fs.closeSync(fd);
+    let compactAt = -1;
+    let usageAt = -1;
+    let latestUsageAt = -1;
+    let index = 0;
+    for (const line of text.toString('utf8').split('\n')) {
+      let e; try { e = JSON.parse(line); } catch { continue; }
+      const pd = e.providerData || {};
+      if (e.type === 'message' && (pd.isSummary === true || pd.isCompacted === true)
+          && (pd.isCompactInternal === true || pd.agent === 'compact')
+          && e.status !== 'failed' && e.status !== 'cancelled') compactAt = index;
+      if (pd.agent !== 'compact' && pd.usage) {
+        latestUsageAt = index;
+        const u = pd.usage;
+        if (u.inputTokens === contextWindow.current_usage?.input_tokens
+            && u.outputTokens === contextWindow.current_usage?.output_tokens) usageAt = index;
+      }
+      index++;
+    }
+    return compactAt >= 0 && usageAt >= 0 && compactAt > usageAt ? 'stale' : 'unknown';
+  } catch { return 'unknown'; }
+}
+
 function getTurnMetricsAndActivity(transcriptPath, opts) {
-  const emptyResult = { turnUsage: null, toolActivity: null };
   const options = opts || {};
+  const context = options.contextWindow ? createContextTracker(options.contextWindow) : null;
+  const emptyResult = { turnUsage: null, toolActivity: null, ...(context ? { contextStatus: 'unknown' } : {}) };
   if (!transcriptPath || typeof transcriptPath !== 'string' || transcriptPath.includes('\0')) return emptyResult;
 
   let resolved = transcriptPath;
@@ -703,12 +795,14 @@ function getTurnMetricsAndActivity(transcriptPath, opts) {
     let scanned = 0;
     let hitUserBoundary = false;
 
-    while (end > 0 && totalRead < MAX_TOTAL_BYTES && scanned < MAX_TURN_SCAN_LINES && !hitUserBoundary) {
-      const len = Math.min(tailBytes, end);
+    while (end > 0 && totalRead < MAX_TOTAL_BYTES && scanned < MAX_TURN_SCAN_LINES
+        && (!hitUserBoundary || (context && !context.done))) {
+      const len = Math.min(tailBytes, end, MAX_TOTAL_BYTES - totalRead);
       const start = end - len;
       const buf = Buffer.alloc(len);
       const bytesRead = fs.readSync(fd, buf, 0, len, start);
       totalRead += bytesRead;
+      if (bytesRead !== len && context) context.invalidate();
 
       const chunk = bytesRead === buf.length ? buf : buf.subarray(0, bytesRead);
       const combinedBuf = Buffer.concat([chunk, carryBuffer]);
@@ -737,13 +831,20 @@ function getTurnMetricsAndActivity(transcriptPath, opts) {
         try {
           entry = JSON.parse(line);
         } catch {
+          if (context) context.invalidate();
           continue;
         }
 
+        if (context) context.consume(entry);
+        if (hitUserBoundary) {
+          if (!context || context.done) break;
+          continue;
+        }
         const isUserBoundary = (entry.type === 'message' && entry.role === 'user') || (entry.type === 'user');
         if (isUserBoundary && (usageCollected.length > 0 || calls.length > 0 || resultIds.size > 0)) {
           hitUserBoundary = true;
-          break;
+          if (!context || context.done) break;
+          continue;
         }
 
         const metrics = extractUsageMetrics(entry);
@@ -819,7 +920,9 @@ function getTurnMetricsAndActivity(transcriptPath, opts) {
       }
     }
 
-    return { turnUsage, toolActivity };
+    const contextStatus = context ? (context.status === 'unknown'
+      ? getCompactContextStatus(resolved, options.contextWindow, options) : context.status) : undefined;
+    return { turnUsage, toolActivity, ...(context ? { contextStatus } : {}) };
   } catch {
     return emptyResult;
   } finally {
@@ -846,4 +949,3 @@ module.exports = {
   MAX_SCAN_LINES,
   MAX_TURN_SCAN_LINES,
 };
-

@@ -12,6 +12,7 @@ const { resolveEffortLevel, resolveCreditSpend } = require('./model-info');
 const { getRecentToolActivity, getTurnToolActivity, getTurnUsageMetrics, getSessionUsageMetrics, getTurnMetricsAndActivity } = require('./transcript');
 const { getLogicalSessionCostData } = require('./session-stats');
 const { readUpdateStatus } = require('./update-checker');
+const { getI18n } = require('./lang');
 
 function renderHUD(cbData, config) {
   if (!cbData || !config) return '';
@@ -44,16 +45,22 @@ function renderHUD(cbData, config) {
     || disp.showCost !== false
   );
   const needsToolActivity = Boolean(cbData.transcript_path) && disp.showToolActivity !== false;
+  const needsContext = Boolean(tokenData) && disp.showTokenBar !== false;
 
   let turnUsage = null;
   let turnActivity = null;
-  if (needsTurnUsage || needsToolActivity) {
+  // Without a transcript there is no independent freshness signal; retain the
+  // host payload's normal rendering rather than treating it as stale.
+  let contextStatus = cbData.transcript_path ? 'unknown' : 'fresh';
+  if (needsTurnUsage || needsToolActivity || needsContext) {
     const combined = getTurnMetricsAndActivity(cbData.transcript_path, {
       cwd,
       tailBytes: disp.toolActivityTailBytes,
+      contextWindow: needsContext ? cbData.context_window : undefined,
     });
     turnUsage = combined.turnUsage;
     turnActivity = combined.toolActivity;
+    if (cbData.transcript_path) contextStatus = combined.contextStatus || 'unknown';
   }
 
   const sessionUsage = (cbData.transcript_path && disp.showCost !== false)
@@ -123,25 +130,23 @@ function renderHUD(cbData, config) {
   // Line 2: Context Window & Tokens (Hollow Progress Bar + Dimmed Breakdown)
   if (tokenData && disp.showTokenBar !== false) {
     const line2Parts = [];
-    const totalTokens = tokenData.inTokens + tokenData.outTokens;
     const dot = color(` ${glyphs.dot} `, 'gray');
-
-    const tokenDetail = [
-      `${color('in: ', 'gray')}${color(formatTokens(tokenData.inTokens), themeAccent)}`,
-      `${color('out: ', 'gray')}${color(formatTokens(tokenData.outTokens), themeAccent)}`,
-    ];
-
-    const tokenStr = `${bold(color('Token ', themePrimary))}${bold(color(formatTokens(totalTokens), themePrimary))} ${color('(', 'gray')}${tokenDetail.join(dot)}${color(')', 'gray')}`;
-    line2Parts.push(tokenStr);
-
-    const barWidth = disp.progressBarWidth || 10;
-    const bar = createProgressBar(tokenData.ctxPercent, barWidth, config.thresholds, glyphs);
+    const { t } = getI18n(useUnicode ? config : { language: 'en' });
+    const usage = cbData.context_window.current_usage;
+    const hasInput = usage && Number.isFinite(usage.input_tokens) && usage.input_tokens >= 0;
+    const hasOutput = usage && Number.isFinite(usage.output_tokens) && usage.output_tokens >= 0;
+    const inputText = contextStatus === 'stale' || !hasInput ? '--' : formatTokens(tokenData.inTokens);
+    const sizeText = tokenData.ctxSize > 0 ? formatTokens(tokenData.ctxSize) : '--';
     // Numerator must match the denominator semantics used by used_percentage
     // (current_usage based). Previously we used totalInput (session-cumulative)
     // while the bar/percent used current_usage, producing wildly inconsistent
     // displays like `1.1M/1M [█░░░░░░░░░]6%`.
-    const ctxLabel = `${color(formatTokens(tokenData.inTokens), themeAccent)}${color('/', 'gray')}${color(formatTokens(tokenData.ctxSize), themePrimary)}`;
+    const ctxLabel = `${bold(color('Context Token ', themePrimary))}${color(inputText, themeAccent)}${color('/', 'gray')}${color(sizeText, themePrimary)}`;
 
+    if (contextStatus === 'fresh' && tokenData.ctxSize > 0
+        && Number.isFinite(cbData.context_window.used_percentage)) {
+    const barWidth = disp.progressBarWidth || 10;
+    const bar = createProgressBar(tokenData.ctxPercent, barWidth, config.thresholds, glyphs);
     const clampedPct = Number.isFinite(tokenData.ctxPercent) ? Math.max(0, Math.min(100, tokenData.ctxPercent)) : 0;
     let pctColor = 'green';
     const warnPct = ((config.thresholds && config.thresholds.warning) || 0.7) * 100;
@@ -151,6 +156,12 @@ function renderHUD(cbData, config) {
 
     const ctxPercentStr = color(`${Math.round(clampedPct)}%`, pctColor);
     line2Parts.push(`${ctxLabel} ${color('[', 'gray')}${bar}${color(']', 'gray')} ${ctxPercentStr}`);
+    } else {
+      line2Parts.push(`${ctxLabel}${dot}${color(t(contextStatus === 'stale' ? 'contextPending' : 'contextReported'), 'gray')}`);
+    }
+    if (contextStatus !== 'stale') {
+      line2Parts.push(`${color('out ', 'gray')}${color(hasOutput ? formatTokens(tokenData.outTokens) : '--', themeAccent)}`);
+    }
 
     if (disp.showCacheHitRate !== false) {
       // Real cache telemetry lives in the transcript's providerData, NOT in the
