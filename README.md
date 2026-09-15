@@ -62,7 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/script
 
 安装器行为：
 
-1. 查询 GitHub Latest Release 的 `tag_name`，将安装固定到该 release（不使用可变分支）。
+1. 通过 302 重定向（无 API 限流）或 REST API（支持 `GITHUB_TOKEN` 认证）查询最新 Release 的 `tag_name`，将安装固定到该 release（不使用可变分支）。所有下载自动重试 3 次。
 2. 下载 runtime 至 `~/.codebuddy/codebuddy-hud-runtime/`。
 3. 备份并写入 `~/.codebuddy/settings.json` 的 `statusLine.command`；Windows 同时生成 `.cmd` shim，烘焙 Node 绝对路径，不依赖系统 PATH。
 
@@ -72,7 +72,36 @@ curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/script
 
 内置每 24 小时一次的后台版本检查，发现新版本时提示重新运行安装命令升级。
 
-### Fork / 镜像安装
+### 🇨🇳 国内镜像加速安装
+
+如果直连 GitHub 超时或网络不稳定，设置 `CODEBUDDY_HUD_MIRROR` 即可一键走镜像（安装脚本和 bootstrap.js 均自动使用该前缀）：
+
+**Windows（PowerShell）**
+
+```powershell
+$env:CODEBUDDY_HUD_MIRROR='https://ghfast.top'; irm "https://ghfast.top/https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.ps1" | iex
+```
+
+**macOS / Linux（Bash）**
+
+```bash
+export CODEBUDDY_HUD_MIRROR=https://ghfast.top
+curl -fsSL "https://ghfast.top/https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.sh" | bash
+```
+
+> 可替换 `ghfast.top` 为其他 GitHub 加速镜像（如 `ghproxy.net`、`gh-proxy.com`），格式均为 `https://镜像域名/原始GitHub URL`。
+
+### Git Clone 本地安装（零网络风险）
+
+```bash
+git clone https://github.com/XisFool/codebuddy-hud.git  # 或 git clone https://ghfast.top/https://github.com/XisFool/codebuddy-hud.git
+cd codebuddy-hud
+node scripts/bootstrap.js
+```
+
+本地安装模式直接从仓库复制文件，全程无远程 HTTP 请求。
+
+### Fork / 镜像安装（高级）
 
 **macOS / Linux**：
 
@@ -92,9 +121,10 @@ irm https://your-mirror/scripts/install.ps1 | iex
 
 说明：
 
-- `CODEBUDDY_HUD_BOOTSTRAP_URL` 供安装脚本下载 bootstrap.js 使用，必须指向镜像上的 `scripts/bootstrap.js` 本体，不是镜像根目录；
-- `CODEBUDDY_HUD_RAW_BASE` 供 bootstrap.js 拉取 runtime 文件使用；**一旦设置会跳过 GitHub Latest Release 查询**，示例锁定 tag 路径（`vX.Y.Z`）以维持"安装固定到 release、不使用可变分支"的既有承诺（安装器行为第 1 条）；
-- 示例使用占位符 `your-mirror`，不写任何具体公共代理域名；
+- `CODEBUDDY_HUD_MIRROR` — 最简方式，只需设置镜像域名（如 `https://ghfast.top`），安装脚本和 bootstrap.js 自动为所有 GitHub URL 添加该前缀；
+- `CODEBUDDY_HUD_BOOTSTRAP_URL` — 供安装脚本下载 bootstrap.js 使用，必须指向镜像上的 `scripts/bootstrap.js` 本体，不是镜像根目录；
+- `CODEBUDDY_HUD_RAW_BASE` — 供 bootstrap.js 拉取 runtime 文件使用；**一旦设置会跳过 GitHub Latest Release 查询**，示例锁定 tag 路径（`vX.Y.Z`）以维持"安装固定到 release、不使用可变分支"的既有承诺（安装器行为第 1 条）；
+- `GITHUB_TOKEN` / `GH_TOKEN` — 可选，设置后 GitHub API 请求携带认证，rate limit 从 60/h 提升至 5000/h；
 - bash 下环境变量必须导出（作用于 `bash` 进程），不能只前缀给 `curl`。
 
 ---

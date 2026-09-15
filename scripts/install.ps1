@@ -29,7 +29,13 @@ try {
 
 # 2. Download bootstrap.js and execute
 $TempBootstrap = Join-Path $env:TEMP "codebuddy-hud-bootstrap-$PID.js"
-$BootstrapUrl = if ($env:CODEBUDDY_HUD_BOOTSTRAP_URL) { $env:CODEBUDDY_HUD_BOOTSTRAP_URL } else { "https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/bootstrap.js" }
+$BootstrapUrl = if ($env:CODEBUDDY_HUD_BOOTSTRAP_URL) {
+    $env:CODEBUDDY_HUD_BOOTSTRAP_URL
+} elseif ($env:CODEBUDDY_HUD_MIRROR) {
+    "$($env:CODEBUDDY_HUD_MIRROR.TrimEnd('/'))/https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/bootstrap.js"
+} else {
+    "https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/bootstrap.js"
+}
 
 try {
     Write-Info "Downloading bootstrap installer..."

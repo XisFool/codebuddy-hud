@@ -62,7 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/script
 
 The installer:
 
-1. Resolves the GitHub Latest Release `tag_name` and pins the install to that release (never a moving branch).
+1. Resolves the latest release `tag_name` via 302 redirect (no API rate limit) or REST API (supports `GITHUB_TOKEN` auth), pinning the install to that release (never a moving branch). All downloads auto-retry 3 times.
 2. Downloads the runtime to `~/.codebuddy/codebuddy-hud-runtime/`.
 3. Backs up and writes `statusLine.command` into `~/.codebuddy/settings.json`; on Windows, also generates a `.cmd` shim with the Node absolute path baked in (PATH-independent).
 
@@ -72,7 +72,36 @@ The installer:
 
 A background update check runs every 24 hours and suggests re-running the install command when a new version is available.
 
-### Fork / Mirror Install
+### 🇨🇳 China Mirror Accelerated Install
+
+If direct GitHub connections are slow or unreliable, set `CODEBUDDY_HUD_MIRROR` for one-command mirror install (both install scripts and bootstrap.js automatically use this prefix):
+
+**Windows (PowerShell)**
+
+```powershell
+$env:CODEBUDDY_HUD_MIRROR='https://ghfast.top'; irm "https://ghfast.top/https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.ps1" | iex
+```
+
+**macOS / Linux (Bash)**
+
+```bash
+export CODEBUDDY_HUD_MIRROR=https://ghfast.top
+curl -fsSL "https://ghfast.top/https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.sh" | bash
+```
+
+> You can replace `ghfast.top` with other GitHub mirror proxies (e.g., `ghproxy.net`, `gh-proxy.com`). Format: `https://mirror-domain/original-GitHub-URL`.
+
+### Git Clone Local Install (Zero Network Risk)
+
+```bash
+git clone https://github.com/XisFool/codebuddy-hud.git  # or: git clone https://ghfast.top/https://github.com/XisFool/codebuddy-hud.git
+cd codebuddy-hud
+node scripts/bootstrap.js
+```
+
+Local install mode copies files directly from the repository — zero remote HTTP requests during installation.
+
+### Fork / Mirror Install (Advanced)
 
 **macOS / Linux**:
 
@@ -92,9 +121,10 @@ irm https://your-mirror/scripts/install.ps1 | iex
 
 Notes:
 
-- `CODEBUDDY_HUD_BOOTSTRAP_URL` is used by the install script to download `bootstrap.js`; it must point directly to `scripts/bootstrap.js` on your mirror, not the mirror root directory.
-- `CODEBUDDY_HUD_RAW_BASE` is used by `bootstrap.js` to fetch runtime files. **Setting this skips the GitHub Latest Release lookup**, so the example pins a tag path (`vX.Y.Z`) to maintain the release-pinned guarantee (Installer behavior #1).
-- Examples use the `your-mirror` placeholder; do not hardcode third-party public proxies.
+- `CODEBUDDY_HUD_MIRROR` — simplest approach: just set the mirror domain (e.g., `https://ghfast.top`), and both install scripts and bootstrap.js automatically prefix all GitHub URLs with it.
+- `CODEBUDDY_HUD_BOOTSTRAP_URL` — used by the install script to download `bootstrap.js`; must point directly to `scripts/bootstrap.js` on your mirror, not the mirror root.
+- `CODEBUDDY_HUD_RAW_BASE` — used by `bootstrap.js` to fetch runtime files. **Setting this skips the GitHub Latest Release lookup**, so the example pins a tag path (`vX.Y.Z`) to maintain the release-pinned guarantee (Installer behavior #1).
+- `GITHUB_TOKEN` / `GH_TOKEN` — optional; when set, GitHub API requests include authentication, raising the rate limit from 60/h to 5000/h.
 - Under Bash, environment variables must be exported (so child `bash` processes inherit them), not just prepended to `curl`.
 
 ---

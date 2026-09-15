@@ -7,6 +7,7 @@ const https = require('https');
 const http = require('http');
 
 const REPO_RAW_ROOT = 'https://raw.githubusercontent.com/XisFool/codebuddy-hud';
+const RELEASES_LATEST_URL = 'https://github.com/XisFool/codebuddy-hud/releases/latest';
 const LATEST_RELEASE_URL = process.env.CODEBUDDY_HUD_LATEST_RELEASE_URL ||
   'https://api.github.com/repos/XisFool/codebuddy-hud/releases/latest';
 
@@ -54,16 +55,17 @@ function checkNodeVersion() {
   }
 }
 
-function fetchUrl(url, redirectCount = 0) {
+function fetchUrl(url, redirectCount = 0, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     if (redirectCount > 5) {
       return reject(new Error(`Too many redirects fetching ${url}`));
     }
     const client = url.startsWith('https') ? https : http;
-    const req = client.get(url, { headers: { 'User-Agent': 'codebuddy-hud-bootstrap' } }, (res) => {
+    const headers = { 'User-Agent': 'codebuddy-hud-bootstrap', ...extraHeaders };
+    const req = client.get(url, { headers }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         const nextUrl = new URL(res.headers.location, url).toString();
-        return resolve(fetchUrl(nextUrl, redirectCount + 1));
+        return resolve(fetchUrl(nextUrl, redirectCount + 1, extraHeaders));
       }
       if (res.statusCode !== 200) {
         return reject(new Error(`HTTP ${res.statusCode} when fetching ${url}`));
@@ -79,6 +81,42 @@ function fetchUrl(url, redirectCount = 0) {
   });
 }
 
+async function fetchUrlWithRetry(url, maxAttempts = 3) {
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fetchUrl(url);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxAttempts) {
+        const delaySec = Math.pow(2, attempt - 1);
+        process.stderr.write(`  \u26a0 Attempt ${attempt} failed (${err.message}), retrying in ${delaySec}s...\n`);
+        await new Promise(r => setTimeout(r, delaySec * 1000));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+function fetchLatestTagVia302() {
+  return new Promise((resolve, reject) => {
+    const req = https.get(RELEASES_LATEST_URL, {
+      headers: { 'User-Agent': 'codebuddy-hud-bootstrap' },
+    }, (res) => {
+      res.resume();
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const match = res.headers.location.match(/\/releases\/tag\/([^/]+)$/);
+        if (match) return resolve(decodeURIComponent(match[1]));
+      }
+      reject(new Error(`Failed to resolve latest tag via redirect (HTTP ${res.statusCode})`));
+    });
+    req.on('error', reject);
+    req.setTimeout(10000, () => {
+      req.destroy(new Error('Timeout resolving latest release tag'));
+    });
+  });
+}
+
 function rawBaseForTag(tag) {
   const normalized = typeof tag === 'string' ? tag.trim() : '';
   if (!/^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(normalized)) {
@@ -88,7 +126,18 @@ function rawBaseForTag(tag) {
 }
 
 async function fetchLatestRelease() {
-  const body = await fetchUrl(LATEST_RELEASE_URL);
+  // Strategy 1: 302 redirect (no API rate limit)
+  try {
+    const tag = await fetchLatestTagVia302();
+    return { tag_name: tag };
+  } catch {
+    // Fall through to API
+  }
+  // Strategy 2: GitHub REST API (with optional token for higher rate limit)
+  const headers = {};
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (token) headers['Authorization'] = `token ${token}`;
+  const body = await fetchUrl(LATEST_RELEASE_URL, 0, headers);
   try {
     return JSON.parse(body.toString('utf8'));
   } catch {
@@ -100,11 +149,14 @@ async function resolveRemoteRawBase(options = {}) {
   if (process.env.CODEBUDDY_HUD_RAW_BASE) {
     return process.env.CODEBUDDY_HUD_RAW_BASE.replace(/\/+$/, '');
   }
+  const mirror = (process.env.CODEBUDDY_HUD_MIRROR || '').replace(/\/+$/, '');
   if (process.env.CODEBUDDY_HUD_VERSION) {
-    return rawBaseForTag(process.env.CODEBUDDY_HUD_VERSION);
+    const base = rawBaseForTag(process.env.CODEBUDDY_HUD_VERSION);
+    return mirror ? `${mirror}/${base}` : base;
   }
   const release = await (options.fetchLatestRelease || fetchLatestRelease)();
-  return rawBaseForTag(release?.tag_name);
+  const base = rawBaseForTag(release?.tag_name);
+  return mirror ? `${mirror}/${base}` : base;
 }
 
 function copyDirRecursiveSync(srcDir, destDir) {
@@ -162,7 +214,7 @@ async function install() {
       for (const relPath of RUNTIME_FILES) {
         const fileUrl = `${remoteRawBase}/${relPath}`;
         process.stdout.write(`  ↓ Fetching ${relPath}...`);
-        const content = await fetchUrl(fileUrl);
+        const content = await fetchUrlWithRetry(fileUrl);
         const destPath = path.join(tmpDir, relPath);
         fs.mkdirSync(path.dirname(destPath), { recursive: true });
         fs.writeFileSync(destPath, content);
@@ -232,4 +284,5 @@ module.exports = {
   checkNodeVersion,
   rawBaseForTag,
   resolveRemoteRawBase,
+  fetchLatestTagVia302,
 };
