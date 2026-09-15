@@ -438,3 +438,110 @@ test('uninstall aborts and preserves original file if settings.json is corrupt s
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
+
+// A backup may itself have been taken over an earlier HUD install (another
+// checkout, or the `npm link` global shim). Uninstall must remove the HUD
+// rather than reinstating whichever copy the backup happens to record.
+test('uninstall does not reinstate a codebuddy-hud statusLine recorded in the backup', () => {
+  const originalSettingsPath = process.env.CODEBUDDY_SETTINGS_PATH;
+  const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-stale-backup-'));
+  const settingsPath = path.join(tempRoot, 'settings.json');
+  const runtimeDir = path.join(tempRoot, 'runtime');
+  const hudBin = path.join(runtimeDir, 'bin', 'codebuddy-hud.js');
+  const cmdShim = hudBin.replace(/\.js$/, '.cmd');
+  const backupPath = settingsPath + '.bak.codebuddy-hud';
+  fs.mkdirSync(path.dirname(hudBin), { recursive: true });
+  fs.writeFileSync(hudBin, '#!/usr/bin/env node\n');
+  fs.writeFileSync(cmdShim, '@echo off\r\n');
+  fs.writeFileSync(backupPath, JSON.stringify({
+    theme: 'dark',
+    statusLine: { type: 'command', command: '"D:\\npm-global\\codebuddy-hud.cmd"', padding: 0 },
+  }, null, 2));
+  fs.writeFileSync(settingsPath, JSON.stringify({
+    statusLine: { type: 'command', command: `"${cmdShim}"`, padding: 0 },
+  }, null, 2));
+  process.env.CODEBUDDY_SETTINGS_PATH = settingsPath;
+  process.env.CODEBUDDY_HOME = path.join(tempRoot, 'home');
+
+  try {
+    uninstall({ settingsPath, runtimeDir, platform: 'win32' });
+    const after = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    assert.equal(after.statusLine, undefined, 'a HUD statusLine must not survive uninstall');
+    assert.equal(after.theme, undefined, 'only statusLine may be written back from the backup');
+    assert.equal(fs.existsSync(backupPath), false, 'the backup must still be consumed');
+  } finally {
+    if (originalSettingsPath === undefined) delete process.env.CODEBUDDY_SETTINGS_PATH;
+    else process.env.CODEBUDDY_SETTINGS_PATH = originalSettingsPath;
+    if (originalCodeBuddyHome === undefined) delete process.env.CODEBUDDY_HOME;
+    else process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('uninstall treats a bare codebuddy-hud command in the backup as HUD', () => {
+  const originalSettingsPath = process.env.CODEBUDDY_SETTINGS_PATH;
+  const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-path-backup-'));
+  const settingsPath = path.join(tempRoot, 'settings.json');
+  const runtimeDir = path.join(tempRoot, 'runtime');
+  const hudBin = path.join(runtimeDir, 'bin', 'codebuddy-hud.js');
+  const cmdShim = hudBin.replace(/\.js$/, '.cmd');
+  const backupPath = settingsPath + '.bak.codebuddy-hud';
+  fs.mkdirSync(path.dirname(hudBin), { recursive: true });
+  fs.writeFileSync(hudBin, '#!/usr/bin/env node\n');
+  fs.writeFileSync(cmdShim, '@echo off\r\n');
+  // The `npm link` global shim is invoked by bare name, so no directory ever
+  // appears in the recorded command.
+  fs.writeFileSync(backupPath, JSON.stringify({
+    statusLine: { type: 'command', command: 'codebuddy-hud', padding: 0 },
+  }, null, 2));
+  fs.writeFileSync(settingsPath, JSON.stringify({
+    statusLine: { type: 'command', command: `"${cmdShim}"`, padding: 0 },
+  }, null, 2));
+  process.env.CODEBUDDY_SETTINGS_PATH = settingsPath;
+  process.env.CODEBUDDY_HOME = path.join(tempRoot, 'home');
+
+  try {
+    uninstall({ settingsPath, runtimeDir, platform: 'win32' });
+    const after = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    assert.equal(after.statusLine, undefined, 'a bare codebuddy-hud command must not be restored');
+    assert.equal(fs.existsSync(backupPath), false, 'the backup must still be consumed');
+  } finally {
+    if (originalSettingsPath === undefined) delete process.env.CODEBUDDY_SETTINGS_PATH;
+    else process.env.CODEBUDDY_SETTINGS_PATH = originalSettingsPath;
+    if (originalCodeBuddyHome === undefined) delete process.env.CODEBUDDY_HOME;
+    else process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('uninstall leaves a user statusLine that replaced the HUD', () => {
+  const originalSettingsPath = process.env.CODEBUDDY_SETTINGS_PATH;
+  const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-userline-'));
+  const settingsPath = path.join(tempRoot, 'settings.json');
+  const runtimeDir = path.join(tempRoot, 'runtime');
+  const backupPath = settingsPath + '.bak.codebuddy-hud';
+  const userStatusLine = { type: 'command', command: 'my-own-statusline', padding: 1 };
+  fs.mkdirSync(runtimeDir, { recursive: true });
+  fs.writeFileSync(backupPath, JSON.stringify({
+    statusLine: { type: 'command', command: '"D:\\old\\runtime\\bin\\codebuddy-hud.cmd"', padding: 0 },
+  }, null, 2));
+  fs.writeFileSync(settingsPath, JSON.stringify({ statusLine: userStatusLine }, null, 2));
+  process.env.CODEBUDDY_SETTINGS_PATH = settingsPath;
+  process.env.CODEBUDDY_HOME = path.join(tempRoot, 'home');
+
+  try {
+    uninstall({ settingsPath, runtimeDir, platform: 'linux' });
+    const after = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    assert.deepEqual(after.statusLine, userStatusLine, 'a user statusLine must not be destroyed');
+    assert.equal(fs.existsSync(backupPath), false, 'the backup must still be consumed');
+  } finally {
+    if (originalSettingsPath === undefined) delete process.env.CODEBUDDY_SETTINGS_PATH;
+    else process.env.CODEBUDDY_SETTINGS_PATH = originalSettingsPath;
+    if (originalCodeBuddyHome === undefined) delete process.env.CODEBUDDY_HOME;
+    else process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});

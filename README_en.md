@@ -181,7 +181,7 @@ codebuddy-hud --uninstall
 
 The uninstaller:
 
-1. Restores `settings.json` from the original backup taken at install time; without a backup it only removes the `statusLine` entry.
+1. Restores the `statusLine` from the original backup taken at install time; if the command recorded in the backup itself points to codebuddy-hud (e.g. an earlier install copy), the `statusLine` entry is removed instead.
 2. Removes the Windows `.cmd` shim.
 3. Cleans HUD-owned cache and state files (encoding cache, Git cache, usage checkpoints, session stats, credit state, update status).
 

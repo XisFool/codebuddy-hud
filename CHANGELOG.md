@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] (待发布)
 
+### Fixed (缺陷修复)
+- **卸载备份还原自引用校验**：`--uninstall` 不再把备份中记录的 codebuddy-hud `statusLine` 写回 `settings.json`（如更早的安装副本或 `npm link` 全局 shim），消除「报告卸载成功而 HUD 仍生效」及写回失效路径的问题；对合法非 HUD 备份仍照常还原，输出文案区分「已还原」与「已消费备份但未还原」。新增 3 条回归测试。
+
 ### Documentation (文档优化)
 - **HUD 显示语义更新**：同步 Context 行去除重复 Token 数值，并记录 compact 后宿主 usage 尚未刷新时的显式等待状态。
 - **文档与视觉契约对齐**：移除 `README.md`、`README_en.md` 与 `preview.svg` 中 Line 3 工具活动段多余的竖线分隔符，对齐真实渲染的双空格格式。

@@ -181,7 +181,7 @@ codebuddy-hud --uninstall
 
 卸载程序会：
 
-1. 优先从安装时保留的原始备份还原 `settings.json`；无备份时仅移除 `statusLine` 项。
+1. 从安装时保留的原始备份还原其中的 `statusLine`；若备份记录的命令本身指向 codebuddy-hud（例如更早的安装副本），则直接移除 `statusLine` 项。
 2. 删除 Windows `.cmd` shim。
 3. 清理 HUD 自身的缓存与状态文件（编码缓存、Git 缓存、使用量 checkpoint、会话统计、credit 状态、更新状态）。
 

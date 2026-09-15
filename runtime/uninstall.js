@@ -14,6 +14,17 @@ const {
 const { sanitizeTerminalText } = require('./sanitize');
 const { atomicWriteSettingsFile, parseSettingsJson, isSettingsObject } = require('./settings-file');
 
+// A statusLine belongs to this HUD when its command mentions `codebuddy-hud`.
+// The literal name covers every install shape: an absolute or relative
+// checkout path, the generated `.cmd` shim, and a bare `codebuddy-hud`
+// resolved through PATH (the npm global shim created by `npm link`), where no
+// directory ever appears in the string.
+function isHudStatusLine(statusLine) {
+  return !!(statusLine && typeof statusLine === 'object'
+    && typeof statusLine.command === 'string'
+    && statusLine.command.includes('codebuddy-hud'));
+}
+
 function uninstall(options) {
   const opts = options || {};
   const settingsPath = opts.settingsPath || getSettingsPath();
@@ -66,7 +77,10 @@ function uninstall(options) {
 
       if (settings !== null) {
         let modified = false;
-        let restoredBackup = false;
+        // Describes how the on-disk backup was consumed; also drives its
+        // deletion. Null means no backup was present.
+        let backupAction = null;
+
         if (fs.existsSync(backupPath)) {
           try {
             const backupRaw = fs.readFileSync(backupPath, 'utf8');
@@ -74,39 +88,47 @@ function uninstall(options) {
             if (!isSettingsObject(backup)) {
               throw new Error('backup root is not a JSON object');
             }
-            if (isSettingsObject(backup) && backup.statusLine) {
+            // Restore only a statusLine that is not this HUD. The backup may
+            // itself have been taken over an earlier HUD install (another
+            // checkout, or the `npm link` global shim); reinstating it would
+            // report a successful uninstall while leaving the HUD configured.
+            if (backup.statusLine && !isHudStatusLine(backup.statusLine)) {
               settings.statusLine = backup.statusLine;
+              backupAction = 'Restored settings from backup';
+              modified = true;
             } else {
-              delete settings.statusLine;
+              if (isHudStatusLine(settings.statusLine)) {
+                delete settings.statusLine;
+                modified = true;
+              }
+              backupAction = 'Consumed backup without restoring a statusLine';
             }
-            modified = true;
-            restoredBackup = true;
           } catch (err) {
             cleaned.push(`Warning: could not parse backup, retaining it: ${sanitizeTerminalText(err && err.message, 160)}`);
-            if (settings.statusLine && typeof settings.statusLine.command === 'string' && settings.statusLine.command.includes('codebuddy-hud')) {
+            if (isHudStatusLine(settings.statusLine)) {
               delete settings.statusLine;
               modified = true;
             }
           }
-        } else {
-          if (settings.statusLine && typeof settings.statusLine.command === 'string' && settings.statusLine.command.includes('codebuddy-hud')) {
-            delete settings.statusLine;
-            cleaned.push('Removed statusLine from settings.json');
-            modified = true;
-          }
+        } else if (isHudStatusLine(settings.statusLine)) {
+          delete settings.statusLine;
+          cleaned.push('Removed statusLine from settings.json');
+          modified = true;
         }
 
         if (modified) {
           atomicWriteSettingsFile(settingsPath, JSON.stringify(settings, null, 2));
-          if (restoredBackup) {
-            try {
-              fs.unlinkSync(backupPath);
-              cleaned.push(`Restored settings from backup: ${sanitizeTerminalText(backupPath, 512)}`);
-            } catch (err) {
-              cleaned.push(`Warning: restored settings but retained backup: ${sanitizeTerminalText(err && err.message, 160)}`);
-            }
+        }
+
+        if (backupAction) {
+          try {
+            fs.unlinkSync(backupPath);
+            cleaned.push(`${backupAction}: ${sanitizeTerminalText(backupPath, 512)}`);
+          } catch (err) {
+            cleaned.push(`Warning: ${backupAction} but retained backup: ${sanitizeTerminalText(err && err.message, 160)}`);
           }
         }
+
         settingsCleaned = true;
       }
     }
