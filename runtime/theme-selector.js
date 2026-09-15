@@ -81,34 +81,36 @@ function renderThemePreview(themeName, mode = 'dark') {
   const add = palette.diffAdd || 'green';
   const rem = palette.diffRemove || 'red';
 
-  const sep = `  ${dim('|')}  `;
+  const sep = '  \x1b[90m│\x1b[0m  ';
 
-  // Line 1: Identity
-  const line1 = `${bold(color('DeepSeek V4 Flash', m))} ${color('● max', 'red')}${sep}${color('main*', b)}${sep}${color('codebuddy-cli-hud', a)}${sep}${dim(color('default', 'magenta'))}`;
+  // Line 1: Identity & Environment
+  const modelPart = `${bold(color('Deepseek-V4.1-Flash', m))} ${color('● max', 'red')}`;
+  const branchPart = `${color('main', b)}${color('*', 'yellow')}`;
+  const projectPart = color('codebuddy-cli-hud', a);
+  const permPart = color('default', 'brightMagenta');
+  const line1 = `${modelPart}${sep}${branchPart}${sep}${projectPart}${sep}${permPart}`;
 
-  // Line 2: Tokens & Context
+  // Line 2: Context Window & Tokens
   const inTokens = color('249k', a);
-  const outTokens = color('1.1k', a);
-  const tokenBreakdown = `${color('(', 'gray')}${color('in: ', 'gray')}${inTokens}${color(' · ', 'gray')}${color('out: ', 'gray')}${outTokens}${color(')', 'gray')}`;
-  const tokenPart = `${bold(color('Token ', p))}${bold(color('250.1k', p))} ${tokenBreakdown}`;
-  const ctxLabel = `${inTokens}${color('/', 'gray')}${color('1M', p)}`;
+  const sizeText = color('1M', p);
+  const ctxLabel = `${bold(color('Context Token ', p))}${inTokens}${color('/', 'gray')}${sizeText}`;
   const bar = `${color('███', 'green')}${dim('░░░░░░░')}`;
+  const ctxProgress = `${ctxLabel} ${color('[', 'gray')}${bar}${color(']', 'gray')} ${color('25%', 'green')}`;
+  const outPart = `${color('out ', 'gray')}${color('1.1k', a)}`;
   const cachePart = `${color('cache', 'green')} ${bold(color('96.8%', 'green'))}`;
-  const line2 = `${tokenPart}${sep}${ctxLabel} ${color('[', 'gray')}${bar}${color(']', 'gray')} ${color('25%', 'green')}${sep}${cachePart}`;
+  const line2 = `${ctxProgress}${sep}${outPart}${sep}${cachePart}`;
 
-  // Line 3: Diff Stats, Credits & Duration
+  // Line 3: Diff Stats, Credits, Duration & Tool Activity
   const diffPart = `${dim('Δ ')}${color('+1.7k', add)} ${color('-161', rem)}`;
   const creditPart = color('82.04 credits', 'yellow');
-  const durationPart = `${dim('⏱ ')}${dim('2h47m')} ${dim('(API: 1h23m)')}`;
-  const line3 = `${diffPart}${sep}${creditPart}${sep}${durationPart}`;
-
-  // Line 4: Tools & Agents
-  const activeTool = `${color('◐ ', 'cyan')}${color('Edit', p)}${dim(': parser.js')}`;
+  const durationPart = `${dim('⏱ ')}${color('2h47m', 'gray')}`;
+  const activeTool = `${color('◐ ', 'cyan')}${color('Edit', 'cyan')}${dim(': parser.js')}`;
   const doneRead = `${color('✓', 'green')} ${dim('Read')}${dim(' ×3')}`;
   const doneGrep = `${color('✓', 'green')} ${dim('Grep')}${dim(' ×2')}`;
-  const line4 = `${activeTool}${sep}${doneRead}  ${doneGrep}`;
+  const toolPart = `${activeTool}  ${doneRead}  ${doneGrep}`;
+  const line3 = `${diffPart}${sep}${creditPart}${sep}${durationPart}${sep}${toolPart}`;
 
-  return [line1, line2, line3, line4];
+  return [line1, line2, line3];
 }
 
 function selectThemeInteractive(opts) {
@@ -196,13 +198,14 @@ function selectThemeInteractive(opts) {
 
       outputLines.push('');
       const currentTheme = THEMES[selectedIndex].name;
-      outputLines.push(`${DIM}┌─ 实时效果预览 (${currentTheme}) ${'─'.repeat(48)}┐${RESET}`);
+      const topDashes = Math.max(0, 72 - currentTheme.length);
+      outputLines.push(`${DIM}┌─ 实时效果预览 (${currentTheme}) ${'─'.repeat(topDashes)}┐${RESET}`);
 
       const previewLines = renderThemePreview(currentTheme);
       for (const pl of previewLines) {
         outputLines.push(`  ${pl}`);
       }
-      outputLines.push(`${DIM}└${'─'.repeat(74)}┘${RESET}`);
+      outputLines.push(`${DIM}└${'─'.repeat(90)}┘${RESET}`);
 
       lastRenderedLines = outputLines.length;
       process.stdout.write(outputLines.join('\n') + '\n');

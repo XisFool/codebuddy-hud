@@ -137,7 +137,7 @@ async function main() {
     // 4. Directly execute the configured statusLine command with a sample payload
     if (settings && settings.statusLine && settings.statusLine.command) {
       const samplePayload = JSON.stringify({
-        model: { id: 'deepseek-v4-flash', display_name: 'DeepSeek V4 Flash' },
+        model: { id: 'deepseek-v4.1-flash', display_name: 'Deepseek-V4.1-Flash' },
         reasoning_effort: 'medium',
         permission_mode: 'default',
         cwd: process.cwd(),

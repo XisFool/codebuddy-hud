@@ -106,7 +106,7 @@ test('--status renders and exits 0', async () => {
   assert.equal(code, 0);
   assert.ok(out.trim().length > 0);
   const plainOutput = out.replace(/\x1b\[[0-9;]*m/g, '');
-  assert.match(plainOutput, /DeepSeek V4 Flash/);
+  assert.match(plainOutput, /Deepseek-V4\.1-Flash/);
   assert.match(plainOutput, /82\.04 credits/);
   assert.equal(err, '');
 });

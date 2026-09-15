@@ -148,7 +148,7 @@ if (args.includes('--setup')) {
   let statusCwd = '';
   try { statusCwd = process.cwd(); } catch { statusCwd = ''; }
   const samplePayload = JSON.stringify({
-    model: { id: 'deepseek-v4-flash', display_name: 'DeepSeek V4 Flash' },
+    model: { id: 'deepseek-v4.1-flash', display_name: 'Deepseek-V4.1-Flash' },
     reasoning_effort: 'max',
     permission_mode: 'default',
     cwd: statusCwd,

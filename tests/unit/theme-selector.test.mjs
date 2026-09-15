@@ -32,14 +32,14 @@ describe('theme-selector', () => {
     assert.deepEqual(names, ['ocean', 'emerald', 'cyberpunk', 'amber', 'monochrome']);
   });
 
-  it('renders a 4-line ANSI preview for each theme', () => {
+  it('renders a 3-line ANSI preview for each theme', () => {
     for (const t of THEMES) {
       const preview = renderThemePreview(t.name);
-      assert.equal(preview.length, 4);
-      assert.ok(preview[0].includes('DeepSeek V4 Flash'));
-      assert.ok(preview[1].includes('Token'));
+      assert.equal(preview.length, 3);
+      assert.ok(preview[0].includes('Deepseek-V4.1-Flash'));
+      assert.ok(preview[1].includes('Context Token'));
       assert.ok(preview[2].includes('credits'));
-      assert.ok(preview[3].includes('Edit'));
+      assert.ok(preview[2].includes('Edit'));
     }
   });
 
