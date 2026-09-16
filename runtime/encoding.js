@@ -164,12 +164,12 @@ function selectGlyphs(useNerdFonts, unicodeSupported) {
     clockIcon: '[t] ', costIcon: '',
     activeIcon: '[A] ', queueIcon: '[Q] ', doneIcon: '[T] ',
     effortIcons: {
-      low: '(low) ',
-      medium: '(med) ',
-      high: '(high) ',
-      xhigh: '(xhigh) ',
-      max: '(max) ',
-      ultracode: '(ultra) ',
+      low: '',
+      medium: '',
+      high: '',
+      xhigh: '',
+      max: '',
+      ultracode: '',
     },
   };
 }

@@ -171,8 +171,8 @@ describe('selectGlyphs', () => {
     assert.equal(glyphs.activeIcon, '[A] ');
     assert.equal(glyphs.queueIcon, '[Q] ');
     assert.equal(glyphs.doneIcon, '[T] ');
-    assert.equal(glyphs.effortIcons.high, '(high) ');
-    assert.equal(glyphs.effortIcons.xhigh, '(xhigh) ');
-    assert.equal(glyphs.effortIcons.ultracode, '(ultra) ');
+    assert.equal(glyphs.effortIcons.high, '');
+    assert.equal(glyphs.effortIcons.xhigh, '');
+    assert.equal(glyphs.effortIcons.ultracode, '');
   });
 });

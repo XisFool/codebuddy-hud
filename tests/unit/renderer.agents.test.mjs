@@ -52,6 +52,9 @@ describe('renderToolActivity', () => {
     assert.ok(result.includes('×3'));
     assert.ok(result.includes('Grep'));
     assert.ok(result.includes('×2'));
+    // Completed tools now share one doneIcon prefix (grouped, comma-separated)
+    const checkCount = result.split('\x1b[32m✓\x1b[0m').length - 1;
+    assert.equal(checkCount, 1, 'completed tools grouped under single doneIcon');
   });
 
   it('renders aggregated tool activity with only completed items', () => {
