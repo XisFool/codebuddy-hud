@@ -77,6 +77,9 @@ function uninstall(options) {
 
       if (settings !== null) {
         let modified = false;
+        // Reported only after a successful write, so a failed write cannot
+        // claim the entry was removed.
+        let removedStatusLine = false;
         // Describes how the on-disk backup was consumed; also drives its
         // deletion. Null means no backup was present.
         let backupAction = null;
@@ -112,12 +115,16 @@ function uninstall(options) {
           }
         } else if (isHudStatusLine(settings.statusLine)) {
           delete settings.statusLine;
-          cleaned.push('Removed statusLine from settings.json');
+          removedStatusLine = true;
           modified = true;
         }
 
         if (modified) {
           atomicWriteSettingsFile(settingsPath, JSON.stringify(settings, null, 2));
+        }
+
+        if (removedStatusLine) {
+          cleaned.push('Removed statusLine from settings.json');
         }
 
         if (backupAction) {

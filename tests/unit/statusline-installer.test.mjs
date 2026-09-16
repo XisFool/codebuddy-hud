@@ -241,6 +241,8 @@ test('uninstall keeps the Windows shim when settings.json cannot be cleaned', ()
     assert.deepEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), installedSettings,
       'settings.json must be left untouched');
     assert.ok(logs.join('\n').includes('kept Windows shim'), logs.join('\n'));
+    assert.ok(!logs.join('\n').includes('Removed statusLine from settings.json'),
+      'failed write must not claim statusLine was removed');
   } finally {
     console.log = originalLog;
     if (originalSettingsPath === undefined) delete process.env.CODEBUDDY_SETTINGS_PATH;

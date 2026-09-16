@@ -249,6 +249,6 @@ CodeBuddy Code v2.146.0 retains only the first three stdout lines. The HUD's own
    - Eliminates abrupt `process.exit()` in rendering path. Releases all active `stdin` handles, timer handles, and let libuv naturally exit to prevent stdout buffer truncation.
 4. **Settings Writes**:
    - JSONC parsing preserves string content. Atomic replacement follows valid symlinks and retains existing POSIX permissions and ownership; new settings and first backups default to `0600`. Multiple hard links are rejected rather than silently detached.
-   - Uninstall restores only `statusLine`, preserves other settings and user themes, and retains the backup if writing fails.
+   - Uninstall restores only a non-HUD `statusLine` (a backup whose command mentions `codebuddy-hud` results in the entry being removed instead), preserves other settings and user themes, and consumes the backup once parsed — it is retained only when parsing or writing fails.
 5. **Verification Isolation**:
    - Setup/uninstall tests isolate runtime, settings and user state together. `CODEBUDDY_HOME` alone cannot protect the checkout's generated shim.

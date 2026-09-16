@@ -11,9 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] (待发布)
 
 ### Fixed (缺陷修复)
+- **镜像覆盖版本发现跳**：`CODEBUDDY_HUD_MIRROR` 此前只覆盖 runtime 文件下载，release tag 查询仍直连 `github.com`/`api.github.com`，导致「直连 GitHub 超时」场景下仅设镜像必然安装失败且无任何提示。现该前缀同时作用于 tag 查询与 API 兜底（未覆盖时自动回退直连；runtime 文件始终经镜像下载）；`GITHUB_TOKEN`/`GH_TOKEN` 仅发往 GitHub（不随跨源重定向或镜像转发）。原「302 解析」单测只断言函数类型（改坏正则仍绿），已替换为真实断言并新增镜像覆盖 tag 查询的端到端回归测试。
+- **卸载成功文案误报**：`--uninstall` 在无备份分支中于写盘前入队「Removed statusLine from settings.json」，settings 写入失败时会与「could not modify settings.json」同时打印。改为写盘成功后入队。
 - **卸载备份还原自引用校验**：`--uninstall` 不再把备份中记录的 codebuddy-hud `statusLine` 写回 `settings.json`（如更早的安装副本或 `npm link` 全局 shim），消除「报告卸载成功而 HUD 仍生效」及写回失效路径的问题；对合法非 HUD 备份仍照常还原，输出文案区分「已还原」与「已消费备份但未还原」。新增 3 条回归测试。
 
 ### Documentation (文档优化)
+- **安装契约口径校准**：README 镜像段去掉具体公共代理域名，回归 `your-mirror` 占位符（不背书任何第三方代理），并明确镜像前缀的覆盖范围与首跳需由 shell 展开；修正「所有下载自动重试 3 次」等绝对化表述；`docs/module-reference.md` 与 `docs/architecture*.md` 同步卸载契约（自引用校验、备份回收时机）与 bootstrap 契约（重试、镜像、`GITHUB_TOKEN`）。
 - **HUD 显示语义更新**：同步 Context 行去除重复 Token 数值，并记录 compact 后宿主 usage 尚未刷新时的显式等待状态。
 - **文档与视觉契约对齐**：移除 `README.md`、`README_en.md` 与 `preview.svg` 中 Line 3 工具活动段多余的竖线分隔符，对齐真实渲染的双空格格式。
 - **架构时序与常量校准**：校准 `docs/architecture*.md` 时序图中后台更新检查的实际触发时序，补录 40/200 行扫描硬预算、Handoff 5 分钟 TTL 及 Windows 8.3 短路径机制。

@@ -8,8 +8,24 @@ const http = require('http');
 
 const REPO_RAW_ROOT = 'https://raw.githubusercontent.com/XisFool/codebuddy-hud';
 const RELEASES_LATEST_URL = 'https://github.com/XisFool/codebuddy-hud/releases/latest';
-const LATEST_RELEASE_URL = process.env.CODEBUDDY_HUD_LATEST_RELEASE_URL ||
-  'https://api.github.com/repos/XisFool/codebuddy-hud/releases/latest';
+const LATEST_RELEASE_API_URL = 'https://api.github.com/repos/XisFool/codebuddy-hud/releases/latest';
+
+// `CODEBUDDY_HUD_MIRROR` (e.g. `https://your-mirror`) is prepended to every
+// GitHub URL this script resolves itself — the release-tag lookup included,
+// since it does not share a host with the raw downloads. Each URL keeps its
+// un-mirrored form as a fallback, so a mirror that fails to proxy one of the
+// hosts degrades to a direct request instead of failing the whole install.
+function mirrorPrefix() {
+  const raw = (process.env.CODEBUDDY_HUD_MIRROR || '').trim();
+  if (!raw) return '';
+  const withoutHash = raw.split('#')[0].trim();
+  return withoutHash.replace(/\/+$/, '');
+}
+
+function urlCandidates(url) {
+  const mirror = mirrorPrefix();
+  return mirror ? [`${mirror}/${url}`, url] : [url];
+}
 
 const RUNTIME_FILES = [
   'package.json',
@@ -65,7 +81,9 @@ function fetchUrl(url, redirectCount = 0, extraHeaders = {}) {
     const req = client.get(url, { headers }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         const nextUrl = new URL(res.headers.location, url).toString();
-        return resolve(fetchUrl(nextUrl, redirectCount + 1, extraHeaders));
+        // Never carry credentials across an origin boundary.
+        const carried = new URL(nextUrl).origin === new URL(url).origin ? extraHeaders : {};
+        return resolve(fetchUrl(nextUrl, redirectCount + 1, carried));
       }
       if (res.statusCode !== 200) {
         return reject(new Error(`HTTP ${res.statusCode} when fetching ${url}`));
@@ -98,9 +116,11 @@ async function fetchUrlWithRetry(url, maxAttempts = 3) {
   throw lastErr;
 }
 
-function fetchLatestTagVia302() {
+function fetchLatestTagVia302(url) {
+  const target = url || urlCandidates(RELEASES_LATEST_URL)[0];
   return new Promise((resolve, reject) => {
-    const req = https.get(RELEASES_LATEST_URL, {
+    const client = target.startsWith('https') ? https : http;
+    const req = client.get(target, {
       headers: { 'User-Agent': 'codebuddy-hud-bootstrap' },
     }, (res) => {
       res.resume();
@@ -125,31 +145,55 @@ function rawBaseForTag(tag) {
   return `${REPO_RAW_ROOT}/${encodeURIComponent(normalized)}`;
 }
 
-async function fetchLatestRelease() {
+async function fetchLatestRelease(options = {}) {
   // Strategy 1: 302 redirect (no API rate limit)
-  try {
-    const tag = await fetchLatestTagVia302();
-    return { tag_name: tag };
-  } catch {
-    // Fall through to API
+  const candidates302 = options.candidates302 || urlCandidates(RELEASES_LATEST_URL);
+  for (const candidate of candidates302) {
+    try {
+      return { tag_name: await fetchLatestTagVia302(candidate) };
+    } catch {
+      // Try the next candidate, then fall through to the API.
+    }
   }
-  // Strategy 2: GitHub REST API (with optional token for higher rate limit)
-  const headers = {};
+  // Strategy 2: GitHub REST API (with optional token for higher rate limit).
+  // An explicit CODEBUDDY_HUD_LATEST_RELEASE_URL wins outright and is used
+  // verbatim; otherwise the API URL is mirrored like every other GitHub URL.
+  const explicitApiUrl = process.env.CODEBUDDY_HUD_LATEST_RELEASE_URL;
+  const apiCandidates = options.apiCandidates || (explicitApiUrl ? [explicitApiUrl] : urlCandidates(LATEST_RELEASE_API_URL));
   const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
-  if (token) headers['Authorization'] = `token ${token}`;
-  const body = await fetchUrl(LATEST_RELEASE_URL, 0, headers);
-  try {
-    return JSON.parse(body.toString('utf8'));
-  } catch {
-    throw new Error('Latest release response was not valid JSON');
+  let lastErr;
+  for (const candidate of apiCandidates) {
+    // The token belongs to GitHub; a mirror host must never receive it.
+    const headers = candidate === LATEST_RELEASE_API_URL && token
+      ? { Authorization: `token ${token}` }
+      : {};
+    let body;
+    try {
+      body = await fetchUrl(candidate, 0, headers);
+    } catch (err) {
+      lastErr = err;
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(body.toString('utf8'));
+      if (parsed && typeof parsed.tag_name === 'string' && parsed.tag_name.trim()) {
+        return parsed;
+      }
+      lastErr = new Error(`Latest release response from ${candidate} did not contain a valid tag_name`);
+      continue;
+    } catch {
+      lastErr = new Error(`Latest release response from ${candidate} was not valid JSON`);
+      continue;
+    }
   }
+  throw lastErr || new Error('Could not resolve the latest release');
 }
 
 async function resolveRemoteRawBase(options = {}) {
   if (process.env.CODEBUDDY_HUD_RAW_BASE) {
     return process.env.CODEBUDDY_HUD_RAW_BASE.replace(/\/+$/, '');
   }
-  const mirror = (process.env.CODEBUDDY_HUD_MIRROR || '').replace(/\/+$/, '');
+  const mirror = mirrorPrefix();
   if (process.env.CODEBUDDY_HUD_VERSION) {
     const base = rawBaseForTag(process.env.CODEBUDDY_HUD_VERSION);
     return mirror ? `${mirror}/${base}` : base;
@@ -285,4 +329,6 @@ module.exports = {
   rawBaseForTag,
   resolveRemoteRawBase,
   fetchLatestTagVia302,
+  fetchLatestRelease,
+  mirrorPrefix,
 };

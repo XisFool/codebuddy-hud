@@ -62,7 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/script
 
 安装器行为：
 
-1. 通过 302 重定向（无 API 限流）或 REST API（支持 `GITHUB_TOKEN` 认证）查询最新 Release 的 `tag_name`，将安装固定到该 release（不使用可变分支）。所有下载自动重试 3 次。
+1. 通过 302 重定向（无 API 限流）或 REST API（支持 `GITHUB_TOKEN` 认证）查询最新 Release 的 `tag_name`，将安装固定到该 release（不使用可变分支）。runtime 文件下载失败会自动重试 3 次（指数退避）。
 2. 下载 runtime 至 `~/.codebuddy/codebuddy-hud-runtime/`。
 3. 备份并写入 `~/.codebuddy/settings.json` 的 `statusLine.command`；Windows 同时生成 `.cmd` shim，烘焙 Node 绝对路径，不依赖系统 PATH。
 
@@ -72,29 +72,30 @@ curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/script
 
 内置每 24 小时一次的后台版本检查，发现新版本时提示重新运行安装命令升级。
 
-### 🇨🇳 国内镜像加速安装
+### 国内镜像加速安装
 
-如果直连 GitHub 超时或网络不稳定，设置 `CODEBUDDY_HUD_MIRROR` 即可一键走镜像（安装脚本和 bootstrap.js 均自动使用该前缀）：
+如果直连 GitHub 超时或网络不稳定，把镜像域名设为 `CODEBUDDY_HUD_MIRROR`。安装脚本与 `bootstrap.js` 会用该前缀拼出它们请求的所有 GitHub URL：`raw.githubusercontent.com`（runtime 文件）、`github.com/releases/latest`（release tag 查询）与 `api.github.com`（查询兜底），格式为 `https://镜像域名/原始GitHub URL`。
 
 **Windows（PowerShell）**
 
 ```powershell
-$env:CODEBUDDY_HUD_MIRROR='https://ghfast.top'; irm "https://ghfast.top/https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.ps1" | iex
+$env:CODEBUDDY_HUD_MIRROR='https://your-mirror'
+irm "$env:CODEBUDDY_HUD_MIRROR/https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.ps1" | iex
 ```
 
 **macOS / Linux（Bash）**
 
 ```bash
-export CODEBUDDY_HUD_MIRROR=https://ghfast.top
-curl -fsSL "https://ghfast.top/https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.sh" | bash
+export CODEBUDDY_HUD_MIRROR=https://your-mirror
+curl -fsSL "$CODEBUDDY_HUD_MIRROR/https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.sh" | bash
 ```
 
-> 可替换 `ghfast.top` 为其他 GitHub 加速镜像（如 `ghproxy.net`、`gh-proxy.com`），格式均为 `https://镜像域名/原始GitHub URL`。
+> 命令里镜像前缀出现两次：第一次由你的 shell 直接请求（安装脚本本身还不存在，无法自动加前缀），此后 runtime 下载与 release tag 查询由脚本自动加前缀。release tag 查询与 API 兜底在镜像未覆盖时自动回退直连；runtime 文件始终经镜像下载。因此只代理 `raw.githubusercontent.com` 的镜像也能装完。本仓库不背书任何具体公共代理，请自行选择可信镜像。
 
 ### Git Clone 本地安装（零网络风险）
 
 ```bash
-git clone https://github.com/XisFool/codebuddy-hud.git  # 或 git clone https://ghfast.top/https://github.com/XisFool/codebuddy-hud.git
+git clone https://github.com/XisFool/codebuddy-hud.git   # 或经镜像：git clone https://your-mirror/https://github.com/XisFool/codebuddy-hud.git
 cd codebuddy-hud
 node scripts/bootstrap.js
 ```
@@ -121,7 +122,7 @@ irm https://your-mirror/scripts/install.ps1 | iex
 
 说明：
 
-- `CODEBUDDY_HUD_MIRROR` — 最简方式，只需设置镜像域名（如 `https://ghfast.top`），安装脚本和 bootstrap.js 自动为所有 GitHub URL 添加该前缀；
+- `CODEBUDDY_HUD_MIRROR` — 只需给镜像域名（如 `https://your-mirror`），安装脚本与 bootstrap.js 会用它拼出所有自己请求的 GitHub URL（runtime 下载、release tag 查询、API 兜底），release tag 查询与 API 兜底在镜像未覆盖时自动回退直连，runtime 文件始终经镜像下载；首跳（下载安装脚本本身）由你的 shell 直接请求，所以命令里仍需写出前缀；
 - `CODEBUDDY_HUD_BOOTSTRAP_URL` — 供安装脚本下载 bootstrap.js 使用，必须指向镜像上的 `scripts/bootstrap.js` 本体，不是镜像根目录；
 - `CODEBUDDY_HUD_RAW_BASE` — 供 bootstrap.js 拉取 runtime 文件使用；**一旦设置会跳过 GitHub Latest Release 查询**，示例锁定 tag 路径（`vX.Y.Z`）以维持"安装固定到 release、不使用可变分支"的既有承诺（安装器行为第 1 条）；
 - `GITHUB_TOKEN` / `GH_TOKEN` — 可选，设置后 GitHub API 请求携带认证，rate limit 从 60/h 提升至 5000/h；

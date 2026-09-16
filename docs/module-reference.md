@@ -42,7 +42,7 @@
 
 ### 命令行参数支持 (CLI Flags)
 - `--setup`: 执行安装，写入 `settings.json` 并生成 Windows `.cmd` shim。
-- `--uninstall`: 仅恢复备份中的 `statusLine`，清理缓存及 shim，保留其他 settings 与用户主题配置。
+- `--uninstall`: 仅恢复备份中的 `statusLine`（备份记录的命令自身指向 codebuddy-hud 时改为移除该项），清理缓存及 shim，保留其他 settings 与用户主题配置。
 - `--theme [name]`: 交互式切换或指定设置主题（如 `--theme cyberpunk`、`--theme list`）。
 - `--doctor` / `-d`: 运行环境健康体检（支持 `--json` 输出结构化报告）。
 - `--status`: 输出当前 HUD 静态看板样例（用于健康探测）。
@@ -488,7 +488,7 @@ export function printThemesList(): void;
 
 ## 21. `runtime/uninstall.js` — 卸载还原与深度清理
 
-**职责：** 从首次备份仅还原 `statusLine`，保留其他 settings 及用户主题配置；移除对应 runtime 的 Windows shim 与用户缓存。有效备份在配置写入成功后才删除。
+**职责：** 从首次备份仅还原非本 HUD 的 `statusLine`——备份记录的命令含 `codebuddy-hud` 时（更早的安装副本或 `npm link` 全局 shim）改为移除 settings 中的该项，消除「报告卸载成功而 HUD 仍生效」；保留其他 settings 及用户主题配置；移除对应 runtime 的 Windows shim 与用户缓存。备份一经解析成功即回收，不依赖 settings 是否被写入；解析失败或写入失败时保留备份。
 
 ### 接口定义
 ```typescript
@@ -499,14 +499,17 @@ export function uninstall(options?: object): void;
 
 ## 22. `scripts/bootstrap.js` — 跨平台原子安装引导
 
-**职责：** 支持本地与 GitHub Raw 远程安装，通过临时目录 `.tmp-<pid>` + 原子重命名完成无缝安装覆盖。默认从 GitHub Latest Release 读取 `tag_name`，再从对应不可变 tag 下载；`CODEBUDDY_HUD_VERSION` 可固定 tag。
+**职责：** 支持本地与 GitHub Raw 远程安装，通过临时目录 `.tmp-<pid>` + 原子重命名完成无缝安装覆盖。按 302 重定向（无 API 限流）→ REST API（`GITHUB_TOKEN`/`GH_TOKEN` 提升限额）的顺序解析 Latest Release 的 `tag_name`，再从对应不可变 tag 下载；`CODEBUDDY_HUD_VERSION` 可固定 tag，`CODEBUDDY_HUD_RAW_BASE` 直接指定下载源并跳过 tag 解析。`CODEBUDDY_HUD_MIRROR` 为上述全部 GitHub URL（runtime 下载、tag 查询、API 兜底）加镜像前缀，tag 查询与 API 兜底在镜像未覆盖时自动回退直连，runtime 文件始终经镜像下载。
 
 ### 核心函数
 - `install(options?: object): Promise<void>`: 核心安装入口，支持本地复制与远端下载，通过临时目录 + 原子重命名完成安装。
 - `getTargetDir(): string`: 返回运行时目标安装目录路径（受 `CODEBUDDY_HUD_DIR` 环境变量影响）。
 - `checkNodeVersion(): void`: 校验当前 Node.js 版本 ≥18，不满足时抛出错误。
 - `rawBaseForTag(tag: string): string`: 返回指定 Release tag 的 GitHub Raw 基础地址。
-- `resolveRemoteRawBase(options?: object): Promise<string>`: 解析 `CODEBUDDY_HUD_RAW_BASE`、`CODEBUDDY_HUD_VERSION` 或 Latest Release 后的下载源。
+- `resolveRemoteRawBase(options?: object): Promise<string>`: 解析 `CODEBUDDY_HUD_RAW_BASE`、`CODEBUDDY_HUD_VERSION` 或 Latest Release 后的下载源（含 `CODEBUDDY_HUD_MIRROR` 前缀）。
+- `fetchLatestTagVia302(url?: string): Promise<string>`: 从 `releases/latest` 的 302 `Location` 解析不可变 tag；省略 `url` 时使用镜像前缀后的默认地址。
+- `fetchLatestRelease(): Promise<object>`: 按 302 候选链 → API 候选链顺序解析最新版本 release 对象。
+- `fetchUrlWithRetry(url: string, maxAttempts?: number): Promise<Buffer>`: 下载重试包装（默认 3 次，1s/2s 指数退避）。
 
 ---
 
