@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const {
   getSettingsPath,
   getCacheStatePath,
@@ -217,6 +218,50 @@ function uninstall(options) {
     // ignore
   }
 
+  // Clean up PATH / symlink — skip in sandbox/test mode (CODEBUDDY_HOME is set)
+  const isSandbox = !!process.env.CODEBUDDY_HOME;
+  if (!isSandbox) {
+    const binDir = path.dirname(hudBin);
+    if (platform === 'win32') {
+      // Remove binDir from user-level registry PATH
+      try {
+        const rawUserPath = execFileSync('powershell.exe', [
+          '-NoProfile', '-NonInteractive', '-Command',
+          "[Environment]::GetEnvironmentVariable('Path','User')",
+        ], { encoding: 'utf8', timeout: 5000 }).trim();
+        if (rawUserPath) {
+          const entries = rawUserPath.split(';').filter((e) => e.trim() !== '');
+          const normalBinDir = path.resolve(binDir);
+          const filtered = entries.filter((e) => path.resolve(e) !== normalBinDir);
+          if (filtered.length < entries.length) {
+            const newPath = filtered.join(';');
+            execFileSync('powershell.exe', [
+              '-NoProfile', '-NonInteractive', '-Command',
+              `[Environment]::SetEnvironmentVariable('Path','${newPath.replace(/'/g, "''")}','User')`,
+            ], { timeout: 5000 });
+            cleaned.push(`Removed from user PATH: ${sanitizeTerminalText(binDir, 512)}`);
+          }
+        }
+      } catch {
+        // non-fatal: PATH cleanup is best-effort
+      }
+    } else {
+      // POSIX: remove ~/.local/bin/codebuddy-hud symlink if it points to this runtime
+      try {
+        const home = process.env.HOME || require('os').homedir();
+        const symlink = path.join(home, '.local', 'bin', 'codebuddy-hud');
+        if (fs.existsSync(symlink)) {
+          const target = fs.readlinkSync(symlink);
+          if (path.resolve(target) === path.resolve(hudBin)) {
+            fs.unlinkSync(symlink);
+            cleaned.push(`Removed symlink: ${sanitizeTerminalText(symlink, 512)}`);
+          }
+        }
+      } catch {
+        // non-fatal
+      }
+    }
+  }
 
   if (cleaned.length === 0) {
     console.log('Nothing to uninstall.');

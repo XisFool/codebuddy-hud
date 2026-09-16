@@ -55,3 +55,32 @@ try {
         Remove-Item -Path $TempBootstrap -Force -ErrorAction SilentlyContinue
     }
 }
+
+# 3. Auto-register PATH (skip with CODEBUDDY_HUD_NO_PATH=1)
+if ($env:CODEBUDDY_HUD_NO_PATH -ne '1') {
+    $CodebuddyHome = if ($env:CODEBUDDY_HOME) { $env:CODEBUDDY_HOME } else { Join-Path $env:USERPROFILE '.codebuddy' }
+    $BinDir = Join-Path $CodebuddyHome 'codebuddy-hud-runtime\runtime\bin'
+
+    if (Test-Path (Join-Path $BinDir 'codebuddy-hud.cmd')) {
+        # Update current session immediately
+        if (-not ($env:PATH -split ';' | Where-Object { $_ -eq $BinDir })) {
+            $env:PATH = "$BinDir;$env:PATH"
+        }
+
+        # Persist to user-level registry (no admin required)
+        try {
+            $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+            if (-not $UserPath) { $UserPath = '' }
+            $PathEntries = $UserPath -split ';' | Where-Object { $_.Trim() -ne '' }
+            if (-not ($PathEntries | Where-Object { $_ -eq $BinDir })) {
+                $NewUserPath = (@($BinDir) + $PathEntries) -join ';'
+                [Environment]::SetEnvironmentVariable('Path', $NewUserPath, 'User')
+                Write-Success "Added to PATH: $BinDir"
+                Write-Info "The 'codebuddy-hud' command is available in this and all future terminals."
+            }
+        } catch {
+            Write-Info "Could not persist PATH (non-fatal): $_"
+            Write-Info "Current terminal can still use 'codebuddy-hud'; add '$BinDir' to PATH manually for persistence."
+        }
+    }
+}

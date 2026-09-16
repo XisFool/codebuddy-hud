@@ -48,3 +48,27 @@ else
 fi
 
 node "$TMP_BOOTSTRAP"
+
+# 3. Auto-register PATH via symlink (skip with CODEBUDDY_HUD_NO_PATH=1)
+if [ "${CODEBUDDY_HUD_NO_PATH:-}" != "1" ]; then
+  CODEBUDDY_HOME="${CODEBUDDY_HOME:-$HOME/.codebuddy}"
+  HUD_BIN="$CODEBUDDY_HOME/codebuddy-hud-runtime/runtime/bin/codebuddy-hud.js"
+  LOCAL_BIN="$HOME/.local/bin"
+
+  if [ -f "$HUD_BIN" ]; then
+    # Try ~/.local/bin symlink
+    if echo "$PATH" | tr ':' '\n' | grep -qx "$LOCAL_BIN" 2>/dev/null; then
+      mkdir -p "$LOCAL_BIN"
+      ln -sf "$HUD_BIN" "$LOCAL_BIN/codebuddy-hud"
+      chmod +x "$HUD_BIN"
+      echo -e "${GREEN}✔ Linked codebuddy-hud → $LOCAL_BIN/codebuddy-hud${NC}"
+      echo -e "  The 'codebuddy-hud' command is now available in your terminal."
+    else
+      chmod +x "$HUD_BIN"
+      echo ""
+      echo -e "  ${CYAN}Tip:${NC} To use 'codebuddy-hud' as a global command, add to your shell profile:"
+      echo -e "    export PATH=\"\$HOME/.local/bin:\$PATH\""
+      echo -e "    mkdir -p ~/.local/bin && ln -sf \"$HUD_BIN\" ~/.local/bin/codebuddy-hud"
+    fi
+  fi
+fi

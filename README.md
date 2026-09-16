@@ -147,7 +147,7 @@ Get-Content "$env:USERPROFILE\.codebuddy\settings.json"
 & "$env:USERPROFILE\.codebuddy\codebuddy-hud-runtime\runtime\bin\codebuddy-hud.cmd" --status
 ```
 
-> 下文以 `codebuddy-hud` 简记入口：一键安装即上述 `...codebuddy-hud.js`（Windows 为 `.cmd`）；源码安装并执行 `npm link` 后可直接使用 `codebuddy-hud`。
+> 下文以 `codebuddy-hud` 简记入口：一键安装已自动注册系统 PATH，可直接在终端使用 `codebuddy-hud` 命令；如未生效，可用上述完整路径代替，或设 `CODEBUDDY_HUD_NO_PATH=1` 跳过自动注册。
 
 以下现象属正常降级，不是安装失败：
 

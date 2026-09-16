@@ -147,7 +147,7 @@ Get-Content "$env:USERPROFILE\.codebuddy\settings.json"
 & "$env:USERPROFILE\.codebuddy\codebuddy-hud-runtime\runtime\bin\codebuddy-hud.cmd" --status
 ```
 
-> Below, `codebuddy-hud` is shorthand for the entry point: for one-command installs it is the `...codebuddy-hud.js` above (`.cmd` on Windows); after a source install with `npm link` you can call `codebuddy-hud` directly.
+> Below, `codebuddy-hud` is shorthand for the entry point: one-command installs now automatically register the system PATH, so `codebuddy-hud` works directly in your terminal; if it doesn't take effect, use the full paths above, or set `CODEBUDDY_HUD_NO_PATH=1` to skip auto-registration.
 
 The following are normal degradations, not install failures:
 
