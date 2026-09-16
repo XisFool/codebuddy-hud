@@ -62,7 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/script
 
 安装器行为：
 
-1. 通过 302 重定向（无 API 限流）或 REST API（支持 `GITHUB_TOKEN` 认证）查询最新 Release 的 `tag_name`，将安装固定到该 release（不使用可变分支）。runtime 文件下载失败会自动重试 3 次（指数退避）。
+1. 通过 302 重定向（无 API 限流）或 REST API（支持 `GITHUB_TOKEN` 认证）查询最新 Release 的 `tag_name`，将安装固定到该 release（不使用可变分支）。runtime 文件下载失败最多尝试 3 次（按 1s、2s 指数退避）。
 2. 下载 runtime 至 `~/.codebuddy/codebuddy-hud-runtime/`。
 3. 备份并写入 `~/.codebuddy/settings.json` 的 `statusLine.command`；Windows 同时生成 `.cmd` shim，烘焙 Node 绝对路径，不依赖系统 PATH。
 
@@ -108,7 +108,7 @@ node scripts/bootstrap.js
 
 ```bash
 export CODEBUDDY_HUD_BOOTSTRAP_URL=https://your-mirror/scripts/bootstrap.js
-export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.2.1
+export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.3.0
 curl -fsSL https://your-mirror/scripts/install.sh | bash
 ```
 
@@ -116,7 +116,7 @@ curl -fsSL https://your-mirror/scripts/install.sh | bash
 
 ```powershell
 $env:CODEBUDDY_HUD_BOOTSTRAP_URL = 'https://your-mirror/scripts/bootstrap.js'
-$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.2.1'
+$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.3.0'
 irm https://your-mirror/scripts/install.ps1 | iex
 ```
 
@@ -125,7 +125,7 @@ irm https://your-mirror/scripts/install.ps1 | iex
 - `CODEBUDDY_HUD_MIRROR` — 只需给镜像域名（如 `https://your-mirror`），安装脚本与 bootstrap.js 会用它拼出所有自己请求的 GitHub URL（runtime 下载、release tag 查询、API 兜底），release tag 查询与 API 兜底在镜像未覆盖时自动回退直连，runtime 文件始终经镜像下载；首跳（下载安装脚本本身）由你的 shell 直接请求，所以命令里仍需写出前缀；
 - `CODEBUDDY_HUD_BOOTSTRAP_URL` — 供安装脚本下载 bootstrap.js 使用，必须指向镜像上的 `scripts/bootstrap.js` 本体，不是镜像根目录；
 - `CODEBUDDY_HUD_RAW_BASE` — 供 bootstrap.js 拉取 runtime 文件使用；**一旦设置会跳过 GitHub Latest Release 查询**，示例锁定 tag 路径（`vX.Y.Z`）以维持"安装固定到 release、不使用可变分支"的既有承诺（安装器行为第 1 条）；
-- `GITHUB_TOKEN` / `GH_TOKEN` — 可选，设置后 GitHub API 请求携带认证，rate limit 从 60/h 提升至 5000/h；
+- `GITHUB_TOKEN` / `GH_TOKEN` — 可选，仅随直连 `api.github.com` 的请求携带认证（不随镜像转发），rate limit 从 60/h 提升至 5000/h；
 - bash 下环境变量必须导出（作用于 `bash` 进程），不能只前缀给 `curl`。
 
 ---
@@ -240,7 +240,7 @@ codebuddy-hud --theme list      # 仅列出全部主题
 - `theme` / `themeMode`：主题与深浅色模式，见「主题」。
 - `language`：界面语言 `zh` / `en`（默认 `en`；设为其他值时按系统 locale 自动判定）。
 - `defaultEffortLevel`：未捕获到推理强度时的回退档位（默认 `medium`）。
-- `display.*`：各行片段开关，均默认 `true`，另有 `showDuration` / `showGitBranch` / `showCurrentDir` / `showPermissionMode` 等；`useNerdFonts`（默认 `false`）启用 Nerd Fonts 图标；`unicode` 取值 `auto` / `true` / `false`（默认 `auto`，按终端能力探测）。
+- `display.*`：各行片段开关，除 `showVersion`、`useNerdFonts`（默认 `false`）外均默认 `true`；另有 `showDuration` / `showGitBranch` / `showCurrentDir` / `showPermissionMode` 等；`useNerdFonts`（默认 `false`）启用 Nerd Fonts 图标；`unicode` 取值 `auto` / `true` / `false`（默认 `auto`，按终端能力探测）。
 - `thresholds`：上下文进度条的警告 / 危险阈值（默认 `0.7` / `0.9`）。
 - `cacheHitThresholds`：缓存命中率的配色分级阈值（默认 `80` / `50`）。
 

@@ -62,7 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/script
 
 The installer:
 
-1. Resolves the latest release `tag_name` via 302 redirect (no API rate limit) or REST API (supports `GITHUB_TOKEN` auth), pinning the install to that release (never a moving branch). Runtime file downloads auto-retry 3 times with exponential backoff.
+1. Resolves the latest release `tag_name` via 302 redirect (no API rate limit) or REST API (supports `GITHUB_TOKEN` auth), pinning the install to that release (never a moving branch). Runtime file downloads attempt up to 3 times with exponential backoff (1s, 2s).
 2. Downloads the runtime to `~/.codebuddy/codebuddy-hud-runtime/`.
 3. Backs up and writes `statusLine.command` into `~/.codebuddy/settings.json`; on Windows, also generates a `.cmd` shim with the Node absolute path baked in (PATH-independent).
 
@@ -108,7 +108,7 @@ Local install mode copies files directly from the repository — zero remote HTT
 
 ```bash
 export CODEBUDDY_HUD_BOOTSTRAP_URL=https://your-mirror/scripts/bootstrap.js
-export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.2.1
+export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.3.0
 curl -fsSL https://your-mirror/scripts/install.sh | bash
 ```
 
@@ -116,7 +116,7 @@ curl -fsSL https://your-mirror/scripts/install.sh | bash
 
 ```powershell
 $env:CODEBUDDY_HUD_BOOTSTRAP_URL = 'https://your-mirror/scripts/bootstrap.js'
-$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.2.1'
+$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.3.0'
 irm https://your-mirror/scripts/install.ps1 | iex
 ```
 
@@ -125,7 +125,7 @@ Notes:
 - `CODEBUDDY_HUD_MIRROR` — just the mirror domain (e.g., `https://your-mirror`); both install scripts and bootstrap.js use it to prefix every GitHub URL they request (runtime downloads, release-tag lookup, and API fallback). Release-tag lookup and API fallback fall back to direct requests if unmirrored; runtime files are always downloaded via the mirror. The first hop (downloading the install script itself) is requested by your own shell, so the command must still spell the prefix out.
 - `CODEBUDDY_HUD_BOOTSTRAP_URL` — used by the install script to download `bootstrap.js`; must point directly to `scripts/bootstrap.js` on your mirror, not the mirror root.
 - `CODEBUDDY_HUD_RAW_BASE` — used by `bootstrap.js` to fetch runtime files. **Setting this skips the GitHub Latest Release lookup**, so the example pins a tag path (`vX.Y.Z`) to maintain the release-pinned guarantee (Installer behavior #1).
-- `GITHUB_TOKEN` / `GH_TOKEN` — optional; when set, GitHub API requests include authentication, raising the rate limit from 60/h to 5000/h.
+- `GITHUB_TOKEN` / `GH_TOKEN` — optional; passes authentication only to direct `api.github.com` requests (never forwarded to mirrors), raising the rate limit from 60/h to 5000/h.
 - Under Bash, environment variables must be exported (so child `bash` processes inherit them), not just prepended to `curl`.
 
 ---
@@ -240,7 +240,7 @@ Fields:
 - `theme` / `themeMode`: theme and dark/light mode — see "Themes".
 - `language`: UI language, `zh` or `en` (default `en`; any other value auto-detects from the system locale).
 - `defaultEffortLevel`: fallback reasoning effort when none is captured (default `medium`).
-- `display.*`: per-segment switches, all default `true` — also includes `showDuration` / `showGitBranch` / `showCurrentDir` / `showPermissionMode`; `useNerdFonts` (default `false`) enables Nerd Fonts icons; `unicode` accepts `auto` / `true` / `false` (default `auto`, probes terminal capability).
+- `display.*`: per-segment switches, all default `true` except `showVersion` and `useNerdFonts` (default `false`) — also includes `showDuration` / `showGitBranch` / `showCurrentDir` / `showPermissionMode`; `useNerdFonts` (default `false`) enables Nerd Fonts icons; `unicode` accepts `auto` / `true` / `false` (default `auto`, probes terminal capability).
 - `thresholds`: warning/critical thresholds for the context bar (defaults `0.7` / `0.9`).
 - `cacheHitThresholds`: color-grading thresholds for cache hit rate (defaults `80` / `50`).
 

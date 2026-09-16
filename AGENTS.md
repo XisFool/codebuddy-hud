@@ -67,7 +67,7 @@ node runtime/bin/codebuddy-hud.js --theme list
 ## 关键技术细节与避坑指南
 
 1. **测试驱动规范**：运行 `npm test`，底层脚本自动向 `node --test` 喂入全量文件路径，彻底规避 Node 18/20 对 glob 不支持及 Windows 目录反斜杠引发假阳性 `MODULE_NOT_FOUND` 的问题；改动后必须保持全量单测与 2 个 verify 脚本 100% 通过。
-2. **Windows `.cmd` Shim**：烘焙安装时的 `process.execPath` 绝对路径（`statusline-installer.js`），不依赖系统 PATH；路径中 `%` 批量转义为 `%%`。
+2. **Windows `.cmd` Shim**：烘焙安装时的 `process.execPath` 绝对路径（`statusline-installer.js`），不依赖系统 PATH；路径中 `%` 批量转义为 `%%`；含非 ASCII 字符时自动解析 Windows 8.3 短路径并前置 `@chcp 65001 >nul`。
    - v2.146.0 的 Windows containment 启动器会二次转义字面引号。安装器对安全 ASCII 路径省略引号；含空格或 shell 特殊字符的路径仍需引号，存在宿主兼容限制。
    - `.cmd` 使用 UTF-8，必要时先 `chcp 65001`。不要改成 UTF-16LE；已实测 cmd.exe 无法正常执行该格式。
 3. **终端编码探测缓存**：`chcp.com` 探测结果缓存在 `~/.codebuddy/codebuddy-hud-cache-state.json`（`encoding.js`）；`CODEBUDDY_HUD_FORCE_ASCII/UNICODE` 优先于缓存。
@@ -76,9 +76,9 @@ node runtime/bin/codebuddy-hud.js --theme list
    - 遥测仅存在于 transcript 的 `providerData.rawUsage`（避开 `cache_read_input_tokens: 0` 陷阱字段）；
    - `rawUsage.prompt_tokens` 有效时依次取 `prompt_cache_hit_tokens`、`prompt_tokens_details.cached_tokens`、`cached_tokens`，缺失则为 0；否则以 `usage.inputTokens` 和 `inputTokensDetails[].cached_tokens` 聚合兜底；
    - 聚合范围：`getTurnUsageMetrics()` 从 EOF 回扫至 `role: 'user'`，展示本轮聚合（`sum(hitTokens) / sum(promptTokens)`），非单次调用瞬时值；
-   - 三态契约：`null`（不渲染）、`{available:false}`（`cache --`）、`{available:true, X%}`（正常数值）。
+   - 三态契约：`null`（渲染层兜底为 `{available:false}`，显示 `cache --`）、`{available:false}`（`cache --`）、`{available:true, X%}`（正常数值）。
 6. **Token、变更与 Credits 口径**：
-   - Token 资源块（Line 2）显示当前上下文 `inTokens + outTokens`，进度条分子严格使用 `inTokens`（与 `used_percentage` 同基底）；
+   - Token 资源块（Line 2）显示当前上下文输入占用与容量（`Context Token in/size`），进度条分子严格使用 `inTokens`（与 `used_percentage` 同基底）；`outTokens` 独立展示，compact 压缩后宿主尚未提供新 usage 时显示 `--` 与显式等待提示；
    - 变更摘要（Line 3）以 Unicode `Δ` 开头，ASCII fallback 为 `[D]`；
    - Credits（Line 3）为当前 transcript 会话的增量累计实际消费，按 transcript 独立缓存状态；扫描预算耗尽且尚未完成时隐藏累计值，不能把已扫描前缀或 payload 兜底显示为总额。
 7. **配置防御与降级**：

@@ -11,7 +11,7 @@
 `codebuddy-hud` is a high-performance terminal statusline HUD plugin designed for the **CodeBuddy Code** AI pair-programming assistant. It renders real-time, compact telemetry dashboards directly into the terminal window during active coding sessions.
 
 ### Core Architectural Invariants:
-1. **Zero External Dependencies**: Implemented strictly using Node.js built-in standard libraries (`fs`, `path`, `os`, `crypto`, `child_process`, `readline`, `https`). No `node_modules` installation is required.
+1. **Zero External Dependencies**: Implemented strictly using Node.js built-in standard libraries (`fs`, `path`, `os`, `crypto`, `child_process`, `readline`, `https`, `http`). No `node_modules` installation is required.
 2. **Statusline Host Contract**:
    - **Execution Budget**: $\le 1500\text{ms}$ total, with an internal stdin read timeout of $800\text{ms}$. Timers cannot preempt synchronous filesystem calls or JSON parsing.
    - **Constant Zero Exit Code**: The process must **always** terminate with `process.exitCode = 0`. Uncaught runtime exceptions are redirected to `~/.codebuddy/codebuddy-hud-error.log` (capped at 1MB with auto-rotation) to prevent host terminal disruption.
@@ -26,17 +26,18 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  PLUGIN LAYER  (Discovered by CodeBuddy / Agent, root & skills/)        │
-│   .codebuddy-plugin/plugin.json · skills/hud-config/SKILL.md            │
+│  PLUGIN LAYER  (Discovered by CodeBuddy / Agent, root & skills/)         │
+│   .codebuddy-plugin/plugin.json · skills/hud-config/SKILL.md             │
 └────────────────────────────────────┬─────────────────────────────────────┘
                                      │  bootstrap.js installs & atomizes
 ┌────────────────────────────────────▼─────────────────────────────────────┐
-│  RUNTIME LAYER  (~/.codebuddy/codebuddy-hud-runtime/ or repo checkout)  │
+│  RUNTIME LAYER  (~/.codebuddy/codebuddy-hud-runtime/ or repo checkout)   │
 │   runtime/bin/codebuddy-hud.js    ← Registered as statusLine.command     │
 │   runtime/bin/codebuddy-hud.cmd   ← Windows portable shim wrapper        │
-│   parser.js · config.js · paths.js · encoding.js · git.js · sanitize.js │
-│   doctor.js · update-checker.js · session-stats.js · uninstall.js       │
-│   transcript.js (Reverse sliding-window & SHA-256 telemetry scanner)     │
+│   parser.js · config.js · paths.js · encoding.js · git.js · sanitize.js  │
+│   lang.js · model-info.js · settings-file.js · statusline-installer.js   │
+│   theme-selector.js · doctor.js · update-checker.js · session-stats.js   │
+│   transcript.js (Sliding-window & SHA-256 telemetry) · uninstall.js      │
 │   renderer.js (3-Line orchestration) ──> renderer/ (format, diff, agents)│
 └──────────────────────────────────────────────────────────────────────────┘
 ```
@@ -47,6 +48,8 @@
 ---
 
 ## 3. Module Dependency Graph
+
+> **Note**: This diagram illustrates the primary end-to-end execution flows. Full intra-module require dependencies across all utility modules are detailed in [docs/module-reference.md](module-reference.md).
 
 ```mermaid
 graph TD
@@ -71,6 +74,7 @@ graph TD
     Renderer --> Parser
     Renderer --> ModelInfo["runtime/model-info.js"]
     Renderer --> UpdateChecker
+    Renderer --> Lang["runtime/lang.js"]
 
     Transcript --> Sanitize
     Transcript --> Paths

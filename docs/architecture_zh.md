@@ -28,17 +28,18 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  插件声明层 (PLUGIN LAYER)  CodeBuddy/Agent 识别入口，位于仓库根目录与 skills/ │
-│   .codebuddy-plugin/plugin.json · skills/hud-config/SKILL.md            │
+│  插件声明层 (PLUGIN LAYER)  CodeBuddy/Agent 识别入口 (根目录与 skills/)  │
+│   .codebuddy-plugin/plugin.json · skills/hud-config/SKILL.md             │
 └────────────────────────────────────┬─────────────────────────────────────┘
                                      │  bootstrap.js 执行原子安装与覆盖
 ┌────────────────────────────────────▼─────────────────────────────────────┐
-│  运行时执行层 (RUNTIME LAYER)  位于 ~/.codebuddy/codebuddy-hud-runtime/ 或本地检出│
-│   runtime/bin/codebuddy-hud.js    ← 注册到 settings.json 的 statusLine 命令 │
-│   runtime/bin/codebuddy-hud.cmd   ← Windows 平台便携式与绝对路径 Shim 启动脚本 │
-│   parser.js · config.js · paths.js · encoding.js · git.js · sanitize.js │
-│   doctor.js · update-checker.js · session-stats.js · uninstall.js       │
-│   transcript.js (逆向滑窗扫描与 SHA-256 增量遥测状态机)                      │
+│  运行时执行层 (RUNTIME LAYER)  codebuddy-hud-runtime/ 或本地源码检出     │
+│   runtime/bin/codebuddy-hud.js    ← 注册到 settings.json 的 statusLine   │
+│   runtime/bin/codebuddy-hud.cmd   ← Windows 平台绝对路径 Shim 启动脚本   │
+│   parser.js · config.js · paths.js · encoding.js · git.js · sanitize.js  │
+│   lang.js · model-info.js · settings-file.js · statusline-installer.js   │
+│   theme-selector.js · doctor.js · update-checker.js · session-stats.js   │
+│   transcript.js (逆向滑窗扫描与 SHA-256 增量遥测状态机) · uninstall.js   │
 │   renderer.js (3 行看板装配引擎) ──> renderer/ (format, diff, agents)    │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
@@ -49,6 +50,8 @@
 ---
 
 ## 3. 模块依赖拓扑图 (Module Dependency Graph)
+
+> **注**：本图展示核心执行主链路与关键子系统流转；完整模块间 require 依赖详见 [docs/module-reference.md](module-reference.md)。
 
 ```mermaid
 graph TD
@@ -73,6 +76,7 @@ graph TD
     Renderer --> Parser
     Renderer --> ModelInfo["runtime/model-info.js"]
     Renderer --> UpdateChecker
+    Renderer --> Lang["runtime/lang.js"]
 
     Transcript --> Sanitize
     Transcript --> Paths

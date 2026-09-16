@@ -92,6 +92,8 @@ export function extractCostData(cbData: CodeBuddyPayload): {
   totalDurationMs: number;
   apiDurationMs: number;
 } | null;
+
+export function num(val: any): number | null;
 ```
 
 ### 数据结构 Shape
@@ -132,6 +134,8 @@ export function loadConfig(cwd?: string): ResolvedConfig;
 export function deepMerge<T extends object>(target: T, source: object, depth?: number): T;
 export function resolveTheme(config: ResolvedConfig): ThemePalette;
 export function detectThemeMode(config: ResolvedConfig): 'dark' | 'light';
+export function isPresetName(name: string): boolean;
+export const DEFAULT_CONFIG: ResolvedConfig;
 ```
 
 ### 内置主题预设 (THEME_PRESETS)
@@ -158,14 +162,15 @@ if (key === '__proto__') continue;
 ```typescript
 export function renderHUD(
   cbData: CodeBuddyPayload | null,
-  config?: ResolvedConfig
+  config: ResolvedConfig
 ): string;
 ```
+> **说明**：必须传入完整解析后的 `config` 配置对象。当 `config` 省略或未提供时，渲染器首行守卫将直接返回空字符串 `''`。
 
 ### 3 行输出排版规范
 - **Line 1 (Identity)**: `[ModelName] [EffortIcon] │ [Branch*] │ [Workspace] │ [Permission] [UpdateBadge]`
 - **Line 2 (Tokens)**: `Context Token 249k/1M [███░░░░░░░] 25% │ out 1.1k │ cache 96.8%`; after compact, an unconfirmed host value is rendered with an explicit waiting marker.
-- **Line 3 (Diff/Cost/Tools)**: `Δ +1.7k -161 │ 82.04 credits │ ⏱ 2h47m │ ◐ Edit: parser.js │ ✓ Read ×3` (全空自动隐藏)
+- **Line 3 (Diff/Cost/Tools)**: `Δ +1.7k -161 │ 82.04 credits │ ⏱ 2h47m │ ◐ Edit: parser.js  ✓ Read ×3` (全空自动隐藏)
 
 ---
 
@@ -177,9 +182,10 @@ export function renderHUD(
 - `formatTokens(num: number): string`: 格式化数字为 `1.2k`、`3.5M`。特别处理 `999.5` 边界防止四舍五入溢出为 `1000k`。
 - `formatDurationMs(ms: number): string`: 格式化毫秒数为 `12s`、`5m20s`、`2h15m`。
 - `createProgressBar(pct: number, width: number, thresholds: object, glyphs: object): string`: 生成自适应色阶进度条。
-- `calculateTurnCacheMetrics(usage, thresholds): TurnCacheMetrics | { available: false } | null`: 从单条 usage 计算缓存命中指标，字段缺失或总 prompt 为 0 时返回 `{ available: false }`（渲染为 `cache --`），无 usage 时返回 `null`。
-- `metricsFromPromptCache(hitTokens: number, promptTokens: number, thresholds?: object): TurnCacheMetrics | { available: false } | null`: 从本轮聚合命中数与 prompt 数构建三态缓存指标。
+- `calculateTurnCacheMetrics(usage: object | null): TurnCacheMetrics | { available: false } | null`: 从单条 usage 计算缓存命中指标，字段缺失或总 prompt 为 0 时返回 `{ available: false }`（渲染为 `cache --`），无 usage 时返回 `null`。
+- `metricsFromPromptCache(hitTokens: number, promptTokens: number): TurnCacheMetrics | null`: 从本轮聚合命中数与 prompt 数构建三态缓存指标（调用方在返回 `null` 时兜底归一为 `{ available: false }` 并渲染 `cache --`）。
 - `formatTurnCacheBadge(metrics, label, isCompact, thresholds): string`: 渲染缓存徽标：可用时 `cache 98.5%`（按 `thresholds` 分色），无遥测时降级为 `cache --`。
+- 辅助导出与调色：`ANSI_COLORS`、`RESET`、`BOLD`、`DIM` 样式常量；`color`、`bold`、`dim`、`themeColor`、`getThemeColor` 调色辅助函数；`normalizeTokenCount`、`sumCachedTokens` 聚合清洗函数。
 
 ---
 
@@ -249,6 +255,7 @@ export function getI18n(config?: ResolvedConfig): {
   t: (key: string, fallback?: string) => string;
   dict: Record<string, string>;
 };
+export const DICTIONARY: Record<'zh' | 'en', Record<string, string>>;
 ```
 
 ---
@@ -293,14 +300,19 @@ export function getTurnToolActivity(
 
 export function getTurnMetricsAndActivity(
   transcriptPath: string | null,
-  opts?: { cwd?: string; tailBytes?: number }
+  opts?: { cwd?: string; tailBytes?: number; contextWindow?: object }
 ): {
   turnUsage: ReturnType<typeof getTurnUsageMetrics>;
   toolActivity: ReturnType<typeof getTurnToolActivity>;
+  contextStatus?: 'fresh' | 'stale' | 'unknown';
 };
 ```
 
 `getTurnMetricsAndActivity()` 共享本轮 usage 和工具活动的逆向扫描。会话 Credits 另用前向 checkpoint 扫描，分块循环预算 100ms。`complete: false` 表示预算耗尽、短读或尾行尚未完成；此时累计值与调用数为 `null`，内部 checkpoint 仍可续扫。渲染层隐藏 Credits 并禁止 payload 兜底。
+
+### 辅助导出与常数
+- 辅助扫描函数：`getRecentToolActivity(path, opts)`、`getRecentUsageMetrics(path, opts)`、`extractUsageMetrics(line)`。
+- 滑窗预算常数：`DEFAULT_TAIL_BYTES` (16KB)、`MAX_TOTAL_BYTES` (256KB)、`MAX_SCAN_LINES` (40)、`MAX_TURN_SCAN_LINES` (200)。
 
 ---
 
@@ -320,6 +332,9 @@ export function getLogicalSessionCostData(
   totalDurationMs: number;
   apiDurationMs: number;
 };
+export function getSessionIdentity(cbData: CodeBuddyPayload, cwd?: string): string;
+export function getResetSignal(prev: object | null, curr: object): string | null;
+export const SESSION_STATS_VERSION: number;
 ```
 
 `cwd` 用于派生 `/clear` handoff 状态文件路径（`handoff-<sha256(cwd)>.json`）。
@@ -339,6 +354,9 @@ export function getGitStatus(
   branch: string;
   dirty: boolean | null;
 } | null;
+export function findGitInfo(cwd?: string): { gitDir: string; workTree: string } | null;
+export function readDirectBranch(gitDir: string): string | null;
+export function parseGitStatusOutput(output: string): { branch: string; dirty: boolean | null } | null;
 ```
 
 正常缓存 TTL 为 10 秒，HEAD/index mtime 变化可提前失效；未暂存的工作树编辑可能延迟显示。`null` 表示 Git 超时后的未知脏状态。
@@ -352,6 +370,7 @@ export function getGitStatus(
 ### 接口定义
 ```typescript
 export function supportsUnicode(): boolean;
+export function detectUnicodeSupport(): boolean;
 export function selectGlyphs(useNerdFonts: boolean, unicodeSupported: boolean): GlyphSet;
 export function resetCache(): void;
 ```
@@ -378,6 +397,8 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 - `getSettingsPath(): string`: 返回 `settings.json` 绝对路径。
 - `getUserConfigPath(): string`: 返回 `codebuddy-hud.config.json` 路径。
 - `getErrorLogPath(): string`: 返回 `codebuddy-hud-error.log` 路径。
+- `getCacheStatePath(): string`: 返回 `codebuddy-hud-cache-state.json` 路径。
+- `getCreditStatePath(): string`: 返回 `codebuddy-hud-credit-state.json` 路径。
 - `getUpdateStatusPath(): string`: 返回 `codebuddy-hud-update-status.json` 路径。
 - `getGitCachePath(): string`: 返回 `codebuddy-hud-git-cache.json` 路径。
 - `getTranscriptUsageStateDir(): string`: 返回 `codebuddy-hud-usage-state/` 目录。
@@ -386,6 +407,7 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 - `getSessionStatsStatePath(identity: string): string`: 按会话 identity 哈希隔离的基线状态路径。
 - `getSessionStatsHandoffPath(cwd: string): string`: 会话 `/clear` 跨文件切换时的进程级 cost 累计交接状态路径（`handoff-<sha256(cwd)>.json`）。宿主 `/clear` 会产生新 transcript 文件，通过此 cwd 作用域文件在新旧 identity 之间交接基线，避免累计 Δ/⏱ 计数全额丢失。
 - `getSessionEffortStatePath(transcriptPath: string): string`: 返回按 transcript 路径哈希寻址的会话 effort 状态文件 `codebuddy-hud-session-state/effort-<sha256>.json`。
+- `resolveCodeBuddyPath(rel: string): string`: 将相对路径解析为基于 `CODEBUDDY_HOME` 的绝对路径。
 - `normalizePlatformPath(p: string): string`: 平台感知路径归一化——Windows 下 resolve 后整体小写（消除盘符 `d:`/`D:` 哈希分裂），POSIX 保留大小写语义。
 
 ---
@@ -443,7 +465,7 @@ export function buildCmdShimContent(nodeExe: string, hudBin?: string): string;
 
 ### 接口定义
 ```typescript
-export function runDoctor(options?: { cwd?: string; json?: boolean }): DoctorReport;
+export function runDoctor(options?: { cwd?: string }): DoctorReport;
 export function printDoctorReport(report: DoctorReport, isJson?: boolean, options?: { cwd?: string }): void;
 ```
 
@@ -452,7 +474,7 @@ export function printDoctorReport(report: DoctorReport, isJson?: boolean, option
 2. `codebuddy`: `CODEBUDDY_HOME`、`settings.json` 与 `statusLine.command` 指向的目标物理文件存在性校验；宿主事件驱动刷新架构契约说明（长任务期间宿主不派发更新属正常现象）。
 3. `terminal`: Windows 代码页（`chcp 65001`）、Unicode 支持、明暗色调与 Windows 路径大小写规范化状态。
 4. `git`: Git PATH 可达性、当前仓库分支与探测延迟。
-5. `transcript`: 遥测缓存目录读写权限与历史日志存在性。
+5. `transcript`: 遥测状态目录创建与可写性校验，并回显错误日志路径。
 
 ---
 
@@ -466,6 +488,12 @@ export function checkForUpdates(options?: { force?: boolean }): Promise<UpdateSt
 export function spawnBackgroundUpdateCheck(): void;
 export function compareVersions(v1: string, v2: string): 1 | -1 | 0;
 export function parseSemver(v: string): [number, number, number];
+export function getLocalVersion(cwd?: string): string;
+export function getReleaseVersion(release: object): string | null;
+export function readUpdateStatus(): UpdateStatus | null;
+export function writeUpdateStatus(status: UpdateStatus): void;
+export function resetUpdateStatusCache(): void;
+export const CHECK_INTERVAL_MS: number;
 ```
 
 网络失败保留最后一次有效更新信息，只刷新检查时间。spawn 前写 `lastCheck` 作为本地并发节流阀。
@@ -481,7 +509,9 @@ export function parseSemver(v: string): [number, number, number];
 export function selectThemeInteractive(opts?: { initialTheme?: string }): Promise<string | null>;
 export function saveUserTheme(themeName: string): string;
 export function getActiveThemeName(): string;
+export function renderThemePreview(themeName: string, mode?: 'dark' | 'light'): string[];
 export function printThemesList(): void;
+export const THEMES: string[];
 ```
 
 ---
@@ -502,7 +532,7 @@ export function uninstall(options?: object): void;
 **职责：** 支持本地与 GitHub Raw 远程安装，通过临时目录 `.tmp-<pid>` + 原子重命名完成无缝安装覆盖。按 302 重定向（无 API 限流）→ REST API（`GITHUB_TOKEN`/`GH_TOKEN` 提升限额）的顺序解析 Latest Release 的 `tag_name`，再从对应不可变 tag 下载；`CODEBUDDY_HUD_VERSION` 可固定 tag，`CODEBUDDY_HUD_RAW_BASE` 直接指定下载源并跳过 tag 解析。`CODEBUDDY_HUD_MIRROR` 为上述全部 GitHub URL（runtime 下载、tag 查询、API 兜底）加镜像前缀，tag 查询与 API 兜底在镜像未覆盖时自动回退直连，runtime 文件始终经镜像下载。
 
 ### 核心函数
-- `install(options?: object): Promise<void>`: 核心安装入口，支持本地复制与远端下载，通过临时目录 + 原子重命名完成安装。
+- `install(): Promise<void>`: 核心安装入口，支持本地复制与远端下载，通过临时目录 + 原子重命名完成安装。
 - `getTargetDir(): string`: 返回运行时目标安装目录路径（受 `CODEBUDDY_HUD_DIR` 环境变量影响）。
 - `checkNodeVersion(): void`: 校验当前 Node.js 版本 ≥18，不满足时抛出错误。
 - `rawBaseForTag(tag: string): string`: 返回指定 Release tag 的 GitHub Raw 基础地址。
@@ -510,12 +540,13 @@ export function uninstall(options?: object): void;
 - `fetchLatestTagVia302(url?: string): Promise<string>`: 从 `releases/latest` 的 302 `Location` 解析不可变 tag；省略 `url` 时使用镜像前缀后的默认地址。
 - `fetchLatestRelease(): Promise<object>`: 按 302 候选链 → API 候选链顺序解析最新版本 release 对象。
 - `fetchUrlWithRetry(url: string, maxAttempts?: number): Promise<Buffer>`: 下载重试包装（默认 3 次，1s/2s 指数退避）。
+- `mirrorPrefix(): string`: 解析 `CODEBUDDY_HUD_MIRROR` 环境变量并归一化为 URL 前缀。
 
 ---
 
 ## 23. `scripts/run-tests.js` — 跨平台测试分发驱动
 
-**职责：** `npm test` 底层执行驱动。通过深度遍历搜集所有单元测试文件的绝对路径，直接向 `node --test` 喂入全量文件参数，彻底规避 Node 18/20 glob 在 Windows 路径反斜杠下的跨平台匹配陷阱与 `MODULE_NOT_FOUND` 假阳性。
+**职责：** `npm test` 底层执行驱动。遍历 `tests/unit/` 目录下全部 `*.test.mjs` 单元测试文件的绝对路径，直接向 `node --test` 喂入全量文件参数，彻底规避 Node 18/20 glob 在 Windows 路径反斜杠下的跨平台匹配陷阱与 `MODULE_NOT_FOUND` 假阳性。
 
 ---
 

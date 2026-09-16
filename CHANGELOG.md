@@ -10,17 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] (待发布)
 
+## [v0.3.0] - 2026-09-16
+
+### Added (新增特性)
+- **安装器镜像加速与下载重试**：新增 `CODEBUDDY_HUD_MIRROR` 环境变量支持，安装脚本与 bootstrap 自动为 GitHub URL 添加镜像前缀；引入 302 重定向优先解析最新 tag（绕过 GitHub API 限流）并支持 `GITHUB_TOKEN`/`GH_TOKEN` 认证提额；runtime 文件下载支持最多 3 次尝试（1s/2s 指数退避）。
+
+### Changed (变更与优化)
+- **HUD 第二行精简与 /compact 状态感知**：Line 2 移除重复累加的 Token 数值，重构为 `Context Token in/size [bar] % │ out ... │ cache ...` 清晰结构；针对 `/compact` 压缩后宿主短时间内仍返回压缩前旧 usage 的时序滞后，通过逆向扫描 transcript compact 成功事件实现新鲜度判定，尚未刷新时显式展示 `--` 与多语言等待提示（`压缩后待更新` / `awaiting usage after compact`），杜绝旧数据误导。
+- **主题选择器预览对齐 3 行布局**：`--theme` 交互选择器实时预览从 4 行收敛对齐至宿主实际生效的 3 行结构，分隔符统一使用 `│`，并将示例模型标识同步为 `Deepseek-V4.1-Flash`。
+
 ### Fixed (缺陷修复)
-- **镜像覆盖版本发现跳**：`CODEBUDDY_HUD_MIRROR` 此前只覆盖 runtime 文件下载，release tag 查询仍直连 `github.com`/`api.github.com`，导致「直连 GitHub 超时」场景下仅设镜像必然安装失败且无任何提示。现该前缀同时作用于 tag 查询与 API 兜底（未覆盖时自动回退直连；runtime 文件始终经镜像下载）；`GITHUB_TOKEN`/`GH_TOKEN` 仅发往 GitHub（不随跨源重定向或镜像转发）。原「302 解析」单测只断言函数类型（改坏正则仍绿），已替换为真实断言并新增镜像覆盖 tag 查询的端到端回归测试。
+- **镜像覆盖版本发现与 API 兜底**：release tag 查询与 API 兜底现同样应用 `CODEBUDDY_HUD_MIRROR` 镜像前缀，并在镜像未覆盖时自动回退直连（runtime 文件始终走镜像）；`GITHUB_TOKEN`/`GH_TOKEN` 严格限制仅发往 GitHub 官方域名，杜绝凭据随重定向或镜像转发泄漏。原「302 解析」单测替换为真实断言并新增镜像覆盖 tag 查询的端到端回归测试。
 - **卸载成功文案误报**：`--uninstall` 在无备份分支中于写盘前入队「Removed statusLine from settings.json」，settings 写入失败时会与「could not modify settings.json」同时打印。改为写盘成功后入队。
 - **卸载备份还原自引用校验**：`--uninstall` 不再把备份中记录的 codebuddy-hud `statusLine` 写回 `settings.json`（如更早的安装副本或 `npm link` 全局 shim），消除「报告卸载成功而 HUD 仍生效」及写回失效路径的问题；对合法非 HUD 备份仍照常还原，输出文案区分「已还原」与「已消费备份但未还原」。新增 3 条回归测试。
 
 ### Documentation (文档优化)
 - **安装契约口径校准**：README 镜像段去掉具体公共代理域名，回归 `your-mirror` 占位符（不背书任何第三方代理），并明确镜像前缀的覆盖范围与首跳需由 shell 展开；修正「所有下载自动重试 3 次」等绝对化表述；`docs/module-reference.md` 与 `docs/architecture*.md` 同步卸载契约（自引用校验、备份回收时机）与 bootstrap 契约（重试、镜像、`GITHUB_TOKEN`）。
-- **HUD 显示语义更新**：同步 Context 行去除重复 Token 数值，并记录 compact 后宿主 usage 尚未刷新时的显式等待状态。
-- **文档与视觉契约对齐**：移除 `README.md`、`README_en.md` 与 `preview.svg` 中 Line 3 工具活动段多余的竖线分隔符，对齐真实渲染的双空格格式。
-- **架构时序与常量校准**：校准 `docs/architecture*.md` 时序图中后台更新检查的实际触发时序，补录 40/200 行扫描硬预算、Handoff 5 分钟 TTL 及 Windows 8.3 短路径机制。
-- **模块契约与 API 规范对齐**：补充 `format.js` 中 `metricsFromPromptCache` 导出与 `calculateTurnCacheMetrics` 的 `{ available: false }` 三态语义，纠正 `runDoctor`、`setup` 与 `selectThemeInteractive` 接口签名。
+- **架构与模块契约对齐**：全面校准 `AGENTS.md`、`docs/module-reference.md` 与 `docs/architecture*.md`，补充 `getTurnMetricsAndActivity` 的 `contextWindow` 与 `contextStatus` 签名、补齐 `paths.js`（`getCacheStatePath`/`getCreditStatePath`）与 `theme-selector.js`（`renderThemePreview`）导出清单、修正 Line 3 工具段双空格分隔符，并在架构图补全 `Renderer --> Lang` 依赖边与 Windows 8.3 短路径机制。
 - **规范与技能配置补齐**：`AGENTS.md` 架构树补齐 `install.ps1`/`install.sh` 并补充 `https, http` 内置模块说明；`skills/hud-config/SKILL.md` 补充 `showVersion` 显示项。
 - **首屏与元数据优化**：重构 README 首屏 SEO 语义、终端预览图与多平台镜像安装区，补齐 `plugin.json` 与 `package.json` 关键词。
 
@@ -73,7 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 提供跨平台一键安装、卸载、环境体检诊断与隔离环境安装验证闭环。
 - 基于 GitHub Release 不变 tag 实现高可靠安装与静默后台更新检测。
 
-[Unreleased]: https://github.com/XisFool/codebuddy-hud/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.0...HEAD
+[v0.3.0]: https://github.com/XisFool/codebuddy-hud/compare/v0.2.1...v0.3.0
 [v0.2.1]: https://github.com/XisFool/codebuddy-hud/compare/v0.2.0...v0.2.1
 [v0.2.0]: https://github.com/XisFool/codebuddy-hud/compare/v0.1.0...v0.2.0
 [v0.1.0]: https://github.com/XisFool/codebuddy-hud/releases/tag/v0.1.0
