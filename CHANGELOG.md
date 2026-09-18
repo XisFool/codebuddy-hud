@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] (待发布)
 
+## [v0.3.2] - 2026-09-18
+
 ### Added (新增特性)
 - **一键安装自动注册 PATH 与免配置 CLI**：`install.ps1` 自动将 runtime bin 目录写入 Windows 用户注册表 PATH 并刷新当前会话；`install.sh` 在 PATH 包含 `~/.local/bin` 时自动创建软链接（未包含时给出配置指引）；`uninstall.js` 在卸载时自动清理已写入的注册表 PATH 或软链接；支持设置 `CODEBUDDY_HUD_NO_PATH=1` 跳过自动注册。
 
@@ -88,7 +90,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 提供跨平台一键安装、卸载、环境体检诊断与隔离环境安装验证闭环。
 - 基于 GitHub Release 不变 tag 实现高可靠安装与静默后台更新检测。
 
-[Unreleased]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.2...HEAD
+[v0.3.2]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.0...v0.3.2
 [v0.3.0]: https://github.com/XisFool/codebuddy-hud/compare/v0.2.1...v0.3.0
 [v0.2.1]: https://github.com/XisFool/codebuddy-hud/compare/v0.2.0...v0.2.1
 [v0.2.0]: https://github.com/XisFool/codebuddy-hud/compare/v0.1.0...v0.2.0
