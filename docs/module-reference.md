@@ -173,7 +173,7 @@ export function renderHUD(
 ### 3 行输出排版规范
 - **Line 1 (Identity)**: `[ModelName] [EffortIcon][EffortLabel] │ [Branch*] │ [Workspace] │ [Permission] [UpdateBadge]`（ASCII 模式下图标为空，仅保留级别文本）
 - **Line 2 (Tokens)**: `Context Token 249k/1M [███░░░░░░░] 25% │ out 1.1k │ cache 96.8%`；compact 压缩后若宿主仍提供旧 usage，则显示等待提示与 `--` 占位。
-- **Line 3 (Diff/Cost/Tools)**: `Δ +1.7k -161 │ 82.04 credits │ ⏱ 2h47m │ ◐ Edit: parser.js  ✓ Read ×3, Grep ×2` (全空自动隐藏)
+- **Line 3 (Diff/Cost/Tools)**: `Δ +1.7k -161 │ 82.04 credits │ ⏱ 2h47m │ ◐ Edit: parser.js  ✓ Read ×3  ✓ Grep ×2` (全空自动隐藏)
 
 ---
 
@@ -222,9 +222,9 @@ export function renderToolActivity(activity: ToolActivity, glyphs: GlyphSet): st
 ```
 
 ### 工具聚合输出格式
-多个已完成工具统一聚合在单个 `doneIcon`（`✓`）后，以 `, ` 分隔：
+多个已完成工具每个独立带有 `doneIcon`（`✓`），以双空格分隔：
 ```
-◐ RunCommand: npm test  ✓ Edit ×3, View ×12
+◐ RunCommand: npm test  ✓ Edit ×3  ✓ View ×12
 ```
 
 ---

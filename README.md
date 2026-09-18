@@ -23,7 +23,7 @@
 ```text
 Deepseek-V4.1-Flash ● max  │  main*  │  my-project  │  default
 Context Token 249k/1M [███░░░░░░░] 25%  │  out 1.1k  │  cache 96.8%
-Δ +1.7k -161  │  82.04 credits  │  ⏱ 2h47m  │  ◐ Edit: parser.js  ✓ Read ×3, Grep ×2
+Δ +1.7k -161  │  82.04 credits  │  ⏱ 2h47m  │  ◐ Edit: parser.js  ✓ Read ×3  ✓ Grep ×2
 ```
 
 ### 布局说明

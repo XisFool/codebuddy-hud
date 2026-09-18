@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **一键安装自动注册 PATH 与免配置 CLI**：`install.ps1` 自动将 runtime bin 目录写入 Windows 用户注册表 PATH 并刷新当前会话；`install.sh` 在 PATH 包含 `~/.local/bin` 时自动创建软链接（未包含时给出配置指引）；`uninstall.js` 在卸载时自动清理已写入的注册表 PATH 或软链接；支持设置 `CODEBUDDY_HUD_NO_PATH=1` 跳过自动注册。
 
 ### Changed (变更与优化)
-- **已完成工具调用合并展示**：Line 3 工具活动中多个已完成的工具调用优化为共享单个 `✓` 前缀并以 `, ` 分隔（如 `✓ Read ×3, Grep ×2`），节省终端行宽并提升阅读体验。
+- **已完成工具调用独立展示**：Line 3 工具活动中多个已完成的工具调用优化为独立带 `doneIcon`（`✓`）并以双空格分隔（如 `✓ Read ×3  ✓ Grep ×2`），消除逗号带来的字符粘连，与 Line 3 组件化间距保持一致。
 
 ### Fixed (缺陷修复)
 - **ASCII 模式推理强度标签重复**：修复 ASCII 终端下 `effortIcons` 渲染为空格导致与 `effortLabel` 拼接出现重复标签的问题，ASCII 模式下统一规范图标为空字符串。

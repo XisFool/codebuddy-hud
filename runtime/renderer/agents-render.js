@@ -16,15 +16,11 @@ function renderToolActivity(activity, glyphs) {
     }
     if (Array.isArray(activity.completed) && activity.completed.length > 0) {
       const top = activity.completed.slice(0, 3);
-      const toolItems = [];
       for (const item of top) {
         if (!item || !item.tool) continue;
         const toolStr = sanitizeTerminalText(String(item.tool), 24);
         const countStr = item.count > 1 ? dim(` ×${item.count}`) : '';
-        toolItems.push(`${dim(toolStr)}${countStr}`);
-      }
-      if (toolItems.length > 0) {
-        parts.push(`${color(glyphs.doneIcon.trim(), 'green')} ${toolItems.join(dim(', '))}`);
+        parts.push(`${color(glyphs.doneIcon.trim(), 'green')} ${dim(toolStr)}${countStr}`);
       }
     }
     return parts.join('  ');
