@@ -23,7 +23,7 @@
 ```text
 Deepseek-V4.1-Flash ● max  │  main*  │  my-project  │  default
 Context Token 249k/1M [███░░░░░░░] 25%  │  out 1.1k  │  cache 96.8%
-Δ +1.7k -161  │  82.04 credits  │  ⏱ 2h47m  │  ◐ Edit: parser.js  ✓ Read ×3  ✓ Grep ×2
+Δ +1.7k -161  │  82.04 credits  │  ⏱ 2h47m  │  ◐ Edit: parser.js  ✓ Read ×3, Grep ×2
 ```
 
 ### 布局说明
@@ -65,12 +65,13 @@ curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/script
 1. 通过 302 重定向（无 API 限流）或 REST API（支持 `GITHUB_TOKEN` 认证）查询最新 Release 的 `tag_name`，将安装固定到该 release（不使用可变分支）。runtime 文件下载失败最多尝试 3 次（按 1s、2s 指数退避）。
 2. 下载 runtime 至 `~/.codebuddy/codebuddy-hud-runtime/`。
 3. 备份并写入 `~/.codebuddy/settings.json` 的 `statusLine.command`；Windows 同时生成 `.cmd` shim，烘焙 Node 绝对路径，不依赖系统 PATH。
+4. 自动注册 PATH：Windows 自动向用户级注册表 PATH 追加 runtime bin 目录并刷新当前会话；macOS / Linux 若 PATH 包含 `~/.local/bin` 则自动创建软链接（可通过设置 `CODEBUDDY_HUD_NO_PATH=1` 跳过自动注册）。
 
 **幂等**：重复运行同一条命令即可修复、升级或清理旧版本残留。
 
 **触发方式**：安装后重启 CodeBuddy Code，并发送任意一条消息。宿主在会话事件后约 300ms 去抖触发刷新；空闲会话不绘制状态栏，因此刚进入会话时底部为空属正常现象。
 
-内置每 24 小时一次的后台版本检查，发现新版本时提示重新运行安装命令升级。
+内置每 24 小时一次的后台版本检查，发现新版本时提示重新运行安装命令升级（可设 `CODEBUDDY_HUD_NO_UPDATE_CHECK=1` 禁用此检查）。
 
 ### 国内镜像加速安装
 
@@ -147,7 +148,7 @@ Get-Content "$env:USERPROFILE\.codebuddy\settings.json"
 & "$env:USERPROFILE\.codebuddy\codebuddy-hud-runtime\runtime\bin\codebuddy-hud.cmd" --status
 ```
 
-> 下文以 `codebuddy-hud` 简记入口：一键安装已自动注册系统 PATH，可直接在终端使用 `codebuddy-hud` 命令；如未生效，可用上述完整路径代替，或设 `CODEBUDDY_HUD_NO_PATH=1` 跳过自动注册。
+> 下文以 `codebuddy-hud` 简记入口：一键安装已自动注册 PATH（Windows 写入用户注册表，macOS/Linux 链接至 `~/.local/bin`；若未生效请确认 `~/.local/bin` 在 PATH 中或使用完整路径），亦可设 `CODEBUDDY_HUD_NO_PATH=1` 跳过自动注册。
 
 以下现象属正常降级，不是安装失败：
 
@@ -185,6 +186,7 @@ codebuddy-hud --uninstall
 1. 从安装时保留的原始备份还原其中的 `statusLine`；若备份记录的命令本身指向 codebuddy-hud（例如更早的安装副本），则直接移除 `statusLine` 项。
 2. 删除 Windows `.cmd` shim。
 3. 清理 HUD 自身的缓存与状态文件（编码缓存、Git 缓存、使用量 checkpoint、会话统计、credit 状态、更新状态）。
+4. 清理 PATH 注册与软链接：从 Windows 用户级注册表 PATH 中移除 runtime bin 目录；在 macOS / Linux 上删除 `~/.local/bin/codebuddy-hud` 软链接（沙箱测试模式下自动跳过）。
 
 用户主题配置（`codebuddy-hud.config.json`）与已安装的 `~/.codebuddy/codebuddy-hud-runtime/` 运行时目录会被保留（可按需手动删除）；除 `statusLine` 外，不会改动 `settings.json` 中的任何其他配置项。
 
@@ -253,7 +255,7 @@ codebuddy-hud --theme list      # 仅列出全部主题
 | `--setup` | 将 `statusLine` 写入 `settings.json`（源码本地安装时使用） |
 | `--status` | 以演示数据渲染一次看板并退出 |
 | `--theme [name\|list]` | 交互式主题选择器；`list` 列出主题；带名称时直接切换 |
-| `--doctor` / `-d` | 输出环境诊断报告 |
+| `--doctor` / `-d` `[--json]` | 输出环境诊断报告（支持 `--json` 输出结构化数据） |
 | `--uninstall` | 卸载并从备份还原配置 |
 
 ---
@@ -298,7 +300,7 @@ codebuddy-hud/
 
 - `npm test` —— 单元测试：解析、渲染、会话状态、配置与安装等全量模块。
 - `npm run verify` —— E2E：payload 渲染、CLI 命令形态与边界场景。
-- `node scripts/verify-install.js` —— 隔离宿主下的真实安装 / 卸载流程。
+- `npm run verify:install` —— 隔离宿主下的真实安装 / 卸载流程。
 
 ---
 

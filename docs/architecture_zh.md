@@ -253,8 +253,9 @@ sequenceDiagram
    - 在不支持 UTF-8 的终端自动无缝回退至纯 ASCII 字符集（`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`）。
 3. **事件循环自然排空退出 (Natural Drain)**：
    - 渲染完成后主动释放 Stdin 句柄与定时器，依靠 Node.js 事件循环自然排空退出，杜绝 `process.exit()` 引起的异步 Stdout 缓冲区截断。
-4. **配置写入**：
+4. **配置写入与卸载清理**：
    - JSONC 解析保留字符串。原子替换跟随有效符号链接，保留现有 POSIX 权限和所有者；新配置及首次备份默认 `0600`。多硬链接目标会被拒绝，避免悄悄断链。
    - 卸载只恢复非本 HUD 的 `statusLine`（备份记录的命令含 `codebuddy-hud` 则改为移除该项），保留其他 settings 及用户主题；备份解析成功即回收，解析或写入失败时保留。
+   - 卸载时自动清理系统级 PATH 注册（从 Windows 用户注册表 Path 移除 runtime 目录，macOS/Linux 删除 `~/.local/bin/codebuddy-hud` 软链接）；在测试沙箱模式下（`CODEBUDDY_HOME` 已设）自动跳过系统级 PATH 清理以保障环境隔离安全。
 5. **验证隔离**：
    - 安装卸载测试同时隔离 runtime、settings 和用户目录；仅设置 `CODEBUDDY_HOME` 不能保护真实 shim。

@@ -23,7 +23,7 @@
 ```text
 Deepseek-V4.1-Flash ● max  │  main*  │  my-project  │  default
 Context Token 249k/1M [███░░░░░░░] 25%  │  out 1.1k  │  cache 96.8%
-Δ +1.7k -161  │  82.04 credits  │  ⏱ 2h47m  │  ◐ Edit: parser.js  ✓ Read ×3  ✓ Grep ×2
+Δ +1.7k -161  │  82.04 credits  │  ⏱ 2h47m  │  ◐ Edit: parser.js  ✓ Read ×3, Grep ×2
 ```
 
 ### Layout breakdown
@@ -65,12 +65,13 @@ The installer:
 1. Resolves the latest release `tag_name` via 302 redirect (no API rate limit) or REST API (supports `GITHUB_TOKEN` auth), pinning the install to that release (never a moving branch). Runtime file downloads attempt up to 3 times with exponential backoff (1s, 2s).
 2. Downloads the runtime to `~/.codebuddy/codebuddy-hud-runtime/`.
 3. Backs up and writes `statusLine.command` into `~/.codebuddy/settings.json`; on Windows, also generates a `.cmd` shim with the Node absolute path baked in (PATH-independent).
+4. Automatically registers PATH: on Windows, appends the runtime bin directory to user-level registry PATH and refreshes the current session; on macOS/Linux, symlinks into `~/.local/bin` if it is present in PATH (skip via `CODEBUDDY_HUD_NO_PATH=1`).
 
 **Idempotent** — re-run the same command anytime to repair drift, upgrade, or clean stale files left by older versions.
 
 **Trigger**: restart CodeBuddy Code after installation and send any message. The host debounces ~300ms after session events before refreshing; idle sessions render nothing, so an empty bottom line right after opening a session is expected.
 
-A background update check runs every 24 hours and suggests re-running the install command when a new version is available.
+A background update check runs every 24 hours and suggests re-running the install command when a new version is available (disable via `CODEBUDDY_HUD_NO_UPDATE_CHECK=1`).
 
 ### China Mirror Accelerated Install
 
@@ -147,7 +148,7 @@ Get-Content "$env:USERPROFILE\.codebuddy\settings.json"
 & "$env:USERPROFILE\.codebuddy\codebuddy-hud-runtime\runtime\bin\codebuddy-hud.cmd" --status
 ```
 
-> Below, `codebuddy-hud` is shorthand for the entry point: one-command installs now automatically register the system PATH, so `codebuddy-hud` works directly in your terminal; if it doesn't take effect, use the full paths above, or set `CODEBUDDY_HUD_NO_PATH=1` to skip auto-registration.
+> Below, `codebuddy-hud` is shorthand for the entry point: one-command installs now automatically register PATH (Windows user registry, macOS/Linux symlinked to `~/.local/bin`; if it doesn't take effect ensure `~/.local/bin` is in PATH or use the full paths above), or set `CODEBUDDY_HUD_NO_PATH=1` to skip auto-registration.
 
 The following are normal degradations, not install failures:
 
@@ -185,6 +186,7 @@ The uninstaller:
 1. Restores the `statusLine` from the original backup taken at install time; if the command recorded in the backup itself points to codebuddy-hud (e.g. an earlier install copy), the `statusLine` entry is removed instead.
 2. Removes the Windows `.cmd` shim.
 3. Cleans HUD-owned cache and state files (encoding cache, Git cache, usage checkpoints, session stats, credit state, update status).
+4. Cleans up PATH registration and symlinks: removes the runtime bin directory from the Windows user registry PATH, and unlinks `~/.local/bin/codebuddy-hud` on macOS/Linux (automatically skipped in sandbox testing mode).
 
 Your theme config (`codebuddy-hud.config.json`) and the installed runtime directory (`~/.codebuddy/codebuddy-hud-runtime/`) are preserved — delete them manually if desired. Nothing else in `settings.json` is touched.
 
@@ -253,7 +255,7 @@ Fields:
 | `--setup` | Write `statusLine` into `settings.json` (for source-based local installs) |
 | `--status` | Render the HUD once from demo data and exit |
 | `--theme [name\|list]` | Interactive theme picker; `list` prints themes; a name switches directly |
-| `--doctor` / `-d` | Print the environment diagnostic report |
+| `--doctor` / `-d` `[--json]` | Print the environment diagnostic report (supports `--json` for machine consumption) |
 | `--uninstall` | Uninstall and restore the config from backup |
 
 ---
@@ -298,7 +300,7 @@ Every push runs the 3 OS × Node 18/20/22 matrix (see the CI badge above):
 
 - `npm test` — unit tests across parsing, rendering, session state, config, and installation modules.
 - `npm run verify` — E2E: payload rendering, CLI command shapes, edge cases.
-- `node scripts/verify-install.js` — real install/uninstall flow in an isolated host.
+- `npm run verify:install` — real install/uninstall flow in an isolated host.
 
 ---
 

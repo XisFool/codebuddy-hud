@@ -230,7 +230,7 @@ CodeBuddy Code v2.146.0 retains only the first three stdout lines. The HUD's own
 | **Empty Stdin** | Early hook trigger / absent payload | Exits safely with no output (0 bytes); no invented telemetry. | `0` |
 | **Stdin Hang** | Host pipe remains open without sending EOF | $800\text{ms}$ timeout timer fires, forcibly closes stdin and renders collected input. | `0` |
 | **EPIPE Error** | Host kills statusline process while stdout writing | `process.stdout.on('error', () => {})` swallows error cleanly. | `0` |
-| **Missing Transcript** | First turn / remote headless session | Omits tool activity and falls back to payload-supplied token counts. | `0` |
+| **Missing Transcript** | First turn / remote headless session | Omits tool activity, falls back to payload-supplied token counts, and resolves Credits strictly from payload-declared spend. | `0` |
 | **Corrupt JSONL / State** | Process killed mid-write | Checkpoint discarded; resets byte offset to 0 and rebuilds from start. | `0` |
 | **Readonly Filesystem** | Permission restricted container | State writes fail silently; incomplete Credits scans remain hidden and may restart on later invocations. | `0` |
 | **Git Timeout** | Huge mono-repo / NFS lag | Falls back to a directly readable branch with `dirty: null`, otherwise omits it. | `0` |
@@ -251,8 +251,9 @@ CodeBuddy Code v2.146.0 retains only the first three stdout lines. The HUD's own
    - Seamlessly falls back to ASCII glyphs (`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`) when UTF-8 / Unicode is unsupported.
 3. **Natural Event Loop Drain**:
    - Eliminates abrupt `process.exit()` in rendering path. Releases all active `stdin` handles, timer handles, and let libuv naturally exit to prevent stdout buffer truncation.
-4. **Settings Writes**:
+4. **Settings Writes & Uninstall Cleanup**:
    - JSONC parsing preserves string content. Atomic replacement follows valid symlinks and retains existing POSIX permissions and ownership; new settings and first backups default to `0600`. Multiple hard links are rejected rather than silently detached.
    - Uninstall restores only a non-HUD `statusLine` (a backup whose command mentions `codebuddy-hud` results in the entry being removed instead), preserves other settings and user themes, and consumes the backup once parsed — it is retained only when parsing or writing fails.
+   - Uninstall automatically cleans up system PATH registration (removes runtime directory from Windows user registry Path, unlinks `~/.local/bin/codebuddy-hud` on macOS/Linux); automatically skipped in sandbox testing mode (`CODEBUDDY_HOME` set) to protect host environment isolation.
 5. **Verification Isolation**:
    - Setup/uninstall tests isolate runtime, settings and user state together. `CODEBUDDY_HOME` alone cannot protect the checkout's generated shim.

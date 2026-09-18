@@ -47,6 +47,8 @@ scripts/bootstrap.js           Release 远程在线安装与自举更新器
 scripts/run-tests.js           跨平台测试驱动（全量路径参数转发）
 scripts/verify-display.js      E2E 看板与 CLI 命令形态契约验证
 scripts/verify-install.js      隔离宿主安装/卸载生命周期契约验证
+.codebuddy-plugin/plugin.json  插件元数据与 CLI 声明
+skills/hud-config/SKILL.md     HUD 交互式配置 Agent 技能指南
 ```
 
 > **深度参考指针（按需查阅，避免全量预载）**：

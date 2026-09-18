@@ -93,7 +93,7 @@ export function extractCostData(cbData: CodeBuddyPayload): {
   apiDurationMs: number;
 } | null;
 
-export function num(val: any): number | null;
+export function num(val: any): number;
 ```
 
 ### 数据结构 Shape
@@ -101,6 +101,8 @@ export function num(val: any): number | null;
 // CodeBuddyPayload 基础形态
 {
   model?: { id: string; display_name?: string },
+  reasoning_effort?: string,
+  transcript_path?: string,
   context_window?: {
     total_input_tokens?: number,
     total_output_tokens?: number,
@@ -117,7 +119,8 @@ export function num(val: any): number | null;
     total_duration_ms?: number,
     total_api_duration_ms?: number,
     total_lines_added?: number,
-    total_lines_removed?: number
+    total_lines_removed?: number,
+    credits?: number
   }
 }
 ```
@@ -168,9 +171,9 @@ export function renderHUD(
 > **说明**：必须传入完整解析后的 `config` 配置对象。当 `config` 省略或未提供时，渲染器首行守卫将直接返回空字符串 `''`。
 
 ### 3 行输出排版规范
-- **Line 1 (Identity)**: `[ModelName] [EffortIcon] │ [Branch*] │ [Workspace] │ [Permission] [UpdateBadge]`
-- **Line 2 (Tokens)**: `Context Token 249k/1M [███░░░░░░░] 25% │ out 1.1k │ cache 96.8%`; after compact, an unconfirmed host value is rendered with an explicit waiting marker.
-- **Line 3 (Diff/Cost/Tools)**: `Δ +1.7k -161 │ 82.04 credits │ ⏱ 2h47m │ ◐ Edit: parser.js  ✓ Read ×3` (全空自动隐藏)
+- **Line 1 (Identity)**: `[ModelName] [EffortIcon][EffortLabel] │ [Branch*] │ [Workspace] │ [Permission] [UpdateBadge]`（ASCII 模式下图标为空，仅保留级别文本）
+- **Line 2 (Tokens)**: `Context Token 249k/1M [███░░░░░░░] 25% │ out 1.1k │ cache 96.8%`；compact 压缩后若宿主仍提供旧 usage，则显示等待提示与 `--` 占位。
+- **Line 3 (Diff/Cost/Tools)**: `Δ +1.7k -161 │ 82.04 credits │ ⏱ 2h47m │ ◐ Edit: parser.js  ✓ Read ×3, Grep ×2` (全空自动隐藏)
 
 ---
 
@@ -219,8 +222,9 @@ export function renderToolActivity(activity: ToolActivity, glyphs: GlyphSet): st
 ```
 
 ### 工具聚合输出格式
+多个已完成工具统一聚合在单个 `doneIcon`（`✓`）后，以 `, ` 分隔：
 ```
-◐ RunCommand: npm test    ✓ Edit ×3    ✓ View ×12
+◐ RunCommand: npm test  ✓ Edit ×3, View ×12
 ```
 
 ---
@@ -333,7 +337,10 @@ export function getLogicalSessionCostData(
   apiDurationMs: number;
 };
 export function getSessionIdentity(cbData: CodeBuddyPayload, cwd?: string): string;
-export function getResetSignal(prev: object | null, curr: object): string | null;
+export function getResetSignal(cbData: CodeBuddyPayload): {
+  totalInputTokens: number | null;
+  currentInputTokens: number | null;
+};
 export const SESSION_STATS_VERSION: number;
 ```
 
@@ -370,7 +377,7 @@ export function parseGitStatusOutput(output: string): { branch: string; dirty: b
 ### 接口定义
 ```typescript
 export function supportsUnicode(): boolean;
-export function detectUnicodeSupport(): boolean;
+export function detectUnicodeSupport(platform: string, env: Record<string, string | undefined>): boolean;
 export function selectGlyphs(useNerdFonts: boolean, unicodeSupported: boolean): GlyphSet;
 export function resetCache(): void;
 ```
@@ -488,7 +495,7 @@ export function checkForUpdates(options?: { force?: boolean }): Promise<UpdateSt
 export function spawnBackgroundUpdateCheck(): void;
 export function compareVersions(v1: string, v2: string): 1 | -1 | 0;
 export function parseSemver(v: string): [number, number, number];
-export function getLocalVersion(cwd?: string): string;
+export function getLocalVersion(): string;
 export function getReleaseVersion(release: object): string | null;
 export function readUpdateStatus(): UpdateStatus | null;
 export function writeUpdateStatus(status: UpdateStatus): void;
@@ -511,14 +518,14 @@ export function saveUserTheme(themeName: string): string;
 export function getActiveThemeName(): string;
 export function renderThemePreview(themeName: string, mode?: 'dark' | 'light'): string[];
 export function printThemesList(): void;
-export const THEMES: string[];
+export const THEMES: Array<{ name: string; label: string }>;
 ```
 
 ---
 
 ## 21. `runtime/uninstall.js` — 卸载还原与深度清理
 
-**职责：** 从首次备份仅还原非本 HUD 的 `statusLine`——备份记录的命令含 `codebuddy-hud` 时（更早的安装副本或 `npm link` 全局 shim）改为移除 settings 中的该项，消除「报告卸载成功而 HUD 仍生效」；保留其他 settings 及用户主题配置；移除对应 runtime 的 Windows shim 与用户缓存。备份一经解析成功即回收，不依赖 settings 是否被写入；解析失败或写入失败时保留备份。
+**职责：** 从首次备份仅还原非本 HUD 的 `statusLine`——备份记录的命令含 `codebuddy-hud` 时（更早的安装副本或 `npm link` 全局 shim）改为移除 settings 中的该项，消除「报告卸载成功而 HUD 仍生效」；保留其他 settings 及用户主题配置；移除对应 runtime 的 Windows shim 与用户缓存；清理系统级 PATH 注册（从 Windows 用户注册表 Path 移除 runtime 目录，POSIX 移除 `~/.local/bin/codebuddy-hud` 软链接；沙箱测试模式下通过 `CODEBUDDY_HOME` 环境变量守卫自动跳过）。备份一经解析成功即回收，不依赖 settings 是否被写入；解析失败或写入失败时保留备份。
 
 ### 接口定义
 ```typescript
@@ -531,7 +538,7 @@ export function uninstall(options?: object): void;
 
 **职责：** 支持本地与 GitHub Raw 远程安装，通过临时目录 `.tmp-<pid>` + 原子重命名完成无缝安装覆盖。按 302 重定向（无 API 限流）→ REST API（`GITHUB_TOKEN`/`GH_TOKEN` 提升限额）的顺序解析 Latest Release 的 `tag_name`，再从对应不可变 tag 下载；`CODEBUDDY_HUD_VERSION` 可固定 tag，`CODEBUDDY_HUD_RAW_BASE` 直接指定下载源并跳过 tag 解析。`CODEBUDDY_HUD_MIRROR` 为上述全部 GitHub URL（runtime 下载、tag 查询、API 兜底）加镜像前缀，tag 查询与 API 兜底在镜像未覆盖时自动回退直连，runtime 文件始终经镜像下载。
 
-### 核心函数
+### 核心导出与内部函数
 - `install(): Promise<void>`: 核心安装入口，支持本地复制与远端下载，通过临时目录 + 原子重命名完成安装。
 - `getTargetDir(): string`: 返回运行时目标安装目录路径（受 `CODEBUDDY_HUD_DIR` 环境变量影响）。
 - `checkNodeVersion(): void`: 校验当前 Node.js 版本 ≥18，不满足时抛出错误。
@@ -539,7 +546,7 @@ export function uninstall(options?: object): void;
 - `resolveRemoteRawBase(options?: object): Promise<string>`: 解析 `CODEBUDDY_HUD_RAW_BASE`、`CODEBUDDY_HUD_VERSION` 或 Latest Release 后的下载源（含 `CODEBUDDY_HUD_MIRROR` 前缀）。
 - `fetchLatestTagVia302(url?: string): Promise<string>`: 从 `releases/latest` 的 302 `Location` 解析不可变 tag；省略 `url` 时使用镜像前缀后的默认地址。
 - `fetchLatestRelease(): Promise<object>`: 按 302 候选链 → API 候选链顺序解析最新版本 release 对象。
-- `fetchUrlWithRetry(url: string, maxAttempts?: number): Promise<Buffer>`: 下载重试包装（默认 3 次，1s/2s 指数退避）。
+- `fetchUrlWithRetry(url: string, maxAttempts?: number): Promise<Buffer>`: 内部网络下载重试包装（默认 3 次，1s/2s 指数退避）。
 - `mirrorPrefix(): string`: 解析 `CODEBUDDY_HUD_MIRROR` 环境变量并归一化为 URL 前缀。
 
 ---
