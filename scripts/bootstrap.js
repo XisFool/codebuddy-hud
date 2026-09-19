@@ -50,7 +50,6 @@ const RUNTIME_FILES = [
   'runtime/theme-selector.js',
   'runtime/transcript.js',
   'runtime/uninstall.js',
-  'runtime/update-checker.js',
   'runtime/bin/codebuddy-hud.js',
   'skills/hud-config/SKILL.md',
 ];

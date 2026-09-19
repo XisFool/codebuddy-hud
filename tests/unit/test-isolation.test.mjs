@@ -25,7 +25,7 @@ test('installer tests preserve the checkout shim and inherited user state', () =
     fs.copyFileSync(path.join(repoRoot, 'tests', 'unit', 'statusline-installer.test.mjs'), testFile);
     const sentinels = new Map([[shim, '@echo live-installation\r\n'], [cache, '{"sentinel":"cache"}'], [credits, '{"sentinel":"credits"}']]);
     for (const [target, content] of sentinels) fs.writeFileSync(target, content);
-    const env = { ...process.env, CODEBUDDY_HOME: userHome, CODEBUDDY_SETTINGS_PATH: path.join(userHome, 'settings.json'), CODEBUDDY_HUD_NO_UPDATE_CHECK: '1' };
+    const env = { ...process.env, CODEBUDDY_HOME: userHome, CODEBUDDY_SETTINGS_PATH: path.join(userHome, 'settings.json') };
     // Start an independent runner rather than inheriting the parent's IPC mode.
     delete env.NODE_TEST_CONTEXT;
     const result = spawnSync(process.execPath, [

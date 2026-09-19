@@ -71,8 +71,6 @@ The installer:
 
 **Trigger**: restart CodeBuddy Code after installation and send any message. The host debounces ~300ms after session events before refreshing; idle sessions render nothing, so an empty bottom line right after opening a session is expected.
 
-A background update check runs every 24 hours and suggests re-running the install command when a new version is available (disable via `CODEBUDDY_HUD_NO_UPDATE_CHECK=1`).
-
 ### China Mirror Accelerated Install
 
 If direct GitHub connections are slow or unreliable, point `CODEBUDDY_HUD_MIRROR` at a mirror domain. Both install scripts and `bootstrap.js` prefix every GitHub URL they request with it: `raw.githubusercontent.com` (runtime files), `github.com/releases/latest` (release-tag lookup) and `api.github.com` (lookup fallback). The format is `https://mirror-domain/original-GitHub-URL`.
@@ -274,7 +272,6 @@ codebuddy-hud/
 │   ├── theme-selector.js / lang.js          # Interactive theme picker and i18n dictionary
 │   ├── doctor.js / statusline-installer.js  # Environment diagnostics / host config writer
 │   ├── uninstall.js / settings-file.js      # Uninstall cleanup / safe JSONC writes
-│   ├── update-checker.js         # Background version check (24h interval)
 │   ├── encoding.js / git.js / model-info.js / paths.js / sanitize.js
 │   └── codebuddy-hud.config.json # Built-in default config and theme presets
 ├── scripts/                      # install.sh / install.ps1 / bootstrap.js / verify-*.js / run-tests.js

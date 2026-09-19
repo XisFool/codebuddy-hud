@@ -74,7 +74,6 @@ async function main() {
     ...process.env,
     CODEBUDDY_HOME: tmpHome,
     CODEBUDDY_HUD_FORCE_ASCII: '1',
-    CODEBUDDY_HUD_NO_UPDATE_CHECK: '1',
   };
   delete isolatedEnv.CODEBUDDY_SETTINGS_PATH;
 

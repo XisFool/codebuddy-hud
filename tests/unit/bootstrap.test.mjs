@@ -249,7 +249,6 @@ describe('bootstrap installer', () => {
         CODEBUDDY_SETTINGS_PATH: settingsPath,
         CODEBUDDY_HUD_DIR: targetDir,
         CODEBUDDY_HUD_RAW_BASE: `http://127.0.0.1:${server.address().port}`,
-        CODEBUDDY_HUD_NO_UPDATE_CHECK: '1',
       };
       const run = (bin, args = []) => new Promise((resolve, reject) => {
         const child = spawn(process.execPath, [bin, ...args], {
@@ -334,7 +333,6 @@ describe('bootstrap installer', () => {
         CODEBUDDY_SETTINGS_PATH: settingsPath,
         CODEBUDDY_HUD_DIR: targetDir,
         CODEBUDDY_HUD_MIRROR: `http://127.0.0.1:${server.address().port}`,
-        CODEBUDDY_HUD_NO_UPDATE_CHECK: '1',
       };
       // No CODEBUDDY_HUD_RAW_BASE / CODEBUDDY_HUD_VERSION: tag discovery must run.
       delete env.CODEBUDDY_HUD_RAW_BASE;

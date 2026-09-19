@@ -71,8 +71,6 @@ curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/script
 
 **触发方式**：安装后重启 CodeBuddy Code，并发送任意一条消息。宿主在会话事件后约 300ms 去抖触发刷新；空闲会话不绘制状态栏，因此刚进入会话时底部为空属正常现象。
 
-内置每 24 小时一次的后台版本检查，发现新版本时提示重新运行安装命令升级（可设 `CODEBUDDY_HUD_NO_UPDATE_CHECK=1` 禁用此检查）。
-
 ### 国内镜像加速安装
 
 如果直连 GitHub 超时或网络不稳定，把镜像域名设为 `CODEBUDDY_HUD_MIRROR`。安装脚本与 `bootstrap.js` 会用该前缀拼出它们请求的所有 GitHub URL：`raw.githubusercontent.com`（runtime 文件）、`github.com/releases/latest`（release tag 查询）与 `api.github.com`（查询兜底），格式为 `https://镜像域名/原始GitHub URL`。
@@ -274,7 +272,6 @@ codebuddy-hud/
 │   ├── theme-selector.js / lang.js          # 交互式换肤与 i18n 字典
 │   ├── doctor.js / statusline-installer.js  # 环境诊断 / 写入宿主配置
 │   ├── uninstall.js / settings-file.js      # 卸载清理 / JSONC 安全写入
-│   ├── update-checker.js         # 后台版本检查（24h 间隔）
 │   ├── encoding.js / git.js / model-info.js / paths.js / sanitize.js
 │   └── codebuddy-hud.config.json # 内置默认配置与主题预设
 ├── scripts/                      # install.sh / install.ps1 / bootstrap.js / verify-*.js / run-tests.js

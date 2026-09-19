@@ -25,14 +25,13 @@
 16. [`runtime/settings-file.js` — JSONC 安全解析与配置原子写入](#16-runtimesettings-filejs--jsonc-安全解析与配置原子写入)
 17. [`runtime/statusline-installer.js` — 状态栏注册与 Windows Shim 烘焙器](#17-runtimestatusline-installerjs--状态栏注册与-shim-烘焙)
 18. [`runtime/doctor.js` — 环境体检与排障诊断子系统](#18-runtimedoctorjs--环境体检与排障诊断)
-19. [`runtime/update-checker.js` — 24h 异步更新检查与防惊群预占位锁](#19-runtimeupdate-checkerjs--异步更新检查与防惊群锁)
-20. [`runtime/theme-selector.js` — 交互式终端主题选择器](#20-runtimetheme-selectorjs--交互式主题选择器)
-21. [`runtime/uninstall.js` — 卸载还原与状态深度清理器](#21-runtimeuninstalljs--卸载还原与深度清理)
-22. [`scripts/bootstrap.js` — 跨平台原子安装引导程序](#22-scriptsbootstrapjs--跨平台原子安装引导)
-23. [`scripts/run-tests.js` — 跨平台测试分发驱动脚本](#23-scriptsrun-testsjs--跨平台测试分发驱动)
-24. [`scripts/verify-display.js` — 看板端到端验证](#24-scriptsverify-displayjs--看板端到端验证)
-25. [`scripts/verify-install.js` — 隔离宿主生命周期验证](#25-scriptsverify-installjs--隔离宿主生命周期验证)
-26. [`skills/hud-config/SKILL.md` — HUD 配置技能](#26-skillshud-configskillmd--hud-配置技能)
+19. [`runtime/theme-selector.js` — 交互式终端主题选择器](#19-runtimetheme-selectorjs--交互式主题选择器)
+20. [`runtime/uninstall.js` — 卸载还原与状态深度清理器](#20-runtimeuninstalljs--卸载还原与深度清理)
+21. [`scripts/bootstrap.js` — 跨平台原子安装引导程序](#21-scriptsbootstrapjs--跨平台原子安装引导)
+22. [`scripts/run-tests.js` — 跨平台测试分发驱动脚本](#22-scriptsrun-testsjs--跨平台测试分发驱动)
+23. [`scripts/verify-display.js` — 看板端到端验证](#23-scriptsverify-displayjs--看板端到端验证)
+24. [`scripts/verify-install.js` — 隔离宿主生命周期验证](#24-scriptsverify-installjs--隔离宿主生命周期验证)
+25. [`skills/hud-config/SKILL.md` — HUD 配置技能](#25-skillshud-configskillmd--hud-配置技能)
 
 ---
 
@@ -171,7 +170,7 @@ export function renderHUD(
 > **说明**：必须传入完整解析后的 `config` 配置对象。当 `config` 省略或未提供时，渲染器首行守卫将直接返回空字符串 `''`。
 
 ### 3 行输出排版规范
-- **Line 1 (Identity)**: `[ModelName] [EffortIcon][EffortLabel] │ [Branch*] │ [Workspace] │ [Permission] [UpdateBadge]`（ASCII 模式下图标为空，仅保留级别文本）
+- **Line 1 (Identity)**: `[ModelName] [EffortIcon][EffortLabel] │ [Branch*] │ [Workspace] │ [Permission]`（ASCII 模式下图标为空，仅保留级别文本）
 - **Line 2 (Tokens)**: `Context Token 249k/1M [███░░░░░░░] 25% │ out 1.1k │ cache 96.8%`；compact 压缩后若宿主仍提供旧 usage，则显示等待提示与 `--` 占位。
 - **Line 3 (Diff/Cost/Tools)**: `Δ +1.7k -161 │ 82.04 credits │ ⏱ 2h47m │ ◐ Edit: parser.js  ✓ Read ×3  ✓ Grep ×2` (全空自动隐藏)
 
@@ -485,29 +484,7 @@ export function printDoctorReport(report: DoctorReport, isJson?: boolean, option
 
 ---
 
-## 19. `runtime/update-checker.js` — 异步更新检查与防惊群锁
-
-**职责：** 后台非阻塞检查 GitHub 最新版本，前置预占位锁防并发进程爆炸。
-
-### 接口定义
-```typescript
-export function checkForUpdates(options?: { force?: boolean }): Promise<UpdateStatus>;
-export function spawnBackgroundUpdateCheck(): void;
-export function compareVersions(v1: string, v2: string): 1 | -1 | 0;
-export function parseSemver(v: string): [number, number, number];
-export function getLocalVersion(): string;
-export function getReleaseVersion(release: object): string | null;
-export function readUpdateStatus(): UpdateStatus | null;
-export function writeUpdateStatus(status: UpdateStatus): void;
-export function resetUpdateStatusCache(): void;
-export const CHECK_INTERVAL_MS: number;
-```
-
-网络失败保留最后一次有效更新信息，只刷新检查时间。spawn 前写 `lastCheck` 作为本地并发节流阀。
-
----
-
-## 20. `runtime/theme-selector.js` — 交互式主题选择器
+## 19. `runtime/theme-selector.js` — 交互式主题选择器
 
 **职责：** 终端 Raw 模式下方向键交互式选择主题，实时动态刷新 ANSI 看板预览，退出时释放 stdin 句柄。
 
@@ -523,7 +500,7 @@ export const THEMES: Array<{ name: string; label: string }>;
 
 ---
 
-## 21. `runtime/uninstall.js` — 卸载还原与深度清理
+## 20. `runtime/uninstall.js` — 卸载还原与深度清理
 
 **职责：** 从首次备份仅还原非本 HUD 的 `statusLine`——备份记录的命令含 `codebuddy-hud` 时（更早的安装副本或 `npm link` 全局 shim）改为移除 settings 中的该项，消除「报告卸载成功而 HUD 仍生效」；保留其他 settings 及用户主题配置；移除对应 runtime 的 Windows shim 与用户缓存；清理系统级 PATH 注册（从 Windows 用户注册表 Path 移除 runtime 目录，POSIX 移除 `~/.local/bin/codebuddy-hud` 软链接；沙箱测试模式下通过 `CODEBUDDY_HOME` 环境变量守卫自动跳过）。备份一经解析成功即回收，不依赖 settings 是否被写入；解析失败或写入失败时保留备份。
 
@@ -534,7 +511,7 @@ export function uninstall(options?: object): void;
 
 ---
 
-## 22. `scripts/bootstrap.js` — 跨平台原子安装引导
+## 21. `scripts/bootstrap.js` — 跨平台原子安装引导
 
 **职责：** 支持本地与 GitHub Raw 远程安装，通过临时目录 `.tmp-<pid>` + 原子重命名完成无缝安装覆盖。按 302 重定向（无 API 限流）→ REST API（`GITHUB_TOKEN`/`GH_TOKEN` 提升限额）的顺序解析 Latest Release 的 `tag_name`，再从对应不可变 tag 下载；`CODEBUDDY_HUD_VERSION` 可固定 tag，`CODEBUDDY_HUD_RAW_BASE` 直接指定下载源并跳过 tag 解析。`CODEBUDDY_HUD_MIRROR` 为上述全部 GitHub URL（runtime 下载、tag 查询、API 兜底）加镜像前缀，tag 查询与 API 兜底在镜像未覆盖时自动回退直连，runtime 文件始终经镜像下载。
 
@@ -551,24 +528,24 @@ export function uninstall(options?: object): void;
 
 ---
 
-## 23. `scripts/run-tests.js` — 跨平台测试分发驱动
+## 22. `scripts/run-tests.js` — 跨平台测试分发驱动
 
 **职责：** `npm test` 底层执行驱动。遍历 `tests/unit/` 目录下全部 `*.test.mjs` 单元测试文件的绝对路径，直接向 `node --test` 喂入全量文件参数，彻底规避 Node 18/20 glob 在 Windows 路径反斜杠下的跨平台匹配陷阱与 `MODULE_NOT_FOUND` 假阳性。
 
 ---
 
-## 24. `scripts/verify-display.js` — 看板端到端验证
+## 23. `scripts/verify-display.js` — 看板端到端验证
 
 **职责：** 执行 `npm run verify` 的 10 个 CLI、payload 与边界场景，验证看板行数（严格 $\le 3$ 行）、命令形态与容错契约。
 
 ---
 
-## 25. `scripts/verify-install.js` — 隔离宿主生命周期验证
+## 24. `scripts/verify-install.js` — 隔离宿主生命周期验证
 
 **职责：** 执行 `npm run verify:install`，在全隔离的临时沙箱中验证真实环境下的安装与卸载闭环。必须同时三重隔离 `CODEBUDDY_HOME`、`CODEBUDDY_SETTINGS_PATH` 与运行时目录，防止测试执行污染或误删工作区开发中的真实 `.cmd` shim。
 
 ---
 
-## 26. `skills/hud-config/SKILL.md` — HUD 配置技能
+## 25. `skills/hud-config/SKILL.md` — HUD 配置技能
 
 **职责：** 为 AI Agent 提供主题、图标与显示项配置的交互式引导，并将选择写入项目或全局 `codebuddy-hud.config.json`。

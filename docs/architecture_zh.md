@@ -38,7 +38,7 @@
 │   runtime/bin/codebuddy-hud.cmd   ← Windows 平台绝对路径 Shim 启动脚本   │
 │   parser.js · config.js · paths.js · encoding.js · git.js · sanitize.js  │
 │   lang.js · model-info.js · settings-file.js · statusline-installer.js   │
-│   theme-selector.js · doctor.js · update-checker.js · session-stats.js   │
+│   theme-selector.js · doctor.js · session-stats.js                       │
 │   transcript.js (逆向滑窗扫描与 SHA-256 增量遥测状态机) · uninstall.js   │
 │   renderer.js (3 行看板装配引擎) ──> renderer/ (format, diff, agents)    │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -61,7 +61,6 @@ graph TD
     Renderer --> SessionStats["runtime/session-stats.js"]
     Entry --> Renderer["runtime/renderer.js"]
     Entry --> Doctor["runtime/doctor.js"]
-    Entry --> UpdateChecker["runtime/update-checker.js"]
     Entry --> ThemeSelector["runtime/theme-selector.js"]
     Entry --> Installer["runtime/statusline-installer.js"]
     Entry --> Uninstall["runtime/uninstall.js"]
@@ -75,7 +74,6 @@ graph TD
     Renderer --> Sanitize["runtime/sanitize.js"]
     Renderer --> Parser
     Renderer --> ModelInfo["runtime/model-info.js"]
-    Renderer --> UpdateChecker
     Renderer --> Lang["runtime/lang.js"]
 
     Transcript --> Sanitize
@@ -104,15 +102,10 @@ sequenceDiagram
     participant Stdin as Stdin 管道
     participant Engine as 解析与状态机子系统
     participant Renderer as renderer.js
-    participant Background as update-checker.js (后台派生)
 
     Host->>Entry: 派生 node codebuddy-hud.js 并喂入 stdin JSON
     activate Entry
     
-    opt 未设置 CODEBUDDY_HUD_NO_UPDATE_CHECK 且达到 24 小时检查周期
-        Entry->>Background: spawnBackgroundUpdateCheck() [预占位锁写盘 + detached unref]
-    end
-
     par 超时竞争与数据接收
         Entry->>Stdin: 启动 800ms 保底定时器 (TIMEOUT_MS)
         Entry->>Stdin: 累加接收 stdin 数据块 (上限 1MB)
@@ -172,25 +165,7 @@ sequenceDiagram
   3. 后续从 `offset` 增量解析，并保留少量身份与 checkpoint 校验读取。分块循环预算为 100ms；未完成时保存进度并返回 `complete: false`，不暴露累计 Credits。渲染层隐藏该值，也不回退到 payload Credits。未写完的 JSONL 尾行等待下一次续读。
   4. **覆写与截断容灾**：若检测到 `file.size < state.offset`，自动重置 `offset = 0` 并重建 Checkpoint。
 
-### 5.4 后台更新检查防惊群风暴预占位锁 (`update-checker.js`)
-- **连续派生**：事件密集时，网络请求尚未完成就可能再次启动 HUD。先写入 `lastCheck` 可减少重复派生，但它不是跨进程互斥锁。
-- **时间戳预占位实现**：
-  ```javascript
-  // 派生后台进程前立即落盘时间戳，阻断后续并发实例
-  writeUpdateStatus({
-    ...(currentStatus || {}),
-    lastCheck: Date.now(), // 关键：先行预占位锁
-  });
-  const child = spawn(process.execPath, [scriptPath, '--run-check'], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  });
-  child.unref();
-  ```
-  网络失败保留上次有效更新结果并刷新 `lastCheck`；请求总计时器为 8s，独立后台 CLI 另有 15s 退出兜底。
-
-### 5.5 多层级配置合并与主题调色板引擎 (`config.js`)
+### 5.4 多层级配置合并与主题调色板引擎 (`config.js`)
 - **配置覆盖优先级**：
   ```
   内置默认配置 (DEFAULT_CONFIG)
@@ -202,8 +177,8 @@ sequenceDiagram
 - `--theme <name>` 将主题保存到用户配置，不是运行时覆盖层。
 - **安全性防护**：`deepMerge()` 跳过 `__proto__`，递归深度上限 64。配置文件每次直接读取；settings effort 仅保留进程内缓存，transcript effort 信号则按 transcript 哈希持久化到会话状态目录（`effort-<sha256>.json`），支持长任务的尾部扫描裁决、缓存继承与冷启动头扫兜底。
 
-### 5.6 3 行自适应布局与自裁剪规则 (`renderer.js`)
-- **Line 1 (标识与状态)**：模型名称 · 推理深度 (effort) · Git 分支与 Dirty 状态 (`*`) · 工作区目录 · 权限模式 · 版本提示。
+### 5.5 3 行自适应布局与自裁剪规则 (`renderer.js`)
+- **Line 1 (标识与状态)**：模型名称 · 推理深度 (effort) · Git 分支与 Dirty 状态 (`*`) · 工作区目录 · 权限模式。
 - **Line 2 (Tokens 与上下文)**：当前上下文输入占用/窗口容量 · 进度条与百分比 · 输出 Token · 本轮 Cache 命中率；compact 后等待宿主新 usage 时显式降级。
 - **Line 3 (变更、消费、耗时与工具活动)**：`Δ +增加 -删除` · 实际 Credits · 总耗时 · 当前工具活动与本轮完成频次聚合（`◐ Edit: parser.js`、`✓ Edit ×3`）。（无数据自动隐藏整行）。
 
@@ -236,7 +211,6 @@ sequenceDiagram
 | **状态文件截断损坏** | 异常断电 / 进程被强杀 | 自动丢弃损坏 JSON，重置偏移量为 0 全量重建 | `0` |
 | **只读文件系统** | 权限受限的容器环境 | 状态写入静默失败；未完成的 Credits 隐藏，后续调用可能从头重建 | `0` |
 | **Git 超时** | 庞大 Mono-repo / 网络挂载盘 | 若能直接读出分支则保留分支并返回 `dirty: null`，否则隐藏 | `0` |
-| **检查更新网络失败** | 离线环境 / GitHub API 限制 | 保留已有状态并刷新 `lastCheck` 时间戳，静默退出 | `0` |
 
 ---
 

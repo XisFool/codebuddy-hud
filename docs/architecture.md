@@ -36,7 +36,7 @@
 │   runtime/bin/codebuddy-hud.cmd   ← Windows portable shim wrapper        │
 │   parser.js · config.js · paths.js · encoding.js · git.js · sanitize.js  │
 │   lang.js · model-info.js · settings-file.js · statusline-installer.js   │
-│   theme-selector.js · doctor.js · update-checker.js · session-stats.js   │
+│   theme-selector.js · doctor.js · session-stats.js                       │
 │   transcript.js (Sliding-window & SHA-256 telemetry) · uninstall.js      │
 │   renderer.js (3-Line orchestration) ──> renderer/ (format, diff, agents)│
 └──────────────────────────────────────────────────────────────────────────┘
@@ -59,7 +59,6 @@ graph TD
     Renderer --> SessionStats["runtime/session-stats.js"]
     Entry --> Renderer["runtime/renderer.js"]
     Entry --> Doctor["runtime/doctor.js"]
-    Entry --> UpdateChecker["runtime/update-checker.js"]
     Entry --> ThemeSelector["runtime/theme-selector.js"]
     Entry --> Installer["runtime/statusline-installer.js"]
     Entry --> Uninstall["runtime/uninstall.js"]
@@ -73,7 +72,6 @@ graph TD
     Renderer --> Sanitize["runtime/sanitize.js"]
     Renderer --> Parser
     Renderer --> ModelInfo["runtime/model-info.js"]
-    Renderer --> UpdateChecker
     Renderer --> Lang["runtime/lang.js"]
 
     Transcript --> Sanitize
@@ -102,15 +100,10 @@ sequenceDiagram
     participant Stdin as Stdin Pipe
     participant Engine as Subsystems (Parser, Config, Transcript, Stats)
     participant Renderer as renderer.js
-    participant Background as update-checker.js (Detached)
 
     Host->>Entry: spawn(node codebuddy-hud.js) & pipe stdin JSON
     activate Entry
     
-    opt CODEBUDDY_HUD_NO_UPDATE_CHECK not set & 24h Check Due
-        Entry->>Background: spawnBackgroundUpdateCheck() [Pre-lock timestamp & detached unref]
-    end
-
     par Race Timeout and Data
         Entry->>Stdin: Start 800ms Safety Timer (TIMEOUT_MS)
         Entry->>Stdin: Collect stdin chunks (max 1MB)
@@ -170,25 +163,7 @@ sequenceDiagram
   3. Parses appended records from `offset`, retaining small identity/checkpoint verification reads. The chunk loop has a 100ms budget; an incomplete scan saves its progress and returns `complete: false` with no exposed credits total. The renderer hides Credits instead of falling back to payload credits. A partial trailing JSONL record remains uncommitted until complete.
   4. **Rewrite & Truncation Guard**: If current `file.size < state.offset`, the state machine detects in-place rewrite or truncation, resets `offset = 0`, and seamlessly rebuilds the checkpoint.
 
-### 5.4 Background Update Stampede Prevention (`update-checker.js`)
-- **Repeated Launches**: Event bursts can start another HUD while an update request is pending. Writing `lastCheck` before spawn throttles subsequent invocations; it is not a cross-process mutex.
-- **Timestamp Reservation**:
-  ```javascript
-  // Persist placeholder lock before spawning to block concurrent triggers
-  writeUpdateStatus({
-    ...(currentStatus || {}),
-    lastCheck: Date.now(), // PRE-LOCK
-  });
-  const child = spawn(process.execPath, [scriptPath, '--run-check'], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  });
-  child.unref();
-  ```
-  Network failures preserve the last valid update result and refresh `lastCheck`. The request has an 8s timer; the detached CLI checker also has a 15s exit fallback.
-
-### 5.5 Multi-Layer Configuration & Theme Engine (`config.js`)
+### 5.4 Multi-Layer Configuration & Theme Engine (`config.js`)
 - **Precedence Hierarchy** (5 layers, merged via `deepMerge` in `loadConfig`):
   ```
   Defaults (Built-in DEFAULT_CONFIG)
@@ -200,8 +175,8 @@ sequenceDiagram
   Note: `--theme <name>` is a persistent write operation (saves to user config), not a runtime argument overlay.
 - **Security Guard**: `deepMerge()` skips `__proto__` and caps recursion at 64. Config files are read directly on each load; the settings effort fallback keeps only a process-local cache, while the transcript effort signal is persisted per transcript hash under the session-state directory (`effort-<sha256>.json`), supporting tail-scan adjudication, cache inheritance, and a bounded cold-start head scan.
 
-### 5.6 3-Line Adaptive Layout & Pruning (`renderer.js`)
-- **Line 1 (Identity & Status)**: Model Display Name · Reasoning Effort Icon · Git Branch & Dirty (`*`) · Workspace Name · Permission Mode · Version Badge.
+### 5.5 3-Line Adaptive Layout & Pruning (`renderer.js`)
+- **Line 1 (Identity & Status)**: Model Display Name · Reasoning Effort Icon · Git Branch & Dirty (`*`) · Workspace Name · Permission Mode.
 - **Line 2 (Tokens & Context)**: Current context input/capacity · progress bar and percentage · output tokens · turn cache hit badge; compact staleness is shown explicitly while awaiting fresh host usage.
 - **Line 3 (Diff & Cost & Latency & Tool Activity)**: `Δ +Added -Removed` · Actual Credits · Total Duration · Current tool activity and turn-aggregated tool badges (`◐ Edit: parser.js`, `✓ Edit ×3`). (Omitted if all are zero).
 
@@ -234,7 +209,6 @@ CodeBuddy Code v2.146.0 retains only the first three stdout lines. The HUD's own
 | **Corrupt JSONL / State** | Process killed mid-write | Checkpoint discarded; resets byte offset to 0 and rebuilds from start. | `0` |
 | **Readonly Filesystem** | Permission restricted container | State writes fail silently; incomplete Credits scans remain hidden and may restart on later invocations. | `0` |
 | **Git Timeout** | Huge mono-repo / NFS lag | Falls back to a directly readable branch with `dirty: null`, otherwise omits it. | `0` |
-| **Network Failure** | Offline / DNS failure in update check | Preserves existing update status, updates `lastCheck` timestamp, and exits silently. | `0` |
 
 ---
 

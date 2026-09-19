@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] (待发布)
 
+### Removed (移除)
+- **第一行更新提示徽章与后台更新检查**：移除 Line 1 末的 `[↑ vX.Y.Z]` 新版本徽章及其全部支撑逻辑（`runtime/update-checker.js` 的 24h 后台检查、detached 子进程与状态写入），HUD 不再发起任何版本查询请求；`--uninstall` 仍会清理旧版本遗留的更新状态文件。
+
 ## [v0.3.2] - 2026-09-18
 
 ### Added (新增特性)

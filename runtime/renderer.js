@@ -11,7 +11,6 @@ const { getGitStatus } = require('./git');
 const { resolveEffortLevel, resolveCreditSpend } = require('./model-info');
 const { getRecentToolActivity, getTurnToolActivity, getTurnUsageMetrics, getSessionUsageMetrics, getTurnMetricsAndActivity } = require('./transcript');
 const { getLogicalSessionCostData } = require('./session-stats');
-const { readUpdateStatus } = require('./update-checker');
 const { getI18n } = require('./lang');
 
 function renderHUD(cbData, config) {
@@ -118,11 +117,6 @@ function renderHUD(cbData, config) {
 
   if (disp.showVersion === true && cbData.version) {
     line1Parts.push(dim('v' + sanitizeTerminalText(cbData.version, 10)));
-  }
-
-  const updateStatus = readUpdateStatus();
-  if (updateStatus && updateStatus.updateAvailable && updateStatus.latestVersion) {
-    line1Parts.push(color(`[↑ v${sanitizeTerminalText(updateStatus.latestVersion, 10)}]`, 'yellow'));
   }
 
   lines.push(line1Parts.join(divider));

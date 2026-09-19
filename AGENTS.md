@@ -29,7 +29,6 @@ runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--d
   ├ transcript.js              尾读 transcript（本轮工具频次聚合 + 本轮 usage 聚合）
   ├ session-stats.js           /clear 会话重置识别与 Diff/耗时逻辑基线管理
   ├ doctor.js                  --doctor 环境诊断（Node/配置/编码/Git/transcript）
-  ├ update-checker.js          后台版本更新检查（24h 间隔、detached 子进程）
   ├ git.js                     Git 状态探测与 direct HEAD 读取缓存
   ├ model-info.js              推理深度 effort 解析与 credits 提取
   ├ encoding.js                代码页探测与 Unicode/ASCII 字形回退
@@ -40,7 +39,7 @@ runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--d
   ├ settings-file.js           JSONC 解析、配置权限与符号链接保护
   └ uninstall.js               --uninstall 清理配置、shim、缓存与状态
 tests/fixtures/*.json          3 个 payload fixture
-tests/unit/*.test.mjs          22 个核心单元测试文件
+tests/unit/*.test.mjs          21 个核心单元测试文件
 scripts/install.ps1            Windows PowerShell 一键在线安装脚本
 scripts/install.sh             POSIX Shell 一键在线安装脚本
 scripts/bootstrap.js           Release 远程在线安装与自举更新器
@@ -112,5 +111,5 @@ node runtime/bin/codebuddy-hud.js --theme list
 
 1. 更新 `package.json` 版本与 `CHANGELOG.md`，并完成全部验证命令。
 2. 在发布提交上创建带注释的 `vX.Y.Z` tag，推送 `master` 与 tag。
-3. 以该 tag 创建正式 GitHub Release；默认安装和更新检查均以 Latest Release 的 `tag_name` 为准。
+3. 以该 tag 创建正式 GitHub Release；默认安装以 Latest Release 的 `tag_name` 为准。
 4. 从公开 Release 下载 Bootstrap，在隔离 `CODEBUDDY_HOME` 中执行真实远程安装，确认 `--status` 退出码为 0。

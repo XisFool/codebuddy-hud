@@ -28,7 +28,7 @@ function spawnHud(payloadStr, args = [], envOverrides = {}) {
     const start = Date.now();
     const child = spawn(process.execPath, [HUD_BIN, ...args], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, CODEBUDDY_HUD_FORCE_ASCII: '1', CODEBUDDY_HUD_NO_UPDATE_CHECK: '1', ...envOverrides },
+      env: { ...process.env, CODEBUDDY_HUD_FORCE_ASCII: '1', ...envOverrides },
     });
 
     let stdout = '';
