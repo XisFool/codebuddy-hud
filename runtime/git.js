@@ -145,6 +145,15 @@ function writeGitCache(cache) {
   }
 }
 
+// How long a failed `git status` is remembered. A directory can contain a
+// `.git` that is not a usable repository (stray/partial init, deleted HEAD), in
+// which case the command fails and the old code cached nothing — so every
+// ~300ms statusLine refresh paid for another doomed process spawn (~50-90ms,
+// >25% of a HUD run) with no branch to show for it. The entry is
+// self-invalidating: a repository that becomes real gains a HEAD, which changes
+// headMtime, so the TTL only bounds staleness for metadata-less directories.
+const GIT_FAILURE_TTL_MS = 60000;
+
 /**
  * Get current git branch and dirty status with zero-spawn optimization,
  * mtime invalidation cache, and child_process fallback.
@@ -173,6 +182,19 @@ function getGitStatus(cwd, timeoutMs = 200) {
   if (!noCache) {
     const cache = readGitCache();
     const entry = cache[workTree];
+    // A remembered failure must be checked before the positive-entry shape
+    // test below, which rejects it anyway (branch is null) — without this the
+    // call would fall through and spawn git again.
+    if (
+      entry &&
+      typeof entry === 'object' &&
+      entry.failed === true &&
+      entry.headMtime === headMtime &&
+      entry.indexMtime === indexMtime &&
+      now - entry.timestamp < GIT_FAILURE_TTL_MS
+    ) {
+      return null;
+    }
     if (
       entry &&
       typeof entry === 'object' &&
@@ -219,6 +241,22 @@ function getGitStatus(cwd, timeoutMs = 200) {
           } catch {}
         }
         return { branch: directBranch, dirty: null };
+      }
+      // `git status` failed and there is no HEAD to fall back on. Record the
+      // failure so the next refresh does not repeat this spawn.
+      if (!noCache) {
+        try {
+          const cache = readGitCache();
+          cache[workTree] = {
+            branch: null,
+            dirty: null,
+            failed: true,
+            headMtime,
+            indexMtime,
+            timestamp: now,
+          };
+          writeGitCache(cache);
+        } catch {}
       }
       return null;
     }

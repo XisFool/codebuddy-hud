@@ -56,9 +56,19 @@ function logError(err) {
 // the event loop drain flushes pending writes first. The 1500ms fallback timer
 // is unref'd and stdin is destroyed before rendering, so nothing keeps the
 // loop alive past the final write and the <1500ms contract still holds.
-function handleRender(rawStdin) {
+function handleRender(rawStdin, unavailableReason) {
   try {
     const cbData = parseCodeBuddyInput(rawStdin);
+    if (!cbData) {
+      // No payload means nothing renderable. Writing nothing keeps the "never
+      // fabricate telemetry" contract, but the host cannot distinguish an empty
+      // render from a healthy one — it just collapses the status bar with no
+      // error of its own. Leave a trace in the error log (never on stdout) so a
+      // vanished bar stays diagnosable from this side too.
+      logError(new Error(`statusLine payload unavailable${unavailableReason ? ` (${unavailableReason})` : ''} — nothing rendered`));
+      process.exitCode = 0;
+      return;
+    }
     const cwd = cbData && (cbData.cwd || (cbData.workspace && cbData.workspace.current_dir)) || process.cwd();
     const config = loadConfig(cwd);
     const output = renderHUD(cbData, config);
@@ -170,7 +180,7 @@ if (args.includes('--setup')) {
       // stdin may never close (host keeps the pipe open) — it is the only
       // handle keeping the loop alive, so release it before rendering
       process.stdin.destroy();
-      handleRender(Buffer.concat(stdinChunks).toString('utf8'));
+      handleRender(Buffer.concat(stdinChunks).toString('utf8'), 'stdin pipeline timeout');
     }
   }, TIMEOUT_MS);
   timer.unref();
@@ -181,7 +191,7 @@ if (args.includes('--setup')) {
     if (totalStdinSize > MAX_STDIN_SIZE) {
       handled = true;
       clearTimeout(timer);
-      handleRender('');
+      handleRender('', 'stdin payload exceeded 1MB');
       process.stdin.destroy();
       return;
     }
@@ -192,7 +202,8 @@ if (args.includes('--setup')) {
     if (!handled) {
       handled = true;
       clearTimeout(timer);
-      handleRender(Buffer.concat(stdinChunks).toString('utf8'));
+      const rawStdin = Buffer.concat(stdinChunks).toString('utf8');
+      handleRender(rawStdin, rawStdin.trim() ? 'stdin payload was not valid JSON' : 'stdin closed with no data');
     }
   });
 
@@ -200,7 +211,7 @@ if (args.includes('--setup')) {
     if (!handled) {
       handled = true;
       clearTimeout(timer);
-      handleRender('');
+      handleRender('', 'stdin read error');
     }
     // Same release as the timeout/oversize paths: a broken stream must not be
     // the handle that keeps the loop alive.

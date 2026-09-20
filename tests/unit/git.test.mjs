@@ -160,4 +160,78 @@ describe('getGitStatus', () => {
       else process.env.CODEBUDDY_HUD_NO_GIT_CACHE = orig;
     }
   });
+
+  // A `.git` that is not a usable repository (stray init, missing HEAD) made
+  // `git status` fail on every single refresh; the failure is now remembered.
+  test('a failed git status is cached as a negative entry', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-git-neg-home-'));
+    const stray = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-git-neg-repo-'));
+    const origHome = process.env.CODEBUDDY_HOME;
+    process.env.CODEBUDDY_HOME = home;
+    try {
+      fs.mkdirSync(path.join(stray, '.git'));
+      assert.equal(getGitStatus(stray, 1000), null);
+      const cachePath = path.join(home, 'codebuddy-hud-git-cache.json');
+      const entry = JSON.parse(fs.readFileSync(cachePath, 'utf8'))[path.resolve(stray)];
+      assert.equal(entry.failed, true, 'failure must be recorded');
+      assert.equal(entry.branch, null);
+    } finally {
+      if (origHome === undefined) delete process.env.CODEBUDDY_HOME;
+      else process.env.CODEBUDDY_HOME = origHome;
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(stray, { recursive: true, force: true });
+    }
+  });
+
+  // The negative entry must short-circuit before the spawn, otherwise it only
+  // documents the failure without saving the doomed `git status` call.
+  test('a remembered failure is served from cache without spawning git', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-git-neg2-home-'));
+    const origHome = process.env.CODEBUDDY_HOME;
+    process.env.CODEBUDDY_HOME = home;
+    try {
+      const gitDir = path.join(REPO_ROOT, '.git');
+      const cache = {};
+      cache[REPO_ROOT] = {
+        branch: null,
+        dirty: null,
+        failed: true,
+        headMtime: fs.statSync(path.join(gitDir, 'HEAD')).mtimeMs,
+        indexMtime: fs.statSync(path.join(gitDir, 'index')).mtimeMs,
+        timestamp: Date.now(),
+      };
+      fs.writeFileSync(path.join(home, 'codebuddy-hud-git-cache.json'), JSON.stringify(cache));
+      // Real repository, but the fresh failure entry must win.
+      assert.equal(getGitStatus(REPO_ROOT, 1000), null);
+    } finally {
+      if (origHome === undefined) delete process.env.CODEBUDDY_HOME;
+      else process.env.CODEBUDDY_HOME = origHome;
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('an expired failure entry is retried', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-git-neg3-home-'));
+    const origHome = process.env.CODEBUDDY_HOME;
+    process.env.CODEBUDDY_HOME = home;
+    try {
+      const gitDir = path.join(REPO_ROOT, '.git');
+      const cache = {};
+      cache[REPO_ROOT] = {
+        branch: null,
+        dirty: null,
+        failed: true,
+        headMtime: fs.statSync(path.join(gitDir, 'HEAD')).mtimeMs,
+        indexMtime: fs.statSync(path.join(gitDir, 'index')).mtimeMs,
+        timestamp: Date.now() - 61000,
+      };
+      fs.writeFileSync(path.join(home, 'codebuddy-hud-git-cache.json'), JSON.stringify(cache));
+      const res = getGitStatus(REPO_ROOT, 1000);
+      assert.ok(res !== null && typeof res.branch === 'string' && res.branch.length > 0);
+    } finally {
+      if (origHome === undefined) delete process.env.CODEBUDDY_HOME;
+      else process.env.CODEBUDDY_HOME = origHome;
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
 });

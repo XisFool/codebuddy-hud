@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed (移除)
 - **第一行更新提示徽章与后台更新检查**：移除 Line 1 末的 `[↑ vX.Y.Z]` 新版本徽章及其全部支撑逻辑（`runtime/update-checker.js` 的 24h 后台检查、detached 子进程与状态写入），HUD 不再发起任何版本查询请求；`--uninstall` 仍会清理旧版本遗留的更新状态文件。
 
+### Fixed (缺陷修复)
+- **非仓库目录重复执行 git 探测**：目录中存在 `.git` 但不是可用仓库时（残留/半初始化、HEAD 缺失），失败结果此前不落缓存，导致每次刷新都重复 fork 一次注定失败的 `git status`（实测 50~90ms，占单次运行 25% 以上）且拿不到分支段。现记录 60s 失败负缓存，并以 `headMtime` 自失效（目录变为真实仓库即重新探测）；`CODEBUDDY_HUD_NO_GIT_CACHE=1` 仍可完全绕过缓存。
+- **payload 缺失时静默无输出**：stdin 超时、超 1MB、读取错误或内容非法 JSON 时，HUD 输出 0 字节，宿主只判断退出码与文本，会把状态栏整块收起且不留任何错误。现向 `codebuddy-hud-error.log` 写入一行带原因的诊断（stdout 行为不变，仍不输出任何伪造数据）。
+
 ## [v0.3.2] - 2026-09-18
 
 ### Added (新增特性)

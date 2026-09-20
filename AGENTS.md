@@ -101,6 +101,13 @@ node runtime/bin/codebuddy-hud.js --theme list
     - 故 /compact 完成后、下一次真实 API 响应落盘前，payload 携带压缩前旧值（实测可达十余分钟）；
     - HUD 为一次性进程（无进程内缓存）；此滞后属宿主刷新时序，定位宿主侧即可。
     - HUD 现会读取 transcript 的成功 compact 摘要；在 payload 仍对应压缩前 usage 时显示 `--` 与等待提示，不把旧值伪装为当前值。
+13. **宿主 statusLine 5s 判定会误伤已完成的 HUD（新终端启动后状态栏不出现）**：
+    - 宿主 `statusService.executeStatusLine` 用 `spawn(command, [], {shell:true, stdio:["pipe","pipe","pipe"], windowsHide:true})` 执行命令，`stdin.write(JSON.stringify(payload,null,2))` 后立即 `stdin.end()`（故 HUD 的 800ms 管道保底超时不会命中）；
+    - 判定成功的条件是 **exitCode === 0 且未触发那枚 5s wall-clock 定时器**；定时器到点即 `kill()` 并无条件按超时结算（`kill()` 失败时错误串为 `Command execution timeout and failed to terminate the process`），随后 `setStatusLine({success:false,text:""})`，React 侧 `isEnabled = success && text.length > 0` 为假 → **状态栏整块消失**，直到下一次刷新事件（发消息触发的 result / permissionMode）才恢复；
+    - 若宿主自身事件循环被占住 ≥5s（实测会话启动期 `bash -l` shell snapshot 8~10s、插件市场加载 5.4s、云端配置 2.4s、`rebuildAgents` / `readDynamic` 各 10s 上限），恢复后 **timers 阶段先于已排队的 `close` 回调**，于是一个 0.2s 就跑完的 HUD 也会被判超时（此时 `kill()` 因直接子进程已退出而返回 false，故错误串带 "and failed to terminate"）；
+    - 该误判与 HUD 耗时无关，HUD 侧无法阻止（实测 HUD 仅 0.1~0.3s：直连 node ~0.1s，经 `.cmd` shim ~0.15~0.32s）；
+    - 排查入口：`~/.codebuddy/logs/<date>/<project>__*.log` 搜 `Status line command failed`；复现脚本见 `ai_scratchpad/hud-probe/false-timeout.js`（阻塞父进程 6s 即可复现逐字相同的错误串）。
+    - v2.155.0 实测：`stdout` 捕获上限 10240B、取前 3 行（每行 `trim()` 且丢弃空行）的常量与 v2.146.0 一致。
 
 ## 提交与工作流契约
 

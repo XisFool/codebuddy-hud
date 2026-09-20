@@ -70,6 +70,24 @@ test('empty stdin and oversized stdin exit 0 without output', async () => {
   assert.equal(oversized.err, '');
 });
 
+// An empty render is indistinguishable from a healthy one for the host (it
+// only checks the exit code and the text), so the unavailability must at least
+// be diagnosable from the HUD's own error log.
+test('a missing payload leaves a diagnostic without touching stdout', async () => {
+  const logPath = path.join(TEST_HOME, 'codebuddy-hud-error.log');
+  if (fs.existsSync(logPath)) fs.rmSync(logPath);
+  const r = await run();
+  assert.equal(r.code, 0);
+  assert.equal(r.out, '');
+  assert.equal(r.err, '');
+  assert.match(fs.readFileSync(logPath, 'utf8'), /payload unavailable/);
+
+  fs.rmSync(logPath);
+  const garbage = await run({ input: 'not json at all {{{' });
+  assert.equal(garbage.out, '');
+  assert.match(fs.readFileSync(logPath, 'utf8'), /not valid JSON/);
+});
+
 test('an open stdin is released well before the 1500ms process budget', async () => {
   const r = await run({ keepStdinOpen: true });
   assert.equal(r.code, 0);
