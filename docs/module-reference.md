@@ -37,7 +37,7 @@
 
 ## 1. `runtime/bin/codebuddy-hud.js` — CLI 入口与执行调度器
 
-**职责：** 状态栏执行入口，注册为 `statusLine.command`。负责命令行参数分发、stdin 管道超时竞争、顶层错误捕获、自然 Drain 退出与后台更新派生。
+**职责：** 状态栏执行入口，注册为 `statusLine.command`。负责命令行参数分发、stdin 管道超时竞争与异常诊断日志记录、顶层错误捕获与自然 Drain 退出。
 
 ### 命令行参数支持 (CLI Flags)
 - `--setup`: 执行安装，写入 `settings.json` 并生成 Windows `.cmd` shim。
@@ -365,7 +365,7 @@ export function readDirectBranch(gitDir: string): string | null;
 export function parseGitStatusOutput(output: string): { branch: string; dirty: boolean | null } | null;
 ```
 
-正常缓存 TTL 为 10 秒，HEAD/index mtime 变化可提前失效；未暂存的工作树编辑可能延迟显示。`null` 表示 Git 超时后的未知脏状态。
+正常缓存 TTL 为 10 秒，HEAD/index mtime 变化可提前失效；未暂存的工作树编辑可能延迟显示。非可用仓库（含 `.git` 但无 HEAD 或非可用仓库）的失败结果记录 60 秒负缓存（`GIT_FAILURE_TTL_MS`），并以 `headMtime` 变化自失效（目录变为真实仓库即重新探测）；可设置 `CODEBUDDY_HUD_NO_GIT_CACHE=1` 彻底绕过缓存。`null` 表示 Git 超时后的未知脏状态。
 
 ---
 

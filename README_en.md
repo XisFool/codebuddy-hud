@@ -107,7 +107,7 @@ Local install mode copies files directly from the repository — zero remote HTT
 
 ```bash
 export CODEBUDDY_HUD_BOOTSTRAP_URL=https://your-mirror/scripts/bootstrap.js
-export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.3.2
+export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.3.5
 curl -fsSL https://your-mirror/scripts/install.sh | bash
 ```
 
@@ -115,7 +115,7 @@ curl -fsSL https://your-mirror/scripts/install.sh | bash
 
 ```powershell
 $env:CODEBUDDY_HUD_BOOTSTRAP_URL = 'https://your-mirror/scripts/bootstrap.js'
-$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.3.2'
+$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.3.5'
 irm https://your-mirror/scripts/install.ps1 | iex
 ```
 

@@ -202,13 +202,13 @@ CodeBuddy Code v2.146.0 retains only the first three stdout lines. The HUD's own
 
 | Failure Event | Root Cause | System Degradation Behavior | Exit Code |
 | :--- | :--- | :--- | :---: |
-| **Empty Stdin** | Early hook trigger / absent payload | Exits safely with no output (0 bytes); no invented telemetry. | `0` |
+| **Empty Stdin / Malformed** | Early hook trigger / absent payload / invalid JSON | Exits safely with no output (0 bytes); writes diagnostic reason to error log; no invented telemetry. | `0` |
 | **Stdin Hang** | Host pipe remains open without sending EOF | $800\text{ms}$ timeout timer fires, forcibly closes stdin and renders collected input. | `0` |
 | **EPIPE Error** | Host kills statusline process while stdout writing | `process.stdout.on('error', () => {})` swallows error cleanly. | `0` |
 | **Missing Transcript** | First turn / remote headless session | Omits tool activity, falls back to payload-supplied token counts, and resolves Credits strictly from payload-declared spend. | `0` |
 | **Corrupt JSONL / State** | Process killed mid-write | Checkpoint discarded; resets byte offset to 0 and rebuilds from start. | `0` |
 | **Readonly Filesystem** | Permission restricted container | State writes fail silently; incomplete Credits scans remain hidden and may restart on later invocations. | `0` |
-| **Git Timeout** | Huge mono-repo / NFS lag | Falls back to a directly readable branch with `dirty: null`, otherwise omits it. | `0` |
+| **Git Timeout / Non-repo** | Huge mono-repo / non-repo directory | Falls back to directly readable branch (`dirty: null`) or omits; caches failure for 60s to prevent repeated spawns. | `0` |
 
 ---
 

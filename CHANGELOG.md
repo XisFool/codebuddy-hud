@@ -10,12 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] (待发布)
 
-### Removed (移除)
-- **第一行更新提示徽章与后台更新检查**：移除 Line 1 末的 `[↑ vX.Y.Z]` 新版本徽章及其全部支撑逻辑（`runtime/update-checker.js` 的 24h 后台检查、detached 子进程与状态写入），HUD 不再发起任何版本查询请求；`--uninstall` 仍会清理旧版本遗留的更新状态文件。
+## [v0.3.5] - 2026-09-21
+
+### Changed (变更与优化)
+- **翡翠绿与赛博朋克主题视觉调优**：
+  - 翡翠绿（`emerald`）：暗色模式升级为浅薄荷翠绿（ANSI 256 色代码 `121`，`\x1b[38;5;121m`），统一主色与 accent 强调色，大幅提升暗色终端背景下的文字对比度与通透感；
+  - 赛博朋克（`cyberpunk`）：暗色模式主色升级为浅马卡龙粉紫（ANSI 256 色代码 `219`，`\x1b[38;5;219m`），与荧光青构成高对比霓虹撞色，视觉层次更鲜明；
+  - 调色板引擎（`runtime/renderer/format.js`）：原生扩展支持 ANSI 256 色（`38;5;...`）及标准 Bright 高亮转义序列，增强转义码兼容性与色彩表现力。
 
 ### Fixed (缺陷修复)
 - **非仓库目录重复执行 git 探测**：目录中存在 `.git` 但不是可用仓库时（残留/半初始化、HEAD 缺失），失败结果此前不落缓存，导致每次刷新都重复 fork 一次注定失败的 `git status`（实测 50~90ms，占单次运行 25% 以上）且拿不到分支段。现记录 60s 失败负缓存，并以 `headMtime` 自失效（目录变为真实仓库即重新探测）；`CODEBUDDY_HUD_NO_GIT_CACHE=1` 仍可完全绕过缓存。
 - **payload 缺失时静默无输出**：stdin 超时、超 1MB、读取错误或内容非法 JSON 时，HUD 输出 0 字节，宿主只判断退出码与文本，会把状态栏整块收起且不留任何错误。现向 `codebuddy-hud-error.log` 写入一行带原因的诊断（stdout 行为不变，仍不输出任何伪造数据）。
+
+### Removed (移除)
+- **第一行更新提示徽章与后台更新检查**：移除 Line 1 末的 `[↑ vX.Y.Z]` 新版本徽章及其全部支撑逻辑（`runtime/update-checker.js` 的 24h 后台检查、detached 子进程与状态写入），HUD 不再发起任何版本查询请求；`--uninstall` 仍会清理旧版本遗留的更新状态文件。
 
 ## [v0.3.2] - 2026-09-18
 
@@ -97,7 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 提供跨平台一键安装、卸载、环境体检诊断与隔离环境安装验证闭环。
 - 基于 GitHub Release 不变 tag 实现高可靠安装与静默后台更新检测。
 
-[Unreleased]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.5...HEAD
+[v0.3.5]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.2...v0.3.5
 [v0.3.2]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.0...v0.3.2
 [v0.3.0]: https://github.com/XisFool/codebuddy-hud/compare/v0.2.1...v0.3.0
 [v0.2.1]: https://github.com/XisFool/codebuddy-hud/compare/v0.2.0...v0.2.1
