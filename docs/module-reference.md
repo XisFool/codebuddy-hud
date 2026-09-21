@@ -142,8 +142,8 @@ export const DEFAULT_CONFIG: ResolvedConfig;
 
 ### 内置主题预设 (THEME_PRESETS)
 - `ocean` (默认): 深海青蓝科技风 (dark: `cyan`/`gray`, light: `blue`/`gray`)
-- `emerald`: 翡翠绿清新护眼 (dark: `green`/`gray`/`cyan`, light: `green`/`gray`/`blue`)
-- `cyberpunk`: 赛博朋克炫酷粉紫+荧光青 (dark: `magenta`/`cyan`, light: `magenta`/`blue`)
+- `emerald`: 翡翠绿清新护眼 (dark: `brightGreen`/`gray`, light: `green`/`gray`)
+- `cyberpunk`: 赛博朋克炫酷粉紫+荧光青 (dark: `brightMagenta`/`cyan`, light: `magenta`/`blue`)
 - `amber`: 琥珀金复古沉稳 (dark/light: `yellow`/`gray`)
 - `monochrome`: 黑白极简经典终端 (dark/light: `gray`/`gray`)
 

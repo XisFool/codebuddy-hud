@@ -49,13 +49,13 @@ describe('theme-selector', () => {
     assert.equal(getActiveThemeName(), 'cyberpunk');
     const loadedCyber = loadConfig();
     assert.equal(loadedCyber.theme.name, 'cyberpunk');
-    assert.equal(loadedCyber.theme.primary, 'magenta');
+    assert.equal(loadedCyber.theme.primary, 'brightMagenta');
 
     saveUserTheme('emerald');
     assert.equal(getActiveThemeName(), 'emerald');
     const loadedEmerald = loadConfig();
     assert.equal(loadedEmerald.theme.name, 'emerald');
-    assert.equal(loadedEmerald.theme.primary, 'green');
+    assert.equal(loadedEmerald.theme.primary, 'brightGreen');
   });
 
   it('throws on invalid theme name', () => {

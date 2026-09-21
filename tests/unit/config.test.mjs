@@ -154,11 +154,11 @@ describe('THEME_PRESETS and resolveTheme', () => {
     assert.equal(ocean.name, 'ocean');
 
     const cyberpunk = resolveTheme({ theme: 'cyberpunk', themeMode: 'dark' });
-    assert.equal(cyberpunk.primary, 'magenta');
+    assert.equal(cyberpunk.primary, 'brightMagenta');
     assert.equal(cyberpunk.name, 'cyberpunk');
 
     const emerald = resolveTheme({ theme: 'emerald', themeMode: 'dark' });
-    assert.equal(emerald.primary, 'green');
+    assert.equal(emerald.primary, 'brightGreen');
     assert.equal(emerald.name, 'emerald');
 
     const amber = resolveTheme({ theme: 'amber', themeMode: 'dark' });

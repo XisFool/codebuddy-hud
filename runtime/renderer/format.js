@@ -3,14 +3,20 @@
 const ANSI_COLORS = {
   gray: '\x1b[90m',
   blue: '\x1b[34m',
+  brightBlue: '\x1b[94m',
   magenta: '\x1b[35m',
-  brightMagenta: '\x1b[95m',
+  brightMagenta: '\x1b[38;5;219m',
   yellow: '\x1b[33m',
   gold: '\x1b[93m',
+  brightYellow: '\x1b[93m',
   cyan: '\x1b[36m',
+  brightCyan: '\x1b[96m',
   green: '\x1b[32m',
+  brightGreen: '\x1b[38;5;121m',
   red: '\x1b[31m',
+  brightRed: '\x1b[91m',
   white: '\x1b[37m',
+  brightWhite: '\x1b[97m',
 };
 
 const RESET = '\x1b[0m';
@@ -18,7 +24,7 @@ const BOLD = '\x1b[1m';
 const DIM = '\x1b[2m';
 
 function color(text, colorName) {
-  const code = ANSI_COLORS[colorName] || '';
+  const code = ANSI_COLORS[colorName] || (colorName && colorName.startsWith('\x1b[') ? colorName : '');
   if (!code) return text;
   return code + text + RESET;
 }
@@ -84,6 +90,7 @@ function createProgressBar(percent, width, thresholds, glyphs) {
 
 function getThemeColor(config, key, fallback) {
   const name = (config && config.theme && config.theme[key]) || fallback;
+  if (name && name.startsWith('\x1b[')) return name;
   return ANSI_COLORS[name] || ANSI_COLORS[fallback] || '';
 }
 
