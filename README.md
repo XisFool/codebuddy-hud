@@ -107,7 +107,7 @@ node scripts/bootstrap.js
 
 ```bash
 export CODEBUDDY_HUD_BOOTSTRAP_URL=https://your-mirror/scripts/bootstrap.js
-export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.3.5
+export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.3.7
 curl -fsSL https://your-mirror/scripts/install.sh | bash
 ```
 
@@ -115,7 +115,7 @@ curl -fsSL https://your-mirror/scripts/install.sh | bash
 
 ```powershell
 $env:CODEBUDDY_HUD_BOOTSTRAP_URL = 'https://your-mirror/scripts/bootstrap.js'
-$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.3.5'
+$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.3.7'
 irm https://your-mirror/scripts/install.ps1 | iex
 ```
 
@@ -223,12 +223,29 @@ codebuddy-hud --theme list      # 仅列出全部主题
   "theme": "ocean",
   "themeMode": "auto",
   "language": "zh",
+  "defaultEffortLevel": "medium",
+  "thresholds": {
+    "warning": 0.7,
+    "critical": 0.9
+  },
+  "cacheHitThresholds": {
+    "excellent": 80,
+    "partial": 50
+  },
   "display": {
     "showTokenBar": true,
     "showCacheHitRate": true,
     "showDiffStats": true,
     "showCost": true,
+    "showDuration": true,
     "showToolActivity": true,
+    "showGitBranch": true,
+    "showCurrentDir": true,
+    "showVersion": false,
+    "showPermissionMode": true,
+    "maxLines": 3,
+    "progressBarWidth": 10,
+    "toolActivityTailBytes": 16384,
     "useNerdFonts": false,
     "unicode": "auto"
   }
@@ -239,8 +256,8 @@ codebuddy-hud --theme list      # 仅列出全部主题
 
 - `theme` / `themeMode`：主题与深浅色模式，见「主题」。
 - `language`：界面语言 `zh` / `en`（默认 `en`；设为其他值时按系统 locale 自动判定）。
-- `defaultEffortLevel`：未捕获到推理强度时的回退档位（默认 `medium`）。
-- `display.*`：各行片段开关，除 `showVersion`、`useNerdFonts`（默认 `false`）外均默认 `true`；另有 `showDuration` / `showGitBranch` / `showCurrentDir` / `showPermissionMode` 等；`useNerdFonts`（默认 `false`）启用 Nerd Fonts 图标；`unicode` 取值 `auto` / `true` / `false`（默认 `auto`，按终端能力探测）。
+- `defaultEffortLevel`：未捕获到推理强度时的回退档位（默认 `medium`；可选 `low`、`medium`、`high`、`xhigh`、`max`、`ultracode`）。
+- `display.*`：各行片段开关与显示参数，除 `showVersion`（默认 `false`）、`useNerdFonts`（默认 `false`）外各开关均默认 `true`；`maxLines` 控制最大输出行数（默认 `3`）；`progressBarWidth` 控制进度条宽度（默认 `10`）；`toolActivityTailBytes` 控制工具活动尾读字节数（默认 `16384`）；`unicode` 取值 `auto` / `true` / `false`（默认 `auto`，按终端能力探测）。
 - `thresholds`：上下文进度条的警告 / 危险阈值（默认 `0.7` / `0.9`）。
 - `cacheHitThresholds`：缓存命中率的配色分级阈值（默认 `80` / `50`）。
 

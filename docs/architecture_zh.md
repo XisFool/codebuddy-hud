@@ -1,6 +1,6 @@
 # CodeBuddy HUD 系统架构设计全景文档
 
-> **目标版本：** `v0.2.0+`  
+> **目标版本：** `v0.3.7+`  
 > **宿主兼容性：** CodeBuddy Code CLI；v2.146.0 存在下文说明的 Windows 引号与三行显示限制。
 > **底层运行环境：** 纯 Node.js 标准库 (`>= 18.0.0`，绝对零外部 npm 依赖)
 
@@ -143,6 +143,10 @@ sequenceDiagram
      否则，usage.inputTokens 有效时：
        sum(usage.inputTokensDetails[].cached_tokens)
      ```
+  5. **上下文新鲜度与双向遥测匹配 (`contextStatus`)**：
+     - **父链逆向回溯 (`createContextTracker`)**：沿消息 `parentId` 链逆向追踪，遇到已完成的 compact 压缩摘要（`isCompacted: true` 且 `isSummary: true` 或 `isCompactInternal: true`）直接置为 `stale`；
+     - **双向遥测匹配 (`resolveReportedInputs`)**：针对 DeepSeek 等服务商将 miss 记为 creation 导致输入被宿主扣减为 0 的场景，比对同时接受还原总占用（`input + cacheRead + cacheCreation`）与未扣减的原始 `input_tokens`（`matchesInput = reportedInput === input || rawReportedInput === input`），匹配当前 payload 即置 `fresh`；
+     - **保守尾窗回退 (`getCompactContextStatus`)**：宿主未在边界保留 parent 关联时，在尾窗内比对 compact 摘要与普通 usage 的位置顺序，若压缩摘要位于最新 usage 之后则标记 `stale`。
 
 ### 5.2 会话基线捕获与 `/clear` 判定机制 (`session-stats.js`)
 - **痛点**：用户在宿主输入 `/clear` 时，上下文窗口被清空，但宿主累积的总 token 或行数可能出现负增量或残留历史数据。
@@ -175,11 +179,17 @@ sequenceDiagram
           → 主题解析 (resolveTheme)
   ```
 - `--theme <name>` 将主题保存到用户配置，不是运行时覆盖层。
+- **5 套内置主题预设规范**：
+  - `ocean`（默认）：深海青蓝科技风（暗色：`cyan`/`gray`，亮色：`blue`/`gray`）；
+  - `emerald`：翡翠绿清新护眼（暗色：浅薄荷翠绿 `121`，亮色：`green`/`gray`）；
+  - `cyberpunk`：赛博朋克霓虹（暗色：浅马卡龙粉紫 `219` + 荧光青，亮色：`magenta`/`blue`）；
+  - `amber`：琥珀金耀眼质感（双模式主色与强调色统一升级为标准 16 色高亮金色 `gold`，`\x1b[93m`，搭配 `gray`）；
+  - `monochrome`：黑白极简经典终端（双模式均为经典终端灰白 `gray`/`gray`）。
 - **安全性防护**：`deepMerge()` 跳过 `__proto__`，递归深度上限 64。配置文件每次直接读取；settings effort 仅保留进程内缓存，transcript effort 信号则按 transcript 哈希持久化到会话状态目录（`effort-<sha256>.json`），支持长任务的尾部扫描裁决、缓存继承与冷启动头扫兜底。
 
 ### 5.5 3 行自适应布局与自裁剪规则 (`renderer.js`)
-- **Line 1 (标识与状态)**：模型名称 · 推理深度 (effort) · Git 分支与 Dirty 状态 (`*`) · 工作区目录 · 权限模式。
-- **Line 2 (Tokens 与上下文)**：当前上下文输入占用/窗口容量 · 进度条与百分比 · 输出 Token · 本轮 Cache 命中率；compact 后等待宿主新 usage 时显式降级。
+- **Line 1 (标识与状态)**：模型名称（`bold` 加粗）· 推理深度 (effort) · Git 分支与 Dirty 状态 (`*`) · 工作区目录 · 权限模式（标准 16 色高亮紫 `brightPurple`，细体 slim）。
+- **Line 2 (Tokens 与上下文)**：当前上下文输入占用/窗口容量（标题 `bold` 加粗；高缓存扣减至 0 场景自动还原活跃上下文总占用并引入残差仲裁防翻倍）· 进度条与百分比 · 输出 Token · 本轮 Cache 命中率（细体 slim）；支持 `fresh`（完整展示进度条与 out）、`stale`（压缩后待刷新，分子显示 `--` 且隐藏进度条与 out）、`unknown`（显示分子、隐藏进度条、提示上次上报）三态渲染。
 - **Line 3 (变更、消费、耗时与工具活动)**：`Δ +增加 -删除` · 实际 Credits · 总耗时 · 当前工具活动与本轮完成频次聚合（`◐ Edit: parser.js`、`✓ Edit ×3`）。（无数据自动隐藏整行）。
 
 宿主 v2.146.0 仅保留 stdout 前 3 行。HUD 的 3 行输出契约与该截断上限严格对齐；工具活动并入 Line 3，确保所有关键信息在截断限制下完整可见。
@@ -224,7 +234,7 @@ sequenceDiagram
    - v2.146.0 containment 会二次转义字面引号。安全 ASCII shim 路径省略引号；需要引号的路径保留引号，仍受宿主兼容限制。
 2. **终端编码自动探测与缓存**：
    - Windows 下通过 `chcp.com` 探测代码页并缓存于 `codebuddy-hud-cache-state.json`（`65001`）。
-   - 在不支持 UTF-8 的终端自动无缝回退至纯 ASCII 字符集（`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`）。
+   - 在不支持 UTF-8 的终端自动无缝回退至纯 ASCII 字符集（`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`, `[t]`, `[T]`）。
 3. **事件循环自然排空退出 (Natural Drain)**：
    - 渲染完成后主动释放 Stdin 句柄与定时器，依靠 Node.js 事件循环自然排空退出，杜绝 `process.exit()` 引起的异步 Stdout 缓冲区截断。
 4. **配置写入与卸载清理**：

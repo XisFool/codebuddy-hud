@@ -676,11 +676,19 @@ function getRecentToolActivity(transcriptPath, opts) {
   }
 }
 
+function resolveReportedInputs(usage) {
+  const raw = usage?.input_tokens ?? 0;
+  const combined = raw
+    + (usage?.cache_read_input_tokens ?? 0)
+    + (usage?.cache_creation_input_tokens ?? 0);
+  return { combined, raw };
+}
+
 // Follow the newest supported history item's parent chain, not unrelated
 // appended branches. The payload has no active message id: mismatching usage,
 // missing parents/ids and damaged tails therefore stay explicitly unknown.
 function createContextTracker(contextWindow) {
-  const reported = contextWindow && contextWindow.current_usage;
+  const reported = contextWindow?.current_usage;
   let targetId = null;
   let sawUsage = false;
   const seen = new Set();
@@ -716,12 +724,9 @@ function createContextTracker(contextWindow) {
         // the host (0 on DeepSeek / providers where miss is treated as creation),
         // or it may carry the full un-deducted prompt. Match either the restored
         // total (input + cache_read + cache_creation) or the raw input_tokens.
-        const reportedInput = ((reported && reported.input_tokens) ?? 0)
-          + ((reported && reported.cache_read_input_tokens) ?? 0)
-          + ((reported && reported.cache_creation_input_tokens) ?? 0);
-        const rawReportedInput = (reported && reported.input_tokens) ?? 0;
+        const { combined: reportedInput, raw: rawReportedInput } = resolveReportedInputs(reported);
         const matchesInput = reportedInput === input || rawReportedInput === input;
-        const reportedOutput = (reported && reported.output_tokens) ?? 0;
+        const reportedOutput = reported?.output_tokens ?? 0;
         if (reported && !sawUsage && Number.isFinite(input) && input >= 0
             && Number.isFinite(output) && output >= 0
             && matchesInput && reportedOutput === output) {
@@ -768,10 +773,7 @@ function getCompactContextStatus(transcriptPath, contextWindow, opts) {
         const u = pd.usage;
         const cu = contextWindow.current_usage;
         // Same basis as createContextTracker: match either restored or raw input.
-        const cuInput = ((cu && cu.input_tokens) ?? 0)
-          + ((cu && cu.cache_read_input_tokens) ?? 0)
-          + ((cu && cu.cache_creation_input_tokens) ?? 0);
-        const rawCuInput = (cu && cu.input_tokens) ?? 0;
+        const { combined: cuInput, raw: rawCuInput } = resolveReportedInputs(cu);
         const matchesInput = u.inputTokens === cuInput || u.inputTokens === rawCuInput;
         if (cu && matchesInput && u.outputTokens === cu.output_tokens) usageAt = index;
       }

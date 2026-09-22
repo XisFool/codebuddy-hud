@@ -1,6 +1,6 @@
 # CodeBuddy HUD System Architecture
 
-> **Target Version:** `v0.2.0+`  
+> **Target Version:** `v0.3.7+`  
 > **Host Compatibility:** CodeBuddy Code CLI; v2.146.0 has the Windows quoting and three-line display limits described below.
 > **Engine Baseline:** Pure Node.js Standard Library (`>= 18.0.0`, Zero npm dependencies)
 
@@ -26,28 +26,28 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  PLUGIN LAYER  (Discovered by CodeBuddy / Agent, root & skills/)         │
+│  PLUGIN LAYER  CodeBuddy / Agent Discovery Entrypoint (root & skills/)    │
 │   .codebuddy-plugin/plugin.json · skills/hud-config/SKILL.md             │
 └────────────────────────────────────┬─────────────────────────────────────┘
-                                     │  bootstrap.js installs & atomizes
+                                     │  bootstrap.js atomic install & overwrite
 ┌────────────────────────────────────▼─────────────────────────────────────┐
-│  RUNTIME LAYER  (~/.codebuddy/codebuddy-hud-runtime/ or repo checkout)   │
-│   runtime/bin/codebuddy-hud.js    ← Registered as statusLine.command     │
-│   runtime/bin/codebuddy-hud.cmd   ← Windows portable shim wrapper        │
+│  RUNTIME LAYER  ~/.codebuddy/codebuddy-hud-runtime/ or local source      │
+│   runtime/bin/codebuddy-hud.js    ← registered to settings.json statusLine│
+│   runtime/bin/codebuddy-hud.cmd   ← Windows absolute-path node shim       │
 │   parser.js · config.js · paths.js · encoding.js · git.js · sanitize.js  │
 │   lang.js · model-info.js · settings-file.js · statusline-installer.js   │
 │   theme-selector.js · doctor.js · session-stats.js                       │
-│   transcript.js (Sliding-window & SHA-256 telemetry) · uninstall.js      │
-│   renderer.js (3-Line orchestration) ──> renderer/ (format, diff, agents)│
+│   transcript.js (sliding-window telemetry & SHA-256 checkpoint) · uninstall│
+│   renderer.js (3-line layout engine) ──> renderer/ (format, diff, agents) │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Plugin Layer**: Staged in `.codebuddy-plugin/` and `skills/`. Declares metadata, command entries (`status`, `setup`, `uninstall`, `theme`, `doctor`), and AI Agent configuration capabilities.
-- **Runtime Layer**: Deployed locally or via `scripts/bootstrap.js`. Contains all business logic, rendering subsystems, caching state machines, and platform shims.
+- **Plugin Layer**: Defines `.codebuddy-plugin/` metadata and `skills/hud-config/` capabilities for automated AI Agent configuration.
+- **Runtime Layer**: Implements full telemetry parsing, rendering, state management, and platform shims.
 
 ---
 
-## 3. Module Dependency Graph
+## 3. Module Dependency Topology
 
 > **Note**: This diagram illustrates the primary end-to-end execution flows. Full intra-module require dependencies across all utility modules are detailed in [docs/module-reference.md](module-reference.md).
 
@@ -88,59 +88,63 @@ graph TD
 
 ---
 
-## 4. Execution Flow per Agent Step
+## 4. Execution Lifecycle & Timing
 
-CodeBuddy Code v2.146.0 triggers HUD on session, result, settings and related events, with approximately 300ms debounce. Idle sessions do not refresh periodically. Failed commands clear the displayed HUD and do not schedule automatic retries.
+The host (v2.146.0) debounces statusline invocations by ~300ms following turn events. Idle sessions do not poll; failed executions clear the statusline without automatic retry.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Host as CodeBuddy Host (event-driven)
+    actor Host as CodeBuddy Host (Event Trigger)
     participant Entry as codebuddy-hud.js
     participant Stdin as Stdin Pipe
-    participant Engine as Subsystems (Parser, Config, Transcript, Stats)
+    participant Engine as Parsing & State Engines
     participant Renderer as renderer.js
 
-    Host->>Entry: spawn(node codebuddy-hud.js) & pipe stdin JSON
+    Host->>Entry: Spawns node codebuddy-hud.js with piped stdin JSON
     activate Entry
     
-    par Race Timeout and Data
-        Entry->>Stdin: Start 800ms Safety Timer (TIMEOUT_MS)
-        Entry->>Stdin: Collect stdin chunks (max 1MB)
+    par Read & Timeout Race
+        Entry->>Stdin: 800ms safety timeout timer started (TIMEOUT_MS)
+        Entry->>Stdin: Buffers incoming stdin chunks (1MB limit)
     end
 
-    alt stdin closes normally or 800ms timer fires
-        Entry->>Stdin: process.stdin.destroy() (Release libuv handle)
+    alt Stdin EOF or 800ms Timer Fired
+        Entry->>Stdin: process.stdin.destroy() (releases libuv handle)
         Entry->>Engine: parseCodeBuddyInput(rawStdin)
         Entry->>Engine: loadConfig(cwd)
         Entry->>Renderer: renderHUD(cbData, config)
         Renderer->>Engine: getGitStatus() & getLogicalSessionCostData()
         Renderer->>Engine: getSessionUsageMetrics() & getTurnMetricsAndActivity()
-        Renderer-->>Entry: formatted ≤3 ANSI lines
-        Entry->>Host: stdout.write(renderedOutput) (EPIPE swallowed via stdout.on('error'))
+        Renderer-->>Entry: Assembles ≤3 lines of ANSI text
+        Entry->>Host: stdout.write(renderedOutput) (EPIPE safely suppressed)
     end
 
-    Entry->>Host: process.exitCode = 0 (Natural Event Loop Drain)
+    Entry->>Host: process.exitCode = 0 (libuv event loop natural drain)
     deactivate Entry
 ```
 
 ---
 
-## 5. Core Subsystems & Deep Mechanics
+## 5. Core Subsystems & Algorithms
 
-### 5.1 Reverse Sliding-Window Transcript Scanning (`transcript.js`)
-- **Problem**: Comprehensive telemetry (Prompt Cache hits, exact credit billing, tool names) is only recorded in the host's `transcript.jsonl`. However, transcript files can exceed hundreds of megabytes during long coding sessions.
-- **Scanning Algorithm**:
-  1. **Tail Seeking**: `getTurnMetricsAndActivity()` shares one reverse scan for turn usage and tool activity. It reads from `EOF` in 16KB chunks by default (`tailBytes: 16384`), capped at a 256KB total scan window (with hard line budgets: `MAX_SCAN_LINES = 40` for general scan, `MAX_TURN_SCAN_LINES = 200` for turn aggregation). Session Credits use a separate forward checkpoint scan.
-  2. **Straddle Line Reconstruction**: When a sliding chunk boundary cuts across a JSON line, the trailing fragment is buffered and prepended to the preceding chunk to assemble valid JSON.
-  3. **Turn Boundary Termination**: The scanner traverses backwards, aggregating API usage blocks until it encounters an entry with `role: 'user'`. This guarantees metrics reflect the **current turn aggregation**, not isolated burst steps.
-  4. **Field Priority Resolution**:
+### 5.1 Sliding-Window Telemetry Scanner (`transcript.js`)
+- **Problem**: Prompt Cache hits, actual Credits, and active tools exist exclusively within `transcript.jsonl`, which can grow to dozens of megabytes in long sessions.
+- **Algorithm**:
+  1. **Tail-Only Reverse Scan**: `getTurnMetricsAndActivity()` aggregates turn usage and tool events in a single backward pass (16KB default window, 256KB upper bound; 40-line general budget, 200-line turn budget). Cumulative Credits uses forward checkpoint scanning.
+  2. **Straddle Reconstruction**: Slices spanning window boundaries are reassembled across sequential chunk reads.
+  3. **Turn Boundary Truncation**: Scanning halts when encountering the latest `role: 'user'`, isolating telemetry strictly to the **current conversational turn**.
+  4. **Priority Resolution**:
      ```
      With valid rawUsage.prompt_tokens:
        prompt_cache_hit_tokens -> prompt_tokens_details.cached_tokens -> cached_tokens -> 0
      Otherwise, with valid usage.inputTokens:
        sum(usage.inputTokensDetails[].cached_tokens)
      ```
+  5. **Context Freshness & Dual Telemetry Matching (`contextStatus`)**:
+     - **Parent-Chain Traversal (`createContextTracker`)**: Traces backwards along `parentId` links. A completed compact summary marks status `stale`.
+     - **Dual Telemetry Matching (`resolveReportedInputs`)**: For providers (e.g. DeepSeek) where miss is treated as creation and host `input_tokens` is deducted down to 0, matches against either the reconstructed total (`input + cacheRead + cacheCreation`) or raw `input_tokens`. A match resolves to `fresh`.
+     - **Fallback Tail Window (`getCompactContextStatus`)**: Compares append ordering within bounded tail chunks when boundary parent links are omitted by the host.
 
 ### 5.2 Session Baseline Tracking & `/clear` Detection (`session-stats.js`)
 - **Problem**: When a user executes `/clear`, the host context window resets, but cumulative tokens or added lines in the raw payload may report non-monotonic drops or retain stale session history.
@@ -173,11 +177,17 @@ sequenceDiagram
           → Theme Resolution (resolveTheme based on merged config)
   ```
   Note: `--theme <name>` is a persistent write operation (saves to user config), not a runtime argument overlay.
+- **Built-in Theme Presets**:
+  - `ocean` (default): Cyan & blue tech theme (dark: `cyan`/`gray`, light: `blue`/`gray`);
+  - `emerald`: Mint green eye-care theme (dark: `121` mint green, light: `green`/`gray`);
+  - `cyberpunk`: Neon pink & cyan (dark: `219` pastel pink + cyan, light: `magenta`/`blue`);
+  - `amber`: Amber gold (both dark & light use standard 16-color high-intensity `gold` `\x1b[93m` with `gray`);
+  - `monochrome`: Minimalist terminal gray (both modes use `gray`/`gray`).
 - **Security Guard**: `deepMerge()` skips `__proto__` and caps recursion at 64. Config files are read directly on each load; the settings effort fallback keeps only a process-local cache, while the transcript effort signal is persisted per transcript hash under the session-state directory (`effort-<sha256>.json`), supporting tail-scan adjudication, cache inheritance, and a bounded cold-start head scan.
 
 ### 5.5 3-Line Adaptive Layout & Pruning (`renderer.js`)
-- **Line 1 (Identity & Status)**: Model Display Name · Reasoning Effort Icon · Git Branch & Dirty (`*`) · Workspace Name · Permission Mode.
-- **Line 2 (Tokens & Context)**: Current context input/capacity · progress bar and percentage · output tokens · turn cache hit badge; compact staleness is shown explicitly while awaiting fresh host usage.
+- **Line 1 (Identity & Status)**: Model Display Name (`bold`) · Reasoning Effort Icon · Git Branch & Dirty (`*`) · Workspace Name · Permission Mode (standard 16-color `brightPurple`, slim).
+- **Line 2 (Tokens & Context)**: Current context input/capacity (title `bold`; restores occupancy when host deducts input to 0, arbitrated against `used_percentage` residual to prevent double-counting) · progress bar and percentage · output tokens · turn cache hit badge (slim); renders in three states: `fresh` (progress bar and out enabled), `stale` (post-compact waiting, `--` numerator, progress bar and out hidden), and `unknown` (numerator shown, progress bar hidden, "last reported" hint).
 - **Line 3 (Diff & Cost & Latency & Tool Activity)**: `Δ +Added -Removed` · Actual Credits · Total Duration · Current tool activity and turn-aggregated tool badges (`◐ Edit: parser.js`, `✓ Edit ×3`). (Omitted if all are zero).
 
 CodeBuddy Code v2.146.0 retains only the first three stdout lines. The HUD's own three-line contract is strictly aligned with this truncation limit; tool activity is merged into Line 3 so every key segment stays visible.
@@ -222,7 +232,7 @@ CodeBuddy Code v2.146.0 retains only the first three stdout lines. The HUD's own
    - v2.146.0 containment double-escapes literal quotes. Safe ASCII shim paths are left unquoted; paths requiring quotes retain them and remain subject to the host limitation.
 2. **Terminal UTF-8 Auto-Detection**:
    - On Windows, queries `chcp.com` and caches the result (`65001`) in `codebuddy-hud-cache-state.json`.
-   - Seamlessly falls back to ASCII glyphs (`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`) when UTF-8 / Unicode is unsupported.
+   - Seamlessly falls back to ASCII glyphs (`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`, `[t]`, `[T]`) when UTF-8 / Unicode is unsupported.
 3. **Natural Event Loop Drain**:
    - Eliminates abrupt `process.exit()` in rendering path. Releases all active `stdin` handles, timer handles, and let libuv naturally exit to prevent stdout buffer truncation.
 4. **Settings Writes & Uninstall Cleanup**:

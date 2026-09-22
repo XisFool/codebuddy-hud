@@ -107,7 +107,7 @@ Local install mode copies files directly from the repository — zero remote HTT
 
 ```bash
 export CODEBUDDY_HUD_BOOTSTRAP_URL=https://your-mirror/scripts/bootstrap.js
-export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.3.5
+export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.3.7
 curl -fsSL https://your-mirror/scripts/install.sh | bash
 ```
 
@@ -115,7 +115,7 @@ curl -fsSL https://your-mirror/scripts/install.sh | bash
 
 ```powershell
 $env:CODEBUDDY_HUD_BOOTSTRAP_URL = 'https://your-mirror/scripts/bootstrap.js'
-$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.3.5'
+$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.3.7'
 irm https://your-mirror/scripts/install.ps1 | iex
 ```
 
@@ -223,12 +223,29 @@ Optional. Create `codebuddy-hud.config.json` at the project root to affect only 
   "theme": "ocean",
   "themeMode": "auto",
   "language": "en",
+  "defaultEffortLevel": "medium",
+  "thresholds": {
+    "warning": 0.7,
+    "critical": 0.9
+  },
+  "cacheHitThresholds": {
+    "excellent": 80,
+    "partial": 50
+  },
   "display": {
     "showTokenBar": true,
     "showCacheHitRate": true,
     "showDiffStats": true,
     "showCost": true,
+    "showDuration": true,
     "showToolActivity": true,
+    "showGitBranch": true,
+    "showCurrentDir": true,
+    "showVersion": false,
+    "showPermissionMode": true,
+    "maxLines": 3,
+    "progressBarWidth": 10,
+    "toolActivityTailBytes": 16384,
     "useNerdFonts": false,
     "unicode": "auto"
   }
@@ -239,8 +256,8 @@ Fields:
 
 - `theme` / `themeMode`: theme and dark/light mode — see "Themes".
 - `language`: UI language, `zh` or `en` (default `en`; any other value auto-detects from the system locale).
-- `defaultEffortLevel`: fallback reasoning effort when none is captured (default `medium`).
-- `display.*`: per-segment switches, all default `true` except `showVersion` and `useNerdFonts` (default `false`) — also includes `showDuration` / `showGitBranch` / `showCurrentDir` / `showPermissionMode`; `useNerdFonts` (default `false`) enables Nerd Fonts icons; `unicode` accepts `auto` / `true` / `false` (default `auto`, probes terminal capability).
+- `defaultEffortLevel`: fallback reasoning effort when none is captured (default `medium`; options: `low`, `medium`, `high`, `xhigh`, `max`, `ultracode`).
+- `display.*`: per-segment switches and display parameters, all default `true` except `showVersion` (default `false`) and `useNerdFonts` (default `false`); `maxLines` controls maximum output lines (default `3`); `progressBarWidth` controls progress bar character width (default `10`); `toolActivityTailBytes` controls reverse scan byte budget for tool activities (default `16384`); `unicode` accepts `auto` / `true` / `false` (default `auto`, probes terminal capability).
 - `thresholds`: warning/critical thresholds for the context bar (defaults `0.7` / `0.9`).
 - `cacheHitThresholds`: color-grading thresholds for cache hit rate (defaults `80` / `50`).
 

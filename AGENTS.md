@@ -26,7 +26,7 @@ runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--d
   │ ├ renderer/format.js       调色板 / 进度条 / cache 命中率
   │ ├ renderer/diff-render.js  Line 3 diff / credits / 耗时 / 工具活动段组装
   │ └ renderer/agents-render.js 工具活动与频次聚合格式化（供 Line 3 复用）
-  ├ transcript.js              尾读 transcript（本轮工具频次聚合 + 本轮 usage 聚合）
+  ├ transcript.js              尾读 transcript（本轮工具与 usage 聚合 + 上下文新鲜度判定）
   ├ session-stats.js           /clear 会话重置识别与 Diff/耗时逻辑基线管理
   ├ doctor.js                  --doctor 环境诊断（Node/配置/编码/Git/transcript）
   ├ git.js                     Git 状态探测与 direct HEAD 读取缓存
@@ -39,7 +39,7 @@ runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--d
   ├ settings-file.js           JSONC 解析、配置权限与符号链接保护
   └ uninstall.js               --uninstall 清理配置、shim、缓存与状态
 tests/fixtures/*.json          3 个 payload fixture
-tests/unit/*.test.mjs          21 个核心单元测试文件
+tests/unit/*.test.mjs          22 个核心单元测试文件
 scripts/install.ps1            Windows PowerShell 一键在线安装脚本
 scripts/install.sh             POSIX Shell 一键在线安装脚本
 scripts/bootstrap.js           Release 远程在线安装与自举更新器
@@ -79,7 +79,7 @@ node runtime/bin/codebuddy-hud.js --theme list
    - 聚合范围：`getTurnUsageMetrics()` 从 EOF 回扫至 `role: 'user'`，展示本轮聚合（`sum(hitTokens) / sum(promptTokens)`），非单次调用瞬时值；
    - 三态契约：`null`（渲染层兜底为 `{available:false}`，显示 `cache --`）、`{available:false}`（`cache --`）、`{available:true, X%}`（正常数值）。
 6. **Token、变更与 Credits 口径**：
-   - Token 资源块（Line 2）显示当前上下文输入占用与容量（`Context Token in/size`），进度条分子严格使用 `inTokens`（与 `used_percentage` 同基底）；`outTokens` 独立展示，compact 压缩后宿主尚未提供新 usage 时显示 `--` 与显式等待提示；
+   - Token 资源块（Line 2）显示当前上下文输入占用与容量（`Context Token in/size`），进度条分子严格使用 `inTokens`（与 `used_percentage` 同基底）；高缓存命中率或服务商将 miss 视作 creation（如 DeepSeek）时，宿主将 `current_usage.input_tokens` 扣减为 0，HUD 自动按 `combined = rawInput + cacheRead + cacheCreation` 还原活跃上下文占用；未扣减提示词与缓存并存时，结合 `used_percentage` 倒推残差仲裁防翻倍；`outTokens` 独立展示，compact 压缩后宿主尚未提供新 usage 时显示 `--` 与显式等待提示（上下文新鲜度支持双向遥测匹配）；
    - 变更摘要（Line 3）以 Unicode `Δ` 开头，ASCII fallback 为 `[D]`；
    - Credits（Line 3）为当前 transcript 会话的增量累计实际消费，按 transcript 独立缓存状态；扫描预算耗尽且尚未完成时隐藏累计值，不能把已扫描前缀或 payload 兜底显示为总额。
 7. **配置防御与降级**：

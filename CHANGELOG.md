@@ -10,6 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] (待发布)
 
+## [v0.3.7] - 2026-09-22
+
+### Changed (变更与优化)
+- **琥珀金主题视觉升级**：
+  - 琥珀金（`amber`）：暗色与亮色模式主色（`primary`）、强调色（`accent`）、模型名与 Git 分支统一升级为耀眼金色（`gold`，`\x1b[93m`），提升整体质感与对比度；
+  - 调色板引擎（`runtime/renderer/format.js`）：新增导出 `brightPurple`（标准 16 色高亮紫，`\x1b[95m`）；
+  - 排版视觉层级对齐：模型名与 Context Token 标题加粗（`bold`），状态文本与 Cache 命中率数值保持细体（slim），权限模式标识（`permission_mode`）统一使用 `brightPurple`，提高跨终端兼容性并消除暗色背景下的辨识度问题。
+
+### Fixed (缺陷修复)
+- **高缓存命中率下 Context Token 分子恒为 0 与进度条消失**：
+  - 针对 DeepSeek 等服务商将 miss 视作 creation 导致宿主 `current_usage.input_tokens` 扣减为 0 的场景，HUD 自动按 `combined = rawInput + cacheRead + cacheCreation` 还原活跃上下文输入总占用，恢复进度条与占用显示；
+  - 消除未扣减提示词与缓存并存时的翻倍缺陷，引入与 `used_percentage` 占用的残差距离仲裁，杜绝重复计算；
+  - 上下文新鲜度判定（`createContextTracker`）与 compact 状态检测（`getCompactContextStatus`）升级为双向遥测匹配，同时支持还原总输入与原始未扣减输入。
+
+### Refactored (重构与工程质量)
+- **统一 Payload 输入还原基准**：抽象 `resolveReportedInputs` 帮助函数，保持 DRY 并统一跨模块输入还原逻辑。
+- **回归测试套件扩充**：新增 `tests/unit/context-token.test.mjs`，覆盖高缓存占用还原、未扣减防翻倍、双向新鲜度匹配及 post-compact 保护全链路场景；全量单元测试文件增至 22 个，单测用例增至 413 个。
+
 ## [v0.3.5] - 2026-09-21
 
 ### Changed (变更与优化)
@@ -105,7 +123,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 提供跨平台一键安装、卸载、环境体检诊断与隔离环境安装验证闭环。
 - 基于 GitHub Release 不变 tag 实现高可靠安装与静默后台更新检测。
 
-[Unreleased]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.7...HEAD
+[v0.3.7]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.5...v0.3.7
 [v0.3.5]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.2...v0.3.5
 [v0.3.2]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.0...v0.3.2
 [v0.3.0]: https://github.com/XisFool/codebuddy-hud/compare/v0.2.1...v0.3.0

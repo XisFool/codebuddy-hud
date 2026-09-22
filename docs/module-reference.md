@@ -1,6 +1,6 @@
 # CodeBuddy HUD 模块 API 参考手册 (Module Reference)
 
-> **版本：** `v0.2.0+`  
+> **版本：** `v0.3.7+`  
 > **根路径：** 所有模块相对路径均以仓库根目录或 `~/.codebuddy/codebuddy-hud-runtime/` 为基准。
 
 ---
@@ -43,10 +43,11 @@
 - `--setup`: 执行安装，写入 `settings.json` 并生成 Windows `.cmd` shim。
 - `--uninstall`: 仅恢复备份中的 `statusLine`（备份记录的命令自身指向 codebuddy-hud 时改为移除该项），清理缓存及 shim，保留其他 settings 与用户主题配置。
 - `--theme [name]`: 交互式切换或指定设置主题（如 `--theme cyberpunk`、`--theme list`）。
-- `--doctor` / `-d`: 运行环境健康体检（支持 `--json` 输出结构化报告）。
-- `--status`: 输出当前 HUD 静态看板样例（用于健康探测）。
+- `--doctor [--json]`: 运行全面诊断体检，输出诊断报告（支持人类友好文本或 JSON 格式）。
+- `--status`: 冒烟探测当前状态栏能否正常渲染（3 行输出与 exit 0）。
+- `-d, --debug`: 输出详细调试信息。
 
-### 关键常量 (Constants)
+### 内部常数配置
 ```javascript
 const TIMEOUT_MS = 800;          // Stdin 安全超时，预留 700ms 给渲染与 stdout 刷新
 const LOG_MAX_BYTES = 1024 * 1024; // 错误日志 1MB 自动轮转上限
@@ -95,6 +96,9 @@ export function extractCostData(cbData: CodeBuddyPayload): {
 export function num(val: any): number;
 ```
 
+> **Token 占用还原与仲裁机制**：
+> 针对 DeepSeek 等服务商将 miss 视作 creation 导致宿主 `current_usage.input_tokens` 扣减为 0 的场景，`extractTokenData` 自动通过 `combined = rawInput + cacheRead + cacheCreation` 还原活跃上下文输入总占用（与 `used_percentage` 基底对齐）；当未扣减提示词与缓存并存时，通过比对 `combined` 与 `rawInput` 相对 `used_percentage` 理论占用的残差距离执行动态仲裁，杜绝翻倍缺陷。
+
 ### 数据结构 Shape
 ```javascript
 // CodeBuddyPayload 基础形态
@@ -110,7 +114,8 @@ export function num(val: any): number;
     current_usage?: {
       input_tokens?: number,
       output_tokens?: number,
-      cache_read_input_tokens?: number
+      cache_read_input_tokens?: number,
+      cache_creation_input_tokens?: number
     }
   },
   cost?: {
@@ -144,7 +149,7 @@ export const DEFAULT_CONFIG: ResolvedConfig;
 - `ocean` (默认): 深海青蓝科技风 (dark: `cyan`/`gray`, light: `blue`/`gray`)
 - `emerald`: 翡翠绿清新护眼 (dark: `brightGreen`/`gray`, light: `green`/`gray`)
 - `cyberpunk`: 赛博朋克炫酷粉紫+荧光青 (dark: `brightMagenta`/`cyan`, light: `magenta`/`blue`)
-- `amber`: 琥珀金复古沉稳 (dark/light: `yellow`/`gray`)
+- `amber`: 琥珀金耀眼质感 (dark/light: `gold`/`gray`)
 - `monochrome`: 黑白极简经典终端 (dark/light: `gray`/`gray`)
 
 ### 安全机制 (Why)
@@ -170,8 +175,8 @@ export function renderHUD(
 > **说明**：必须传入完整解析后的 `config` 配置对象。当 `config` 省略或未提供时，渲染器首行守卫将直接返回空字符串 `''`。
 
 ### 3 行输出排版规范
-- **Line 1 (Identity)**: `[ModelName] [EffortIcon][EffortLabel] │ [Branch*] │ [Workspace] │ [Permission]`（ASCII 模式下图标为空，仅保留级别文本）
-- **Line 2 (Tokens)**: `Context Token 249k/1M [███░░░░░░░] 25% │ out 1.1k │ cache 96.8%`；compact 压缩后若宿主仍提供旧 usage，则显示等待提示与 `--` 占位。
+- **Line 1 (Identity)**: `[ModelName] [EffortIcon][EffortLabel] │ [Branch*] │ [Workspace] │ [Permission]`（模型名称加粗；权限模式统一使用标准 16 色高亮紫 `brightPurple`；ASCII 模式下图标为空，仅保留级别文本）
+- **Line 2 (Tokens)**: `Context Token 249k/1M [███░░░░░░░] 25% │ out 1.1k │ cache 96.8%`；Context Token 标题加粗，占用分子支持高缓存扣减还原与防翻倍仲裁；compact 压缩后若宿主仍提供旧 usage，则显示等待提示与 `--` 占位。
 - **Line 3 (Diff/Cost/Tools)**: `Δ +1.7k -161 │ 82.04 credits │ ⏱ 2h47m │ ◐ Edit: parser.js  ✓ Read ×3  ✓ Grep ×2` (全空自动隐藏)
 
 ---
@@ -186,8 +191,8 @@ export function renderHUD(
 - `createProgressBar(pct: number, width: number, thresholds: object, glyphs: object): string`: 生成自适应色阶进度条。
 - `calculateTurnCacheMetrics(usage: object | null): TurnCacheMetrics | { available: false } | null`: 从单条 usage 计算缓存命中指标，字段缺失或总 prompt 为 0 时返回 `{ available: false }`（渲染为 `cache --`），无 usage 时返回 `null`。
 - `metricsFromPromptCache(hitTokens: number, promptTokens: number): TurnCacheMetrics | null`: 从本轮聚合命中数与 prompt 数构建三态缓存指标（调用方在返回 `null` 时兜底归一为 `{ available: false }` 并渲染 `cache --`）。
-- `formatTurnCacheBadge(metrics, label, isCompact, thresholds): string`: 渲染缓存徽标：可用时 `cache 98.5%`（按 `thresholds` 分色），无遥测时降级为 `cache --`。
-- 辅助导出与调色：`ANSI_COLORS`、`RESET`、`BOLD`、`DIM` 样式常量；`color`、`bold`、`dim`、`themeColor`、`getThemeColor` 调色辅助函数；`normalizeTokenCount`、`sumCachedTokens` 聚合清洗函数。
+- `formatTurnCacheBadge(metrics, label, isCompact, thresholds): string`: 渲染缓存徽标：可用时 `cache 98.5%`（按 `thresholds` 分色，数值保持细体），无遥测时降级为 `cache --`。
+- 辅助导出与调色：`ANSI_COLORS`（含 `brightPurple: '\x1b[95m'` 等）、`RESET`、`BOLD`、`DIM` 样式常量；`color`、`bold`、`dim`、`themeColor`、`getThemeColor` 调色辅助函数；`normalizeTokenCount`、`sumCachedTokens` 聚合清洗函数。
 
 ---
 
@@ -311,7 +316,12 @@ export function getTurnMetricsAndActivity(
 };
 ```
 
-`getTurnMetricsAndActivity()` 共享本轮 usage 和工具活动的逆向扫描。会话 Credits 另用前向 checkpoint 扫描，分块循环预算 100ms。`complete: false` 表示预算耗尽、短读或尾行尚未完成；此时累计值与调用数为 `null`，内部 checkpoint 仍可续扫。渲染层隐藏 Credits 并禁止 payload 兜底。
+`getTurnMetricsAndActivity()` 共享本轮 usage 和工具活动的逆向扫描。会话 Credits 另用前向 checkpoint 扫描，分块循环预算 100ms。`complete: false` 表示预算耗尽、短读或尾行尚未完成；此时累计值与调用数为 `null`，内部 checkpoint 仍可续扫。渲染层隐藏 Credits 并禁止 payload 兜底。`contextStatus` 通过双向遥测匹配（同时兼容宿主扣减缓存后的输入还原与原始未扣减提示词）检测活跃上下文 usage 的新鲜度，在 `/compact` 产生压缩摘要而宿主尚未返回新 usage 时输出 `stale`。
+
+### 核心状态机与双向遥测匹配机制
+- `createContextTracker(contextWindow)`：沿消息 `parentId` 逆向回溯历史链。检测到完成的 compact 压缩摘要即置 `stale`；检测到普通活跃 API usage 时，通过 `resolveReportedInputs(usage)` 进行双向遥测比对（`matchesInput = reportedInput === input || rawReportedInput === input`），匹配当前 payload 即置 `fresh`。
+- `getCompactContextStatus(transcriptPath, contextWindow, opts)`：当宿主未在边界完整保留 parent 关联时的尾窗位置回退比对状态机。
+- `resolveReportedInputs(usage)`：提取 `{ combined, raw }`，统一还原基准（`combined = input_tokens + cache_read_input_tokens + cache_creation_input_tokens`）。
 
 ### 辅助导出与常数
 - 辅助扫描函数：`getRecentToolActivity(path, opts)`、`getRecentUsageMetrics(path, opts)`、`extractUsageMetrics(line)`。
@@ -456,6 +466,8 @@ export function setup(options?: {
 
 export function buildStatusLineCommand(platform: string, hudBin: string, nodeExe: string): string;
 export function buildCmdShimContent(nodeExe: string, hudBin?: string): string;
+export function parseSettingsJson(content: string): object;
+export function isSettingsObject(val: unknown): val is Record<string, unknown>;
 ```
 
 ### 关键机制
