@@ -28,9 +28,9 @@ after(() => {
   fs.rmSync(testDir, { recursive: true, force: true });
 });
 
-// Numbers taken from a real session (deepseek-v4.1-flash): the host deducts the
-// cache from usage.inputTokens, so current_usage.input_tokens arrives as 0 while
-// the cache fields carry the recovered hit/miss counts.
+// Numbers taken from a real session (deepseek-v4.1-flash): the host treats miss
+// as creation (codebuddy.js:11493650), making cacheRead + cacheCreation === prompt,
+// so current_usage.input_tokens arrives as 0 regardless of hit rate.
 const HOST_TOTAL = 27861;
 const HOST_HIT = 27648;
 const HOST_MISS = 213;
@@ -164,11 +164,20 @@ describe('extractTokenData context input occupancy', () => {
     assert.equal(result.inTokens, 5000);
   });
 
-  it('falls back to used_percentage occupancy when no usage is reported', () => {
+  it('does not double-count when payload carries raw prompt along with cache fields', () => {
     const result = extractTokenData({
-      context_window: { context_window_size: 1000000, used_percentage: 5 },
+      context_window: {
+        context_window_size: HOST_CTX_SIZE,
+        used_percentage: HOST_PCT,
+        current_usage: {
+          input_tokens: HOST_TOTAL,
+          output_tokens: HOST_OUTPUT,
+          cache_read_input_tokens: HOST_HIT,
+          cache_creation_input_tokens: HOST_MISS,
+        },
+      },
     });
-    assert.equal(result.inTokens, 50000);
+    assert.equal(result.inTokens, HOST_TOTAL);
   });
 
   it('reports 0 when there is no telemetry at all', () => {
@@ -191,6 +200,23 @@ describe('context freshness against the host-adjusted payload', () => {
         context_window_size: HOST_CTX_SIZE,
         used_percentage: HOST_PCT,
         current_usage: { input_tokens: HOST_TOTAL, output_tokens: HOST_OUTPUT },
+      },
+    });
+    assert.equal(result.contextStatus, 'fresh');
+  });
+
+  it('resolves fresh when payload carries raw prompt along with cache fields', () => {
+    const transcript = writeTranscript('raw-with-cache', [userEntry(), assistantEntry()]);
+    const result = getTurnMetricsAndActivity(transcript, {
+      contextWindow: {
+        context_window_size: HOST_CTX_SIZE,
+        used_percentage: HOST_PCT,
+        current_usage: {
+          input_tokens: HOST_TOTAL,
+          output_tokens: HOST_OUTPUT,
+          cache_read_input_tokens: HOST_HIT,
+          cache_creation_input_tokens: HOST_MISS,
+        },
       },
     });
     assert.equal(result.contextStatus, 'fresh');

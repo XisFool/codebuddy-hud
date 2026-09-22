@@ -164,11 +164,7 @@ if (args.includes('--setup')) {
     cwd: statusCwd,
     version: '0.1.0',
     cost: { credits: 82.04, total_cost_usd: 0, total_duration_ms: 10020000, total_api_duration_ms: 4980000, total_lines_added: 1700, total_lines_removed: 161 },
-    // Mirrors the host's real shape: current_usage.input_tokens is the
-    // cache-adjusted remainder (0 on a high-hit-rate call), while
-    // input + cache_read + cache_creation is the host's own context total and
-    // the basis of used_percentage (250000 / 1000000 = 25%).
-    context_window: { total_input_tokens: 250000, total_output_tokens: 1100, context_window_size: 1000000, used_percentage: 25, current_usage: { input_tokens: 0, output_tokens: 1100, cache_read_input_tokens: 241032, cache_creation_input_tokens: 8968 } },
+    context_window: { total_input_tokens: 249000, total_output_tokens: 1100, context_window_size: 1000000, used_percentage: 25, current_usage: { input_tokens: 249000, output_tokens: 1100, cache_read_input_tokens: 241032, cache_creation_input_tokens: 0 } },
   });
   handleRender(samplePayload);
 } else {

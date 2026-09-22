@@ -35,21 +35,26 @@ function extractTokenData(cbData) {
   const ctxPercent = num(cw.used_percentage);
 
   // The host's current_usage.input_tokens is cache-adjusted
-  // (max(0, usage.inputTokens - cacheRead - cacheCreation)), so high-hit-rate
-  // sessions arrive as 0. Current context input occupancy is therefore the
-  // host's own total identity input + cache_read + cache_creation, which shares
-  // its basis with used_percentage / context_window_size. Fall back to the raw
-  // input_tokens when the cache fields are dirty (beyond the window), then to
-  // used_percentage-derived occupancy.
+  // (max(0, usage.inputTokens - cacheRead - cacheCreation)).
+  // For providers returning prompt_cache_miss_tokens (e.g. DeepSeek), the host
+  // treats miss as creation (codebuddy.js:11493650), making
+  // cacheRead + cacheCreation === usage.inputTokens, so input_tokens arrives
+  // as 0 regardless of hit rate.
+  // Restore host total when deducted down to 0; when positive, arbitrate
+  // against used_percentage occupancy (fromPercent) to avoid double-counting
+  // if the host already sent the un-deducted prompt total.
   const combined = rawInput + cacheRead + cacheWrite;
   const fromPercent = ctxPercent > 0 && ctxSize > 0
     ? Math.round((ctxPercent / 100) * ctxSize)
     : 0;
   let inTokens = rawInput;
   if (combined > 0 && (ctxSize <= 0 || combined <= ctxSize)) {
-    inTokens = combined;
-  } else if (rawInput <= 0 && fromPercent > 0) {
-    inTokens = fromPercent;
+    if (rawInput <= 0) {
+      inTokens = combined;
+    } else if (fromPercent > 0
+               && Math.abs(combined - fromPercent) < Math.abs(rawInput - fromPercent)) {
+      inTokens = combined;
+    }
   }
 
   return {

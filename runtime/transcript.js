@@ -712,17 +712,19 @@ function createContextTracker(contextWindow) {
       if (pd.agent !== 'compact' && pd.usage) {
         const input = pd.usage.inputTokens ?? pd.usage.input_tokens;
         const output = pd.usage.outputTokens ?? pd.usage.output_tokens;
-        // The payload's current_usage.input_tokens has the cache deducted by the
-        // host (0 on high-hit-rate sessions), while the transcript records the
-        // full prompt. Match on the host's own total identity
-        // input + cache_read + cache_creation so the two bases line up.
+        // The payload's current_usage.input_tokens may have the cache deducted by
+        // the host (0 on DeepSeek / providers where miss is treated as creation),
+        // or it may carry the full un-deducted prompt. Match either the restored
+        // total (input + cache_read + cache_creation) or the raw input_tokens.
         const reportedInput = ((reported && reported.input_tokens) ?? 0)
           + ((reported && reported.cache_read_input_tokens) ?? 0)
           + ((reported && reported.cache_creation_input_tokens) ?? 0);
+        const rawReportedInput = (reported && reported.input_tokens) ?? 0;
+        const matchesInput = reportedInput === input || rawReportedInput === input;
         const reportedOutput = (reported && reported.output_tokens) ?? 0;
         if (reported && !sawUsage && Number.isFinite(input) && input >= 0
             && Number.isFinite(output) && output >= 0
-            && reportedInput === input && reportedOutput === output) {
+            && matchesInput && reportedOutput === output) {
           this.status = 'fresh';
           this.done = true;
           return;
@@ -755,7 +757,6 @@ function getCompactContextStatus(transcriptPath, contextWindow, opts) {
     fs.closeSync(fd);
     let compactAt = -1;
     let usageAt = -1;
-    let latestUsageAt = -1;
     let index = 0;
     for (const line of text.toString('utf8').split('\n')) {
       let e; try { e = JSON.parse(line); } catch { continue; }
@@ -764,15 +765,15 @@ function getCompactContextStatus(transcriptPath, contextWindow, opts) {
           && (pd.isCompactInternal === true || pd.agent === 'compact')
           && e.status !== 'failed' && e.status !== 'cancelled') compactAt = index;
       if (pd.agent !== 'compact' && pd.usage) {
-        latestUsageAt = index;
         const u = pd.usage;
         const cu = contextWindow.current_usage;
-        // Same basis as createContextTracker: the payload's input_tokens has the
-        // cache deducted, so restore the host's total before comparing.
+        // Same basis as createContextTracker: match either restored or raw input.
         const cuInput = ((cu && cu.input_tokens) ?? 0)
           + ((cu && cu.cache_read_input_tokens) ?? 0)
           + ((cu && cu.cache_creation_input_tokens) ?? 0);
-        if (cu && u.inputTokens === cuInput && u.outputTokens === cu.output_tokens) usageAt = index;
+        const rawCuInput = (cu && cu.input_tokens) ?? 0;
+        const matchesInput = u.inputTokens === cuInput || u.inputTokens === rawCuInput;
+        if (cu && matchesInput && u.outputTokens === cu.output_tokens) usageAt = index;
       }
       index++;
     }
