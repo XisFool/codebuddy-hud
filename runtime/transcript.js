@@ -712,9 +712,17 @@ function createContextTracker(contextWindow) {
       if (pd.agent !== 'compact' && pd.usage) {
         const input = pd.usage.inputTokens ?? pd.usage.input_tokens;
         const output = pd.usage.outputTokens ?? pd.usage.output_tokens;
-        if (!sawUsage && Number.isFinite(input) && input >= 0
+        // The payload's current_usage.input_tokens has the cache deducted by the
+        // host (0 on high-hit-rate sessions), while the transcript records the
+        // full prompt. Match on the host's own total identity
+        // input + cache_read + cache_creation so the two bases line up.
+        const reportedInput = ((reported && reported.input_tokens) ?? 0)
+          + ((reported && reported.cache_read_input_tokens) ?? 0)
+          + ((reported && reported.cache_creation_input_tokens) ?? 0);
+        const reportedOutput = (reported && reported.output_tokens) ?? 0;
+        if (reported && !sawUsage && Number.isFinite(input) && input >= 0
             && Number.isFinite(output) && output >= 0
-            && reported && reported.input_tokens === input && reported.output_tokens === output) {
+            && reportedInput === input && reportedOutput === output) {
           this.status = 'fresh';
           this.done = true;
           return;
@@ -758,8 +766,13 @@ function getCompactContextStatus(transcriptPath, contextWindow, opts) {
       if (pd.agent !== 'compact' && pd.usage) {
         latestUsageAt = index;
         const u = pd.usage;
-        if (u.inputTokens === contextWindow.current_usage?.input_tokens
-            && u.outputTokens === contextWindow.current_usage?.output_tokens) usageAt = index;
+        const cu = contextWindow.current_usage;
+        // Same basis as createContextTracker: the payload's input_tokens has the
+        // cache deducted, so restore the host's total before comparing.
+        const cuInput = ((cu && cu.input_tokens) ?? 0)
+          + ((cu && cu.cache_read_input_tokens) ?? 0)
+          + ((cu && cu.cache_creation_input_tokens) ?? 0);
+        if (cu && u.inputTokens === cuInput && u.outputTokens === cu.output_tokens) usageAt = index;
       }
       index++;
     }

@@ -28,15 +28,39 @@ function extractTokenData(cbData) {
   if (!cw || typeof cw !== 'object') return null;
 
   const usage = cw.current_usage || {};
+  const rawInput = num(usage.input_tokens);
+  const cacheRead = num(usage.cache_read_input_tokens);
+  const cacheWrite = num(usage.cache_creation_input_tokens);
+  const ctxSize = num(cw.context_window_size);
+  const ctxPercent = num(cw.used_percentage);
+
+  // The host's current_usage.input_tokens is cache-adjusted
+  // (max(0, usage.inputTokens - cacheRead - cacheCreation)), so high-hit-rate
+  // sessions arrive as 0. Current context input occupancy is therefore the
+  // host's own total identity input + cache_read + cache_creation, which shares
+  // its basis with used_percentage / context_window_size. Fall back to the raw
+  // input_tokens when the cache fields are dirty (beyond the window), then to
+  // used_percentage-derived occupancy.
+  const combined = rawInput + cacheRead + cacheWrite;
+  const fromPercent = ctxPercent > 0 && ctxSize > 0
+    ? Math.round((ctxPercent / 100) * ctxSize)
+    : 0;
+  let inTokens = rawInput;
+  if (combined > 0 && (ctxSize <= 0 || combined <= ctxSize)) {
+    inTokens = combined;
+  } else if (rawInput <= 0 && fromPercent > 0) {
+    inTokens = fromPercent;
+  }
+
   return {
-    inTokens: num(usage.input_tokens),
+    inTokens,
     outTokens: num(usage.output_tokens),
-    cacheRead: num(usage.cache_read_input_tokens),
-    cacheWrite: num(usage.cache_creation_input_tokens),
+    cacheRead,
+    cacheWrite,
     totalInput: num(cw.total_input_tokens),
     totalOutput: num(cw.total_output_tokens),
-    ctxSize: num(cw.context_window_size),
-    ctxPercent: num(cw.used_percentage),
+    ctxSize,
+    ctxPercent,
   };
 }
 

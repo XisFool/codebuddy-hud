@@ -61,9 +61,12 @@ describe('extractTokenData', () => {
   });
 
   it('handles missing current_usage gracefully', () => {
+    // No current_usage → derive occupancy from used_percentage ×
+    // context_window_size. With no percentage telemetry either, the numerator
+    // stays 0 (see context-token.test.mjs).
     const data = { context_window: { context_window_size: 1000000, used_percentage: 5 } };
     const result = extractTokenData(data);
-    assert.equal(result.inTokens, 0);
+    assert.equal(result.inTokens, 50000);
     assert.equal(result.ctxSize, 1000000);
   });
 });

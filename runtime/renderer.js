@@ -157,14 +157,16 @@ function renderHUD(cbData, config) {
     }
 
     if (disp.showCacheHitRate !== false) {
-      // Real cache telemetry lives in the transcript's providerData, NOT in the
-      // statusLine payload (whose cache_read_input_tokens is hard-zero on this
-      // provider). A conversation turn spans many API calls (avg 19.3), so the
-      // badge aggregates the whole current turn — sampling only the newest call
+      // Real per-turn cache telemetry lives in the transcript's providerData.
+      // Two shapes exist there: rawUsage (authoritative, hit + miss ===
+      // prompt_tokens) and the hard-zero cache_read_input_tokens trap field.
+      // A conversation turn spans many API calls (avg 19.3), so the badge
+      // aggregates the whole current turn — sampling only the newest call
       // swings between ~0% (cold start) and ~99%.
-      // No payload fallback: cache_read_input_tokens is hard-zero on this
-      // provider, so re-reading it would fake a `cache 0.0%` readout. With no
-      // usable transcript telemetry the badge degrades to `cache --`.
+      // No payload fallback: the statusLine payload carries only the newest
+      // call, so echoing its cache fields would present one call as the whole
+      // turn. With no usable transcript telemetry the badge degrades to
+      // `cache --`.
       let cacheMetrics = turnUsage
         ? metricsFromPromptCache(turnUsage.hitTokens, turnUsage.promptTokens)
         : null;
