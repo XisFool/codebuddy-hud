@@ -87,7 +87,7 @@ function renderThemePreview(themeName, mode = 'dark') {
   const modelPart = `${bold(color('Deepseek-V4.1-Flash', m))} ${color('● max', 'red')}`;
   const branchPart = `${color('main', b)}${color('*', 'yellow')}`;
   const projectPart = color('codebuddy-cli-hud', a);
-  const permPart = color('default', 'brightMagenta');
+  const permPart = color('default', 'brightPurple');
   const line1 = `${modelPart}${sep}${branchPart}${sep}${projectPart}${sep}${permPart}`;
 
   // Line 2: Context Window & Tokens
@@ -97,7 +97,7 @@ function renderThemePreview(themeName, mode = 'dark') {
   const bar = `${color('███', 'green')}${dim('░░░░░░░')}`;
   const ctxProgress = `${ctxLabel} ${color('[', 'gray')}${bar}${color(']', 'gray')} ${color('25%', 'green')}`;
   const outPart = `${color('out ', 'gray')}${color('1.1k', a)}`;
-  const cachePart = `${color('cache', 'green')} ${bold(color('96.8%', 'green'))}`;
+  const cachePart = `${color('cache', 'green')} ${color('96.8%', 'green')}`;
   const line2 = `${ctxProgress}${sep}${outPart}${sep}${cachePart}`;
 
   // Line 3: Diff Stats, Credits, Duration & Tool Activity

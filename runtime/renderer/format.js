@@ -6,6 +6,7 @@ const ANSI_COLORS = {
   brightBlue: '\x1b[94m',
   magenta: '\x1b[35m',
   brightMagenta: '\x1b[38;5;219m',
+  brightPurple: '\x1b[95m',
   yellow: '\x1b[33m',
   gold: '\x1b[93m',
   brightYellow: '\x1b[93m',
@@ -237,7 +238,7 @@ function formatTurnCacheBadge(metrics, label, isCompact, thresholds) {
   const text = `${label} ${rateStr}`;
 
   if (rate >= excellentThresh) {
-    return `${ANSI_COLORS.green}${BOLD}${text}${RESET}`;
+    return `${ANSI_COLORS.green}${text}${RESET}`;
   }
   if (rate >= partialThresh) {
     return `${ANSI_COLORS.yellow}${text}${RESET}`;

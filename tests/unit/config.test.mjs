@@ -162,7 +162,7 @@ describe('THEME_PRESETS and resolveTheme', () => {
     assert.equal(emerald.name, 'emerald');
 
     const amber = resolveTheme({ theme: 'amber', themeMode: 'dark' });
-    assert.equal(amber.primary, 'yellow');
+    assert.equal(amber.primary, 'gold');
     assert.equal(amber.name, 'amber');
 
     const monochrome = resolveTheme({ theme: 'monochrome', themeMode: 'dark' });

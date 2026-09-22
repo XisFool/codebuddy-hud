@@ -110,9 +110,8 @@ function renderHUD(cbData, config) {
   if (disp.showPermissionMode !== false && cbData.permission_mode) {
     // 22 chars fits `bypassPermissions` (17) plus headroom for future modes
     // without re-introducing the truncation that produced `bypassPermissio`.
-    // Bright magenta instead of dimmed magenta: dim purple is near-illegible
-    // on dark backgrounds (user-reported).
-    line1Parts.push(color(sanitizeTerminalText(cbData.permission_mode, 22), 'brightMagenta'));
+    // Standard bright purple (16-color) instead of dimmed purple or 256-color pink.
+    line1Parts.push(color(sanitizeTerminalText(cbData.permission_mode, 22), 'brightPurple'));
   }
 
   if (disp.showVersion === true && cbData.version) {

@@ -199,6 +199,16 @@ describe('renderHUD', () => {
     assert.ok(!/bypassPermissio\x1b/.test(line1),
       `must not end with bypassPermissio: ${JSON.stringify(line1)}`);
   });
+
+  it('renders permission_mode with brightPurple, applies bold to model and Context Token titles, but leaves status and cache slim', () => {
+    const output = renderHUD(fullPayload, defaultConfig);
+    const [line1, line2] = output.split('\n');
+    assert.ok(line1.includes('\x1b[95mdefault\x1b[0m'), 'permission_mode must use brightPurple');
+    assert.ok(line1.includes('\x1b[1m'), 'line 1 must bold model name');
+    assert.ok(!line1.includes('\x1b[1m\x1b[95mdefault'), 'permission_mode must not be bold');
+    assert.ok(line2.includes('\x1b[1m'), 'line 2 must bold Context Token label');
+    assert.ok(!line2.includes('\x1b[1mcache'), 'cache badge must remain slim (not bold)');
+  });
 });
 
 describe('renderHUD — tool activity merged into line 3', () => {

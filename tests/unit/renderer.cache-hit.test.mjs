@@ -80,11 +80,11 @@ describe('calculateTurnCacheMetrics', () => {
 });
 
 describe('formatTurnCacheBadge', () => {
-  it('excellent tier (>=80%) uses green+bold', () => {
+  it('excellent tier (>=80%) uses green without bold', () => {
     const metrics = { available: true, hitRate: 85.2, cacheRead: 8520, totalPrompt: 10000 };
     const result = formatTurnCacheBadge(metrics);
     assert.ok(result.includes('\x1b[32m'));
-    assert.ok(result.includes('\x1b[1m'));
+    assert.ok(!result.includes('\x1b[1m'));
     assert.ok(result.includes('cache 85.2%'));
     assert.ok(result.endsWith('\x1b[0m'));
   });
@@ -132,7 +132,7 @@ describe('formatTurnCacheBadge', () => {
     const customThresholds = { excellent: 50, partial: 30 };
     const result = formatTurnCacheBadge(metrics, 'cache', false, customThresholds);
     assert.ok(result.includes('\x1b[32m'));
-    assert.ok(result.includes('\x1b[1m'));
+    assert.ok(!result.includes('\x1b[1m'));
   });
 });
 

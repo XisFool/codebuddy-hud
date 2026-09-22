@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { formatTokens, formatDurationMs, createProgressBar } = require('../../runtime/renderer/format.js');
+const { formatTokens, formatDurationMs, createProgressBar, ANSI_COLORS, color } = require('../../runtime/renderer/format.js');
 
 describe('formatTokens', () => {
   it('formats zero', () => assert.equal(formatTokens(0), '0'));
@@ -64,5 +64,12 @@ describe('createProgressBar', () => {
   it('uses red at critical threshold', () => {
     const bar = createProgressBar(95, 10, thresholds, unicodeGlyphs);
     assert.ok(bar.includes('\x1b[31m'));
+  });
+});
+
+describe('color and ANSI_COLORS', () => {
+  it('includes brightPurple in ANSI_COLORS and formats text with 16-color high bright purple', () => {
+    assert.equal(ANSI_COLORS.brightPurple, '\x1b[95m');
+    assert.equal(color('test', 'brightPurple'), '\x1b[95mtest\x1b[0m');
   });
 });
