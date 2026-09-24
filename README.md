@@ -20,11 +20,23 @@
 
 ![CodeBuddy HUD 预览](./assets/codebuddy-hud-preview.svg)
 
+**UTF-8 终端**：
+
 ```text
 Deepseek-V4.1-Flash ● max  │  main*  │  my-project  │  default
 Context Token 249k/1M [███░░░░░░░] 25%  │  out 1.1k  │  cache 96.8%
 Δ +1.7k -161  │  82.04 credits  │  ⏱ 2h47m  │  ◐ Edit: parser.js  ✓ Read ×3  ✓ Grep ×2
 ```
+
+**GBK 终端**（Windows 默认代码页 936 等 Unicode 支持不佳的环境）自动降级为纯 ASCII 字形，数据与布局不变：
+
+```text
+Deepseek-V4.1-Flash max  |  main*  |  my-project  |  default
+Context Token 249k/1M [###-------] 25%  |  out 1.1k  |  cache 96.8%
+[D] +1.7k -161  |  82.04 credits  |  [t] 2h47m  |  [A] Edit: parser.js  [T] Read ×3  [T] Grep ×2
+```
+
+> 可用 `CODEBUDDY_HUD_FORCE_ASCII=1` / `CODEBUDDY_HUD_FORCE_UNICODE=1` 强制指定形态；乱码排查见「诊断」。
 
 ### 布局说明
 
