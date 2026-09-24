@@ -178,6 +178,7 @@ Common issues and fixes:
 | Symptom | Fix |
 | :--- | :--- |
 | No HUD at the bottom | Send any message to trigger a refresh; if it still fails, run `--doctor` to check the configured target |
+| ⏱ Duration or tool activity doesn't tick in real time | Normal behavior. The host provides no periodic heartbeat and only triggers on turn completion, file writes, or config changes (see "Host Refresh Mechanism & Constraints") |
 | Garbled or box characters | Run `chcp 65001` to switch to UTF-8; if still incompatible set `CODEBUDDY_HUD_FORCE_ASCII=1` for plain ASCII symbols, or `CODEBUDDY_HUD_FORCE_UNICODE=1` to force Unicode |
 | `cache --` / no spend data | Normal degradation when telemetry fields are unavailable — see "Verify" |
 | Δ / duration behavior after `/clear` | The host switches to a new transcript; the HUD rebuilds its baseline and resets Δ / duration, taking effect on the next message |
@@ -314,9 +315,27 @@ codebuddy-hud/
 ## Cross-platform notes
 
 - **Windows**: the installer generates a `codebuddy-hud.cmd` shim with the Node absolute path baked in; it injects `@chcp 65001` when a non-ASCII path is detected. Terminal encoding probes are cached, and `CODEBUDDY_HUD_FORCE_ASCII` / `CODEBUDDY_HUD_FORCE_UNICODE` always override the cache.
-- **Windows path limitation**: the host v2.146.0 launch chain has escaping limits on paths containing spaces, quotes, or other special characters — avoid placing the repo or runtime in such directories.
+- **Windows path limitation**: to ensure cross-version compatibility and avoid shell escaping limits, avoid placing the repo or runtime in directories containing spaces or quotes.
 - **ASCII fallback**: when the terminal does not support Unicode, the HUD switches to plain ASCII symbols (borders, bars, icons) with no loss of functionality.
 - **macOS / Linux**: invoke the entry directly with `node`; no shim is needed.
+
+---
+
+## Host Refresh Mechanism & Constraints
+
+A common question is: **Why doesn't the ⏱ duration tick continuously like a stopwatch? Why doesn't tool activity update in real time during long-running commands (e.g. scripts, searches)?**
+
+This is determined by the **architectural contract of CodeBuddy Code**, not a bug in HUD:
+
+1. **Short-lived child process model (Spawn & Exit)**: The host executes the external statusLine by spawning a one-off child process, piping payload via stdin, and capturing stdout on exit (with a strict 5-second timeout where the process is killed and the statusLine is hidden). The host does not maintain a persistent daemon or IPC connection.
+2. **Purely passive discrete event-driven**: The host contains **no periodic timers (no `setInterval` heartbeats)**. The statusLine command is invoked only after specific discrete events with a **300ms debounce**:
+   - Session startup / switch / `/clear`
+   - Turn finished (model response complete and tokens settled)
+   - File written to disk (`write_to_file` / `edit_file`)
+   - Permission mode or configuration changes
+3. **Silence during tool execution and idle**: During long-running read-only tools (e.g. `bash`, `grep`), streaming generation/thinking, or idle input waiting, the host **never triggers** the statusLine command.
+
+> **Host Version Note**: Verified via deep source-code reverse engineering up to CodeBuddy Code **v2.157.0** (2026-09-23), this mechanism remains unchanged. HUD is optimized to the theoretical limit of this contract (<200ms natural-drain exits). Until the upstream host introduces periodic heartbeat refreshes, this behavior is expected and normal.
 
 ---
 
