@@ -199,6 +199,7 @@ function scanChunkForEffortSignal(fd, offset, length) {
       const line = lines[i].trim();
       if (!line) continue;
       scanned++;
+      if (!line.includes('/effort') && !line.includes('ultra_effort') && !line.includes('reasoningEffort')) continue;
       let entry;
       try {
         entry = JSON.parse(line);

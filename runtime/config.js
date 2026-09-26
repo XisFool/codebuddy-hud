@@ -144,7 +144,6 @@ const DEFAULT_CONFIG = {
   display: {
     showTokenBar: true,
     showDiffStats: true,
-    showAgentStatus: true,
     showCost: true,
     showDuration: true,
     showCurrentDir: true,

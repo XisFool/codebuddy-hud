@@ -14,7 +14,7 @@
       .c-yellow { fill: #fbbf24; }
       .c-green { fill: #4ade80; }
       .c-green-bold { fill: #4ade80; font-weight: bold; }
-      .c-magenta { fill: #f5c2e7; }
+      .c-magenta { fill: #cba6f7; }
       .c-gray { fill: #6c7086; }
       .c-dim { fill: #9399b2; }
       .c-white { fill: #cdd6f4; }
@@ -29,6 +29,6 @@
   <circle class="term-dot-green" cx="50" cy="16" r="5" />
   <text class="term-title" x="425" y="20" text-anchor="middle">codebuddy-hud</text>
   <text class="term-text" x="20" y="66" xml:space="preserve"><tspan class="c-cyan-bold">Deepseek-V4.1-Flash</tspan><tspan class="c-red"> ● max</tspan><tspan class="c-gray">  │  </tspan><tspan class="c-cyan">main</tspan><tspan class="c-yellow">*</tspan><tspan class="c-gray">  │  </tspan><tspan class="c-cyan">my-project</tspan><tspan class="c-gray">  │  </tspan><tspan class="c-magenta">default</tspan></text>
-  <text class="term-text" x="20" y="101" xml:space="preserve"><tspan class="c-cyan-bold">Context Token </tspan><tspan class="c-cyan">249k</tspan><tspan class="c-gray">/</tspan><tspan class="c-cyan">1M</tspan><tspan class="c-gray"> [</tspan><tspan class="c-green">███</tspan><tspan class="c-bar-empty">░░░░░░░</tspan><tspan class="c-gray">] </tspan><tspan class="c-green">25%</tspan><tspan class="c-gray">  │  out </tspan><tspan class="c-cyan">1.1k</tspan><tspan class="c-gray">  │  </tspan><tspan class="c-green-bold">cache 96.8%</tspan></text>
-  <text class="term-text" x="20" y="136" xml:space="preserve"><tspan class="c-gray">Δ </tspan><tspan class="c-green">+1.7k</tspan><tspan class="c-gray"> </tspan><tspan class="c-red">-161</tspan><tspan class="c-gray">  │  </tspan><tspan class="c-yellow">82.04 credits</tspan><tspan class="c-gray">  │  </tspan><tspan class="c-gray">⏱ 2h47m  │  </tspan><tspan class="c-cyan">◐ Edit</tspan><tspan class="c-dim">: parser.js</tspan><tspan class="c-gray">  </tspan><tspan class="c-green">✓ </tspan><tspan class="c-dim">Read </tspan><tspan class="c-gray">×3</tspan><tspan class="c-gray">  </tspan><tspan class="c-green">✓ </tspan><tspan class="c-dim">Grep </tspan><tspan class="c-gray">×2</tspan></text>
+  <text class="term-text" x="20" y="101" xml:space="preserve"><tspan class="c-cyan-bold">Context Token </tspan><tspan class="c-cyan">249k</tspan><tspan class="c-gray">/</tspan><tspan class="c-cyan">1M</tspan><tspan class="c-gray"> [</tspan><tspan class="c-green">███</tspan><tspan class="c-bar-empty">░░░░░░░</tspan><tspan class="c-gray">] </tspan><tspan class="c-green">25%</tspan><tspan class="c-gray">  │  out </tspan><tspan class="c-cyan">1.1k</tspan><tspan class="c-gray">  │  </tspan><tspan class="c-green">cache 96.8%</tspan></text>
+  <text class="term-text" x="20" y="136" xml:space="preserve"><tspan class="c-gray">Δ </tspan><tspan class="c-green">+1.7k</tspan><tspan class="c-gray"> </tspan><tspan class="c-red">-161</tspan><tspan class="c-gray">  │  </tspan><tspan class="c-yellow">82.04 credits</tspan><tspan class="c-gray">  │  </tspan><tspan class="c-gray">⏱ 2h47m  │  </tspan><tspan class="c-white">◐ </tspan><tspan class="c-cyan">Edit</tspan><tspan class="c-dim">: parser.js</tspan><tspan class="c-gray">  </tspan><tspan class="c-green">✓ </tspan><tspan class="c-dim">Read ×3</tspan><tspan class="c-gray">  </tspan><tspan class="c-green">✓ </tspan><tspan class="c-dim">Grep ×2</tspan></text>
 </svg>

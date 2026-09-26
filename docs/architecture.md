@@ -1,7 +1,7 @@
 # CodeBuddy HUD System Architecture
 
 > **Target Version:** `v0.3.7+`  
-> **Host Compatibility:** CodeBuddy Code CLI; v2.146.0 has the Windows quoting and three-line display limits described below.
+> **Host Compatibility:** CodeBuddy Code CLI (including latest v2.157.0+; subject to the Windows quoting and three-line display contracts below)
 > **Engine Baseline:** Pure Node.js Standard Library (`>= 18.0.0`, Zero npm dependencies)
 
 ---
@@ -90,7 +90,7 @@ graph TD
 
 ## 4. Execution Lifecycle & Timing
 
-The host (v2.146.0) debounces statusline invocations by ~300ms following turn events. Idle sessions do not poll; failed executions clear the statusline without automatic retry.
+The host (verified up to latest v2.157.0) debounces statusline invocations by ~300ms across 5 discrete event streams. Idle sessions and read-only tool executions do not poll; failed executions clear the statusline without automatic retry.
 
 ```mermaid
 sequenceDiagram
@@ -190,7 +190,7 @@ sequenceDiagram
 - **Line 2 (Tokens & Context)**: Current context input/capacity (title `bold`; restores occupancy when host deducts input to 0, arbitrated against `used_percentage` residual to prevent double-counting) · progress bar and percentage · output tokens · turn cache hit badge (slim); renders in three states: `fresh` (progress bar and out enabled), `stale` (post-compact waiting, `--` numerator, progress bar and out hidden), and `unknown` (numerator shown, progress bar hidden, "last reported" hint).
 - **Line 3 (Diff & Cost & Latency & Tool Activity)**: `Δ +Added -Removed` · Actual Credits · Total Duration · Current tool activity and turn-aggregated tool badges (`◐ Edit: parser.js`, `✓ Edit ×3`). (Omitted if all are zero).
 
-CodeBuddy Code v2.146.0 retains only the first three stdout lines. The HUD's own three-line contract is strictly aligned with this truncation limit; tool activity is merged into Line 3 so every key segment stays visible.
+The host (verified as a hard constant up to v2.157.0) retains only the first three stdout lines. The HUD's own three-line contract is strictly aligned with this truncation limit; tool activity is merged into Line 3 so every key segment stays visible.
 
 ---
 

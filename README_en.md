@@ -44,7 +44,7 @@ Context Token 249k/1M [###-------] 25%  |  out 1.1k  |  cache 96.8%
 - **Line 2 (resources)**: current context input usage, context window bar and percentage (numerator aligned with the host's `used_percentage`), output tokens and current-turn prompt cache hit rate; after compact, stale host data is marked as waiting for a fresh usage report.
 - **Line 3 (turn activity)**: diff stats `Δ +N -M` (falls back to `[D]` on ASCII terminals), actual session spend (credits, falling back to `$USD` when unavailable), session duration, current AI action, and completed tool-call counts (up to 3).
 
-3 lines is a hard cap, matching the host CodeBuddy Code stdout truncation (verified on v2.146.0: first 3 lines); lines or fields without data are omitted entirely, never rendered blank.
+3 lines is a hard cap, aligned with CodeBuddy Code host limits (verified up to latest v2.157.0+ to truncate stdout at the first three lines); lines or fields without data are omitted entirely, never rendered blank.
 
 ---
 

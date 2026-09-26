@@ -43,9 +43,8 @@
 - `--setup`: 执行安装，写入 `settings.json` 并生成 Windows `.cmd` shim。
 - `--uninstall`: 仅恢复备份中的 `statusLine`（备份记录的命令自身指向 codebuddy-hud 时改为移除该项），清理缓存及 shim，保留其他 settings 与用户主题配置。
 - `--theme [name]`: 交互式切换或指定设置主题（如 `--theme cyberpunk`、`--theme list`）。
-- `--doctor [--json]`: 运行全面诊断体检，输出诊断报告（支持人类友好文本或 JSON 格式）。
+- `--doctor [--json]`, `-d`: 运行全面诊断体检报告（`-d` 为短参数别名，支持 `--json` 输出结构化数据）。
 - `--status`: 冒烟探测当前状态栏能否正常渲染（3 行输出与 exit 0）。
-- `-d, --debug`: 输出详细调试信息。
 
 ### 内部常数配置
 ```javascript
@@ -143,6 +142,7 @@ export function resolveTheme(config: ResolvedConfig): ThemePalette;
 export function detectThemeMode(config: ResolvedConfig): 'dark' | 'light';
 export function isPresetName(name: string): boolean;
 export const DEFAULT_CONFIG: ResolvedConfig;
+export const THEME_PRESETS: Record<string, ThemePreset>;
 ```
 
 ### 内置主题预设 (THEME_PRESETS)
@@ -318,10 +318,10 @@ export function getTurnMetricsAndActivity(
 
 `getTurnMetricsAndActivity()` 共享本轮 usage 和工具活动的逆向扫描。会话 Credits 另用前向 checkpoint 扫描，分块循环预算 100ms。`complete: false` 表示预算耗尽、短读或尾行尚未完成；此时累计值与调用数为 `null`，内部 checkpoint 仍可续扫。渲染层隐藏 Credits 并禁止 payload 兜底。`contextStatus` 通过双向遥测匹配（同时兼容宿主扣减缓存后的输入还原与原始未扣减提示词）检测活跃上下文 usage 的新鲜度，在 `/compact` 产生压缩摘要而宿主尚未返回新 usage 时输出 `stale`。
 
-### 核心状态机与双向遥测匹配机制
-- `createContextTracker(contextWindow)`：沿消息 `parentId` 逆向回溯历史链。检测到完成的 compact 压缩摘要即置 `stale`；检测到普通活跃 API usage 时，通过 `resolveReportedInputs(usage)` 进行双向遥测比对（`matchesInput = reportedInput === input || rawReportedInput === input`），匹配当前 payload 即置 `fresh`。
-- `getCompactContextStatus(transcriptPath, contextWindow, opts)`：当宿主未在边界完整保留 parent 关联时的尾窗位置回退比对状态机。
-- `resolveReportedInputs(usage)`：提取 `{ combined, raw }`，统一还原基准（`combined = input_tokens + cache_read_input_tokens + cache_creation_input_tokens`）。
+### 核心状态机与双向遥测匹配机制（内部辅助实现，未在 module.exports 导出）
+- `createContextTracker(contextWindow)`（内部辅助函数，未在 module.exports 导出）：沿消息 `parentId` 逆向回溯历史链。检测到完成的 compact 压缩摘要即置 `stale`；检测到普通活跃 API usage 时，通过 `resolveReportedInputs(usage)` 进行双向遥测比对（`matchesInput = reportedInput === input || rawReportedInput === input`），匹配当前 payload 即置 `fresh`。
+- `getCompactContextStatus(transcriptPath, contextWindow, opts)`（内部辅助函数，未在 module.exports 导出）：当宿主未在边界完整保留 parent 关联时的尾窗位置回退比对状态机。
+- `resolveReportedInputs(usage)`（内部辅助函数，未在 module.exports 导出）：提取 `{ combined, raw }`，统一还原基准（`combined = input_tokens + cache_read_input_tokens + cache_creation_input_tokens`）。
 
 ### 辅助导出与常数
 - 辅助扫描函数：`getRecentToolActivity(path, opts)`、`getRecentUsageMetrics(path, opts)`、`extractUsageMetrics(line)`。
@@ -472,7 +472,7 @@ export function isSettingsObject(val: unknown): val is Record<string, unknown>;
 
 ### 关键机制
 - **Windows Shim 路径固化与转义**：将安装时刻的 `process.execPath` 烘焙入 `.cmd` 启动器，路径中的 `%` 统一转义为 `%%` 阻断变量展开；在包含非 ASCII 字符时前置 `@chcp 65001 >nul`。
-- **宿主引号容灾**：CodeBuddy Code v2.146.0 的 Windows containment 启动器存在二次转义字面引号的已知缺陷，纯 ASCII 安全命令路径直接省略外层引号。
+- **宿主引号容灾**：针对 Windows 平台宿主启动器可能二次转义字面引号的兼容问题，纯 ASCII 安全命令路径直接省略外层引号；含空格路径保留引号。
 - **无损配置恢复保障**：首次安装前将原始 `settings.json` 备份为 `settings.json.bak.codebuddy-hud`（仅备份一次，永不覆盖老备份）。安装成功后通过 `settings-file.js` 以原子写入写回标准格式。
 
 ---
@@ -535,7 +535,7 @@ export function uninstall(options?: object): void;
 - `resolveRemoteRawBase(options?: object): Promise<string>`: 解析 `CODEBUDDY_HUD_RAW_BASE`、`CODEBUDDY_HUD_VERSION` 或 Latest Release 后的下载源（含 `CODEBUDDY_HUD_MIRROR` 前缀）。
 - `fetchLatestTagVia302(url?: string): Promise<string>`: 从 `releases/latest` 的 302 `Location` 解析不可变 tag；省略 `url` 时使用镜像前缀后的默认地址。
 - `fetchLatestRelease(): Promise<object>`: 按 302 候选链 → API 候选链顺序解析最新版本 release 对象。
-- `fetchUrlWithRetry(url: string, maxAttempts?: number): Promise<Buffer>`: 内部网络下载重试包装（默认 3 次，1s/2s 指数退避）。
+- `fetchUrlWithRetry(url: string, maxAttempts?: number): Promise<Buffer>`: 内部辅助实现（未在 module.exports 导出），网络下载重试包装（默认 3 次，1s/2s 指数退避）。
 - `mirrorPrefix(): string`: 解析 `CODEBUDDY_HUD_MIRROR` 环境变量并归一化为 URL 前缀。
 
 ---

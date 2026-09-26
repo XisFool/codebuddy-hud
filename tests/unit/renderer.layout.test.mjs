@@ -51,7 +51,7 @@ const fullPayload = {
 
 const defaultConfig = {
   theme: { primary: 'green', secondary: 'gray', warning: 'yellow', critical: 'red', accent: 'cyan', diffAdd: 'green', diffRemove: 'red' },
-  display: { showTokenBar: true, showDiffStats: true, showAgentStatus: true, showCost: true, showDuration: true, showCurrentDir: true, showVersion: true, showPermissionMode: true, useNerdFonts: false, unicode: false, maxLines: 3, progressBarWidth: 10, showCacheHitRate: true },
+  display: { showTokenBar: true, showDiffStats: true, showToolActivity: true, showCost: true, showDuration: true, showCurrentDir: true, showVersion: true, showPermissionMode: true, useNerdFonts: false, unicode: false, maxLines: 3, progressBarWidth: 10, showCacheHitRate: true },
   thresholds: { warning: 0.7, critical: 0.9 },
   cacheHitThresholds: { excellent: 80, partial: 50 },
   defaultEffortLevel: 'medium',
