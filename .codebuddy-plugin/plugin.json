@@ -2,12 +2,5 @@
   "name": "codebuddy-hud",
   "version": "0.3.7",
   "description": "A compact terminal HUD for CodeBuddy Code statusLine with tokens, cache hit rate, diff stats, spend and tool activity.",
-  "commands": [
-    "status",
-    "setup",
-    "uninstall",
-    "theme",
-    "doctor"
-  ],
   "keywords": ["codebuddy", "codebuddy-code", "codebuddy-cli", "codebuddy-plugin", "statusline", "hud", "terminal-hud", "cli-dashboard", "token-tracker", "ai-coding"]
 }

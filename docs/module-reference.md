@@ -424,6 +424,8 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 - `getSessionStatsHandoffPath(cwd: string): string`: 会话 `/clear` 跨文件切换时的进程级 cost 累计交接状态路径（`handoff-<sha256(cwd)>.json`）。宿主 `/clear` 会产生新 transcript 文件，通过此 cwd 作用域文件在新旧 identity 之间交接基线，避免累计 Δ/⏱ 计数全额丢失。
 - `getSessionEffortStatePath(transcriptPath: string): string`: 返回按 transcript 路径哈希寻址的会话 effort 状态文件 `codebuddy-hud-session-state/effort-<sha256>.json`。
 - `resolveCodeBuddyPath(rel: string): string`: 将相对路径解析为基于 `CODEBUDDY_HOME` 的绝对路径。
+- `getUserSkillsDir(): string`: 返回用户级技能根目录（`~/.codebuddy/skills/`）。
+- `getHudSkillTargetDir(): string`: 返回 `hud-config` 技能部署目标目录（`~/.codebuddy/skills/hud-config/`）。
 - `normalizePlatformPath(p: string): string`: 平台感知路径归一化——Windows 下 resolve 后整体小写（消除盘符 `d:`/`D:` 哈希分裂），POSIX 保留大小写语义。
 
 ---
@@ -464,6 +466,12 @@ export function setup(options?: {
   theme?: string;
 }): void;
 
+export function deploySkill(options?: {
+  rootDir?: string;
+  sourceSkillDir?: string;
+  targetSkillDir?: string;
+}, hudBin?: string, platform?: string): void;
+
 export function buildStatusLineCommand(platform: string, hudBin: string, nodeExe: string): string;
 export function buildCmdShimContent(nodeExe: string, hudBin?: string): string;
 export function parseSettingsJson(content: string): object;
@@ -471,6 +479,7 @@ export function isSettingsObject(val: unknown): val is Record<string, unknown>;
 ```
 
 ### 关键机制
+- **技能自动挂载**：`setup()` 时通过 `deploySkill()` 将 `skills/hud-config/` 挂载至 `~/.codebuddy/skills/hud-config/`（Windows 优先 Junction，POSIX 优先目录软链接，跨卷或失败时降级递归复制；带源目录存在性与自环防呆校验）。
 - **Windows Shim 路径固化与转义**：将安装时刻的 `process.execPath` 烘焙入 `.cmd` 启动器，路径中的 `%` 统一转义为 `%%` 阻断变量展开；在包含非 ASCII 字符时前置 `@chcp 65001 >nul`。
 - **宿主引号容灾**：针对 Windows 平台宿主启动器可能二次转义字面引号的兼容问题，纯 ASCII 安全命令路径直接省略外层引号；含空格路径保留引号。
 - **无损配置恢复保障**：首次安装前将原始 `settings.json` 备份为 `settings.json.bak.codebuddy-hud`（仅备份一次，永不覆盖老备份）。安装成功后通过 `settings-file.js` 以原子写入写回标准格式。
@@ -514,7 +523,7 @@ export const THEMES: Array<{ name: string; label: string }>;
 
 ## 20. `runtime/uninstall.js` — 卸载还原与深度清理
 
-**职责：** 从首次备份仅还原非本 HUD 的 `statusLine`——备份记录的命令含 `codebuddy-hud` 时（更早的安装副本或 `npm link` 全局 shim）改为移除 settings 中的该项，消除「报告卸载成功而 HUD 仍生效」；保留其他 settings 及用户主题配置；移除对应 runtime 的 Windows shim 与用户缓存；清理系统级 PATH 注册（从 Windows 用户注册表 Path 移除 runtime 目录，POSIX 移除 `~/.local/bin/codebuddy-hud` 软链接；沙箱测试模式下通过 `CODEBUDDY_HOME` 环境变量守卫自动跳过）。备份一经解析成功即回收，不依赖 settings 是否被写入；解析失败或写入失败时保留备份。
+**职责：** 从首次备份仅还原非本 HUD 的 `statusLine`——备份记录的命令含 `codebuddy-hud` 时（更早的安装副本或 `npm link` 全局 shim）改为移除 settings 中的该项，消除「报告卸载成功而 HUD 仍生效」；保留其他 settings 及用户主题配置；清理已部署的 `~/.codebuddy/skills/hud-config/` 技能目录/挂载；移除对应 runtime 的 Windows shim 与用户缓存；清理系统级 PATH 注册（从 Windows 用户注册表 Path 移除 runtime 目录，POSIX 移除 `~/.local/bin/codebuddy-hud` 软链接；沙箱测试模式下通过 `CODEBUDDY_HOME` 环境变量守卫自动跳过）。备份一经解析成功即回收，不依赖 settings 是否被写入；解析失败或写入失败时保留备份。
 
 ### 接口定义
 ```typescript

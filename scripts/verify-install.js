@@ -7,6 +7,7 @@ const os = require('os');
 const path = require('path');
 
 const SOURCE_RUNTIME = path.join(__dirname, '..', 'runtime');
+const SOURCE_SKILLS = path.join(__dirname, '..', 'skills');
 const isWin = process.platform === 'win32';
 
 function runProcess(exe, args = [], options = {}, stdinData = null) {
@@ -66,7 +67,9 @@ async function main() {
   console.log('=== codebuddy-cli-hud Isolated Installation Verification ===\n');
 
   const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-verify-install-'));
-  const runtimeDir = path.join(tmpHome, 'runtime');
+  const installDir = path.join(tmpHome, 'codebuddy-hud-runtime');
+  const runtimeDir = path.join(installDir, 'runtime');
+  const skillsDir = path.join(installDir, 'skills');
   const HUD_BIN = path.join(runtimeDir, 'bin', 'codebuddy-hud.js');
   const cmdShim = HUD_BIN.replace(/\.js$/, '.cmd');
   const settingsPath = path.join(tmpHome, 'settings.json');
@@ -96,6 +99,7 @@ async function main() {
       recursive: true,
       filter: (source) => source !== path.join(SOURCE_RUNTIME, 'bin', 'codebuddy-hud.cmd'),
     });
+    fs.cpSync(SOURCE_SKILLS, skillsDir, { recursive: true });
     // 0. Seed user settings to verify preservation
     fs.writeFileSync(settingsPath, JSON.stringify({ userCustomSetting: 'preserved' }, null, 2));
 
@@ -132,6 +136,14 @@ async function main() {
       } catch {}
       record('posix-script-executable', isExecutable, 'hud bin chmod 0755 failed');
     }
+
+    // 3b. Verify skill deployment
+    const targetSkillMd = path.join(tmpHome, 'skills', 'hud-config', 'SKILL.md');
+    let skillReadable = false;
+    try {
+      skillReadable = fs.existsSync(targetSkillMd) && fs.readFileSync(targetSkillMd, 'utf8').includes('hud-config');
+    } catch {}
+    record('skill-installed-and-readable', skillReadable, 'target SKILL.md missing or unreadable');
 
     // 4. Directly execute the configured statusLine command with a sample payload
     if (settings && settings.statusLine && settings.statusLine.command) {
@@ -185,6 +197,17 @@ async function main() {
       const shimDeleted = !fs.existsSync(cmdShim);
       record('win-cmd-shim-removed', shimDeleted, 'cmd shim was not deleted by uninstall');
     }
+
+    // 7b. Verify skill removed cleanly
+    const targetSkillDir = path.join(tmpHome, 'skills', 'hud-config');
+    let skillRemoved = false;
+    try {
+      fs.lstatSync(targetSkillDir);
+      skillRemoved = false;
+    } catch (e) {
+      skillRemoved = (e && e.code === 'ENOENT');
+    }
+    record('skill-uninstalled-cleanly', skillRemoved, 'target skill directory was not removed by uninstall');
 
     // 8. Verify state and cache files in isolated CODEBUDDY_HOME cleaned up
     const potentialStateFiles = [

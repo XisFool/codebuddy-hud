@@ -547,3 +547,106 @@ test('uninstall leaves a user statusLine that replaced the HUD', () => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
+
+test('setup and uninstall manage skill directory correctly', () => {
+  const originalSettingsPath = process.env.CODEBUDDY_SETTINGS_PATH;
+  const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-skill-test-'));
+  const settingsPath = path.join(tempRoot, 'settings.json');
+  const runtimeDir = path.join(tempRoot, 'runtime');
+  const hudBin = path.join(runtimeDir, 'bin', 'codebuddy-hud.js');
+  const sourceSkillDir = path.join(tempRoot, 'source-skills', 'hud-config');
+  const targetSkillDir = path.join(tempRoot, 'home', 'skills', 'hud-config');
+  const targetSkillFile = path.join(targetSkillDir, 'SKILL.md');
+
+  fs.mkdirSync(path.dirname(hudBin), { recursive: true });
+  fs.writeFileSync(hudBin, '#!/usr/bin/env node\n');
+  fs.mkdirSync(sourceSkillDir, { recursive: true });
+  fs.writeFileSync(path.join(sourceSkillDir, 'SKILL.md'), '# Skill Definition\nname: hud-config\n');
+
+  process.env.CODEBUDDY_SETTINGS_PATH = settingsPath;
+  process.env.CODEBUDDY_HOME = path.join(tempRoot, 'home');
+
+  try {
+    // 1. Initial setup creates skill link/copy
+    setup({ settingsPath, runtimeDir, sourceSkillDir, targetSkillDir, platform: process.platform });
+    assert.equal(fs.existsSync(targetSkillFile), true, 'target SKILL.md should exist after setup');
+    assert.ok(fs.readFileSync(targetSkillFile, 'utf8').includes('name: hud-config'));
+
+    // 2. Re-setup replaces cleanly without error (idempotency)
+    fs.writeFileSync(path.join(sourceSkillDir, 'SKILL.md'), '# Skill Definition v2\nname: hud-config\n');
+    setup({ settingsPath, runtimeDir, sourceSkillDir, targetSkillDir, platform: process.platform });
+    assert.equal(fs.existsSync(targetSkillFile), true, 'target SKILL.md should exist after second setup');
+    assert.ok(fs.readFileSync(targetSkillFile, 'utf8').includes('v2'));
+
+    // 3. Uninstall removes target skill without touching source
+    uninstall({ settingsPath, runtimeDir, targetSkillDir, platform: process.platform });
+    assert.equal(fs.existsSync(targetSkillDir), false, 'target skill directory should be removed on uninstall');
+    assert.equal(fs.existsSync(path.join(sourceSkillDir, 'SKILL.md')), true, 'source skill directory should remain intact');
+  } finally {
+    if (originalSettingsPath === undefined) delete process.env.CODEBUDDY_SETTINGS_PATH;
+    else process.env.CODEBUDDY_SETTINGS_PATH = originalSettingsPath;
+    if (originalCodeBuddyHome === undefined) delete process.env.CODEBUDDY_HOME;
+    else process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('setup safely skips skill deployment when sourceSkillDir has no SKILL.md', () => {
+  const originalSettingsPath = process.env.CODEBUDDY_SETTINGS_PATH;
+  const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-skill-skip-'));
+  const settingsPath = path.join(tempRoot, 'settings.json');
+  const runtimeDir = path.join(tempRoot, 'runtime');
+  const hudBin = path.join(runtimeDir, 'bin', 'codebuddy-hud.js');
+  const emptySourceDir = path.join(tempRoot, 'empty-skills', 'hud-config');
+  const targetSkillDir = path.join(tempRoot, 'home', 'skills', 'hud-config');
+
+  fs.mkdirSync(path.dirname(hudBin), { recursive: true });
+  fs.writeFileSync(hudBin, '#!/usr/bin/env node\n');
+  fs.mkdirSync(emptySourceDir, { recursive: true });
+
+  process.env.CODEBUDDY_SETTINGS_PATH = settingsPath;
+  process.env.CODEBUDDY_HOME = path.join(tempRoot, 'home');
+
+  try {
+    setup({ settingsPath, runtimeDir, sourceSkillDir: emptySourceDir, targetSkillDir, platform: process.platform });
+    assert.equal(fs.existsSync(targetSkillDir), false, 'target skill directory should not be created');
+  } finally {
+    if (originalSettingsPath === undefined) delete process.env.CODEBUDDY_SETTINGS_PATH;
+    else process.env.CODEBUDDY_SETTINGS_PATH = originalSettingsPath;
+    if (originalCodeBuddyHome === undefined) delete process.env.CODEBUDDY_HOME;
+    else process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('setup ignores deployment when sourceDir and targetDir resolve to the same path', () => {
+  const originalSettingsPath = process.env.CODEBUDDY_SETTINGS_PATH;
+  const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-skill-self-'));
+  const settingsPath = path.join(tempRoot, 'settings.json');
+  const runtimeDir = path.join(tempRoot, 'runtime');
+  const hudBin = path.join(runtimeDir, 'bin', 'codebuddy-hud.js');
+  const sameSkillDir = path.join(tempRoot, 'skills', 'hud-config');
+
+  fs.mkdirSync(path.dirname(hudBin), { recursive: true });
+  fs.writeFileSync(hudBin, '#!/usr/bin/env node\n');
+  fs.mkdirSync(sameSkillDir, { recursive: true });
+  fs.writeFileSync(path.join(sameSkillDir, 'SKILL.md'), '# Original');
+
+  process.env.CODEBUDDY_SETTINGS_PATH = settingsPath;
+  process.env.CODEBUDDY_HOME = path.join(tempRoot, 'home');
+
+  try {
+    setup({ settingsPath, runtimeDir, sourceSkillDir: sameSkillDir, targetSkillDir: sameSkillDir, platform: process.platform });
+    assert.equal(fs.existsSync(path.join(sameSkillDir, 'SKILL.md')), true, 'file should remain untouched');
+    assert.equal(fs.readFileSync(path.join(sameSkillDir, 'SKILL.md'), 'utf8'), '# Original');
+  } finally {
+    if (originalSettingsPath === undefined) delete process.env.CODEBUDDY_SETTINGS_PATH;
+    else process.env.CODEBUDDY_SETTINGS_PATH = originalSettingsPath;
+    if (originalCodeBuddyHome === undefined) delete process.env.CODEBUDDY_HOME;
+    else process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});

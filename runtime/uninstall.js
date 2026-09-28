@@ -11,6 +11,7 @@ const {
   getTranscriptUsageStateDir,
   getSessionStatsStateDir,
   getUpdateStatusPath,
+  getHudSkillTargetDir,
 } = require('./paths');
 const { sanitizeTerminalText } = require('./sanitize');
 const { atomicWriteSettingsFile, parseSettingsJson, isSettingsObject } = require('./settings-file');
@@ -216,6 +217,33 @@ function uninstall(options) {
     }
   } catch {
     // ignore
+  }
+
+  // Remove deployed skill
+  const skillDir = opts.targetSkillDir || getHudSkillTargetDir();
+  let skillExists = false;
+  let isSymlink = false;
+  try {
+    const stat = fs.lstatSync(skillDir);
+    skillExists = true;
+    isSymlink = stat.isSymbolicLink();
+  } catch {}
+
+  if (skillExists) {
+    try {
+      if (isSymlink) {
+        try {
+          fs.unlinkSync(skillDir);
+        } catch {
+          fs.rmSync(skillDir, { recursive: true, force: true });
+        }
+      } else {
+        fs.rmSync(skillDir, { recursive: true, force: true });
+      }
+      cleaned.push(`Removed CodeBuddy skill: ${sanitizeTerminalText(skillDir, 512)}`);
+    } catch (err) {
+      cleaned.push(`Warning: could not remove skill: ${sanitizeTerminalText(err && err.message, 160)}`);
+    }
   }
 
   // Clean up PATH / symlink — skip in sandbox/test mode (CODEBUDDY_HOME is set)

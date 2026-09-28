@@ -97,6 +97,14 @@ function getGitCachePath() {
   return resolveCodeBuddyPath('codebuddy-hud-git-cache.json');
 }
 
+function getUserSkillsDir() {
+  return resolveCodeBuddyPath('skills');
+}
+
+function getHudSkillTargetDir() {
+  return path.join(getUserSkillsDir(), 'hud-config');
+}
+
 module.exports = {
   getCodeBuddyHome,
   resolveCodeBuddyPath,
@@ -113,6 +121,8 @@ module.exports = {
   getSessionStatsHandoffPath,
   getSessionEffortStatePath,
   getUpdateStatusPath,
+  getUserSkillsDir,
+  getHudSkillTargetDir,
   normalizePlatformPath,
 };
 

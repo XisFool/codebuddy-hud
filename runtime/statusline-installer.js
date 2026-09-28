@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getSettingsPath } = require('./paths');
+const { getSettingsPath, getHudSkillTargetDir } = require('./paths');
 const { sanitizeTerminalText } = require('./sanitize');
 const {
   atomicWriteSettingsFile,
@@ -61,6 +61,61 @@ function buildCmdShimContent(nodeExe, hudBin) {
   return prefix + '@echo off\r\n"' + shortNode.replace(/%/g, '%%') + '" "%~dp0codebuddy-hud.js" %*\r\n';
 }
 
+function deploySkill(options, hudBin, platform) {
+  const opts = options || {};
+  // Prefer explicit parameters, otherwise infer project root from hudBin
+  const rootDir = opts.rootDir || path.resolve(path.dirname(hudBin), '..', '..');
+  const sourceDir = opts.sourceSkillDir || path.join(rootDir, 'skills', 'hud-config');
+  const targetDir = opts.targetSkillDir || getHudSkillTargetDir();
+
+  // 1. Safety check: source directory must exist and contain SKILL.md, otherwise safe-skip
+  if (!fs.existsSync(path.join(sourceDir, 'SKILL.md'))) {
+    return;
+  }
+
+  // 2. Self-loop guard: do not touch if source and target resolve to the same path
+  try {
+    if (path.resolve(sourceDir) === path.resolve(targetDir)) {
+      return;
+    }
+  } catch {}
+
+  try {
+    // 3. Ensure target parent directory (~/.codebuddy/skills) exists
+    const parentDir = path.dirname(targetDir);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
+    }
+
+    // 4. Remove pre-existing target (unlink symlink/junction or remove directory)
+    try {
+      const stat = fs.lstatSync(targetDir);
+      if (stat.isSymbolicLink()) {
+        try {
+          fs.unlinkSync(targetDir);
+        } catch {
+          fs.rmSync(targetDir, { recursive: true, force: true });
+        }
+      } else {
+        fs.rmSync(targetDir, { recursive: true, force: true });
+      }
+    } catch {}
+
+    // 5. Deploy skill: Windows prefers junction, POSIX prefers dir symlink
+    const linkType = platform === 'win32' ? 'junction' : 'dir';
+    try {
+      fs.symlinkSync(sourceDir, targetDir, linkType);
+      console.log(`Registered CodeBuddy skill: ${sanitizeTerminalText(targetDir, 512)}`);
+    } catch {
+      // Fall back to recursive directory copy
+      fs.cpSync(sourceDir, targetDir, { recursive: true });
+      console.log(`Registered CodeBuddy skill (copied): ${sanitizeTerminalText(targetDir, 512)}`);
+    }
+  } catch (err) {
+    // Never fail statusLine configuration if skill registration encounters an error
+    console.warn(`Warning: failed to register skill: ${sanitizeTerminalText(err && err.message, 160)}`);
+  }
+}
 
 // Options are intentionally internal/test-oriented. The CLI uses the defaults,
 // while an isolated runtime lets regression tests exercise installation without
@@ -152,7 +207,8 @@ function setup(options) {
   atomicWriteSettingsFile(settingsPath, JSON.stringify(settings, null, 2));
   console.log(`\nStatusLine configured in: ${sanitizeTerminalText(settingsPath, 512)}`);
   console.log(`Command: ${sanitizeTerminalText(command, 1024)}`);
+  deploySkill(opts, hudBin, platform);
   console.log('\ncodebuddy-cli-hud setup complete.');
 }
 
-module.exports = { setup, buildStatusLineCommand, buildCmdShimContent, parseSettingsJson, isSettingsObject };
+module.exports = { setup, deploySkill, buildStatusLineCommand, buildCmdShimContent, parseSettingsJson, isSettingsObject };
