@@ -338,7 +338,7 @@ export function getTurnMetricsAndActivity(
 export function getLogicalSessionCostData(
   cbData: CodeBuddyPayload,
   rawCostData: CostData,
-  opts?: { statePath?: string; cwd?: string; handoffPath?: string }
+  opts?: { statePath?: string; cwd?: string }
 ): {
   linesAdded: number;
   linesRemoved: number;
@@ -353,7 +353,7 @@ export function getResetSignal(cbData: CodeBuddyPayload): {
 export const SESSION_STATS_VERSION: number;
 ```
 
-`cwd` 用于派生 `/clear` handoff 状态文件路径（`handoff-<sha256(cwd)>.json`）。
+`cwd` 用于相对 `transcript_path` 的解析（identity 派生）；identity miss 即视为新会话，直接以当前 payload 累计为新基线。
 
 ---
 
@@ -421,7 +421,7 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 - `getTranscriptUsageStatePath(transcriptPath: string): string`: 按 transcript 绝对路径 SHA-256 哈希隔离的增量遥测 checkpoint 路径。
 - `getSessionStatsStateDir(): string`: 返回 `codebuddy-hud-session-state/` 目录。
 - `getSessionStatsStatePath(identity: string): string`: 按会话 identity 哈希隔离的基线状态路径。
-- `getSessionStatsHandoffPath(cwd: string): string`: 会话 `/clear` 跨文件切换时的进程级 cost 累计交接状态路径（`handoff-<sha256(cwd)>.json`）。宿主 `/clear` 会产生新 transcript 文件，通过此 cwd 作用域文件在新旧 identity 之间交接基线，避免累计 Δ/⏱ 计数全额丢失。
+- `getSessionStatsHandoffPath(cwd: string): string`: 存量清理接口——旧版 `/clear` handoff 状态路径（`handoff-<sha256(cwd)>.json`）。handoff 机制已退役（identity miss 直接锚定当前累计），现无运行时引用；函数保留以便定位/清理存量文件，uninstall 按整目录 rmSync 兜底覆盖。
 - `getSessionEffortStatePath(transcriptPath: string): string`: 返回按 transcript 路径哈希寻址的会话 effort 状态文件 `codebuddy-hud-session-state/effort-<sha256>.json`。
 - `resolveCodeBuddyPath(rel: string): string`: 将相对路径解析为基于 `CODEBUDDY_HOME` 的绝对路径。
 - `getUserSkillsDir(): string`: 返回用户级技能根目录（`~/.codebuddy/skills/`）。

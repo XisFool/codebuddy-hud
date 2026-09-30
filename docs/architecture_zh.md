@@ -159,7 +159,7 @@ sequenceDiagram
      - 同一 transcript 的 `session_id` 变化、transcript 文件物理截断（size 变小），或宿主显式 `clear_signal` / `is_clear`；
      - 代码增删或耗时计数低于已存基线，此时将 cost 基线归零。
   3. 识别到重置后自动建立新基线，使看板显示的耗时与变更严格反映当前会话增量。
-  4. **跨文件交接（handoff）**：`/clear` 切换新 transcript 导致 identity 未命中时，读取按 cwd 寻址的 `handoff-<sha256(cwd)>.json`；若 cost 累计序列未回退（同一宿主进程延续），继承其值为新基线，Δ/⏱ 归零（具备 5 分钟 TTL 防过期、跨平台路径大小写归一化与 cost 下跌单调性防御）。
+  4. **identity miss 即新会话**：`/clear` 切换新 transcript（或新窗口首帧）导致 identity 未命中时，直接以当前 payload 累计为新基线，Δ/⏱ 归零重来，不依赖任何跨 identity 共享状态（旧 handoff 机制已退役；存量 `handoff-*.json` 由 uninstall 整目录清理兜底）。
 
 ### 5.3 增量 SHA-256 Credits Checkpoint 机制 (`transcript.js`)
 - **痛点**：每次事件刷新全量遍历长 JSONL 会重复解析已有消费记录。

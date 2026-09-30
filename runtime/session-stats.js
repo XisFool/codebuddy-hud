@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { getSessionStatsStatePath, getSessionStatsHandoffPath, normalizePlatformPath } = require('./paths');
+const { getSessionStatsStatePath, normalizePlatformPath } = require('./paths');
 
 const SESSION_STATS_VERSION = 1;
 // Adaptive /clear detection thresholds: balance long initial prompts (3-4k tokens
@@ -186,44 +186,6 @@ function subtractBaseline(cost, baseline) {
   };
 }
 
-const HANDOFF_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes TTL
-
-// /clear may swap the transcript file entirely, which orphans the per-identity
-// state (a brand-new identity hash finds no checkpoint and the process-cumulative
-// cost leaks through as if it belonged to the new session). The handoff record is
-// keyed by cwd — which /clear does not change — and carries the last seen raw
-// cumulative cost. On an identity miss we inherit that cost as the new baseline
-// so the displayed Δ/⏱ restart at zero. A falling cost series means a genuinely
-// new host process and must not inherit.
-function readHandoffBaseline(handoffPath, cost, cwd) {
-  if (!handoffPath || typeof cwd !== 'string' || !cwd) return null;
-  try {
-    const raw = fs.readFileSync(handoffPath, 'utf8');
-    const handoff = JSON.parse(raw);
-    if (!handoff || handoff.version !== SESSION_STATS_VERSION) return null;
-
-    // 防线 1: TTL 检查，防止昨天或很久以前的残存 handoff 劫持冷启动新进程
-    if (typeof handoff.updatedAt === 'number') {
-      if (Date.now() - handoff.updatedAt > HANDOFF_MAX_AGE_MS) {
-        return null;
-      }
-    }
-
-    // 防线 2: 平台感知路径比对（消除 Windows 下 d:\ 与 D:\ 死锁）
-    if (normalizePlatformPath(handoff.cwd) !== normalizePlatformPath(cwd)) {
-      return null;
-    }
-
-    // 防线 3: 单调性掉落检查
-    const lastCost = normalizeBaseline(handoff.cost);
-    if (!lastCost || costCounterDropped(cost, lastCost)) return null;
-
-    return createBaseline(lastCost);
-  } catch {
-    return null;
-  }
-}
-
 // The host's cost fields are process-cumulative. `/clear` may preserve those
 // fields even though it starts a new conversation, so retain a per-transcript
 // baseline and subtract it only after a reliable reset signal.
@@ -241,17 +203,6 @@ function getLogicalSessionCostData(cbData, costData, opts) {
       : getSessionStatsStatePath(identity);
   } catch {
     return cost;
-  }
-
-  let handoffPath = null;
-  try {
-    if (typeof options.handoffPath === 'string' && options.handoffPath) {
-      handoffPath = options.handoffPath;
-    } else if (typeof options.cwd === 'string' && options.cwd) {
-      handoffPath = getSessionStatsHandoffPath(options.cwd);
-    }
-  } catch {
-    handoffPath = null;
   }
 
   // Get transcript size for physical truncation detection (hard signal)
@@ -275,13 +226,13 @@ function getLogicalSessionCostData(cbData, costData, opts) {
     apiDurationMs: 0,
   });
 
-  // Identity miss: the transcript path (or session id) is new. If the same host
-  // process kept accumulating cost across that swap (typical /clear with a fresh
-  // transcript file), inherit the handoff cost as the baseline so the new
-  // conversation starts from zero instead of leaking the old cumulative values.
+  // Identity miss = a new conversation (the host swaps the transcript on /clear)
+  // or a fresh window/process. The payload's cost fields are already the exact
+  // cumulative figures of whatever is starting now — anchor the baseline there
+  // so visible Δ/⏱ restart at zero. No shared state can be stale, expired, or
+  // cross-contaminated by sibling windows.
   if (!previous) {
-    const handoffBaseline = readHandoffBaseline(handoffPath, cost, options.cwd);
-    if (handoffBaseline) baseline = handoffBaseline;
+    baseline = createBaseline(cost);
   }
 
   // Multi-layer /clear detection with forward compatibility for explicit signals
@@ -333,17 +284,6 @@ function getLogicalSessionCostData(cbData, costData, opts) {
       baseline,
       signal,
       transcriptSize,
-      updatedAt: Date.now(),
-    });
-  }
-
-  // Refresh the cwd-scoped handoff record on every invocation so the inherited
-  // baseline after an identity swap reflects the cost at the moment of the swap.
-  if (handoffPath) {
-    writeState(handoffPath, {
-      version: SESSION_STATS_VERSION,
-      cost,
-      cwd: typeof options.cwd === 'string' ? options.cwd : null,
       updatedAt: Date.now(),
     });
   }

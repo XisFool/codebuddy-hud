@@ -70,9 +70,9 @@ function getSessionStatsStatePath(identity) {
   return path.join(getSessionStatsStateDir(), `${digest}.json`);
 }
 
-// /clear may swap the transcript file entirely, orphaning the per-identity
-// state. This cwd-scoped handoff record survives the swap and lets the next
-// identity inherit the process-cumulative cost baseline.
+// 存量清理接口：旧版 /clear handoff 机制已退役（identity miss 现直接锚定当前
+// payload 累计为新基线）。现无运行时引用；函数保留以便定位/清理存量
+// handoff-*.json 文件（uninstall 按整目录 rmSync 兜底覆盖）。
 function getSessionStatsHandoffPath(cwd) {
   const normalized = normalizePlatformPath(cwd);
   const digest = crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');

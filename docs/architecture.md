@@ -157,7 +157,7 @@ sequenceDiagram
      - A new `session_id` for the same transcript, a physically truncated transcript (file size shrinks), or an explicit host `clear_signal` / `is_clear`;
      - Lines added/removed or duration counters drop below their stored baselines (the cost baseline then resets to zero).
   3. Subtracts the established baseline from raw host stats to display accurate turn-relative diffs and elapsed durations.
-  4. **Cross-file handoff**: when `/clear` swaps in a new transcript and the identity misses, the cwd-scoped `handoff-<sha256(cwd)>.json` is read; if the cumulative cost sequence has not regressed (same host process), it is inherited as the new baseline with Δ/duration reset to zero (protected by 5-minute TTL, cross-platform path normalization, and cost non-regression checks).
+  4. **Identity miss = new session**: when `/clear` swaps in a new transcript (or a fresh window renders its first frame) and the identity misses, the current payload cumulative cost is anchored as the new baseline directly, restarting Δ/duration at zero — no cross-identity shared state is involved (the legacy handoff mechanism is retired; leftover `handoff-*.json` files are covered by uninstall's whole-directory cleanup).
 
 ### 5.3 Incremental SHA-256 Checkpointing for Credits (`transcript.js`)
 - **Problem**: Recomputing full-session credits on every event repeats parsing of existing records, especially in long transcripts.

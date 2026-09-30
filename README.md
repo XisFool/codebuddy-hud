@@ -297,7 +297,7 @@ codebuddy-hud/
 │   ├── renderer.js / renderer/   # 3 行布局组装与分段渲染（format / diff-render / agents-render）
 │   ├── parser.js                 # payload 解析（token / diff / cost）
 │   ├── transcript.js             # 尾读 transcript：本轮工具频次与 usage 聚合
-│   ├── session-stats.js          # /clear 会话重置识别与基线交接
+│   ├── session-stats.js          # /clear 会话重置识别与增量基线
 │   ├── config.js                 # 主题预设、深浅色解析与 deepMerge
 │   ├── theme-selector.js / lang.js          # 交互式换肤与 i18n 字典
 │   ├── doctor.js / statusline-installer.js  # 环境诊断 / 写入宿主配置

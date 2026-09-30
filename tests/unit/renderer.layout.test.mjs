@@ -231,6 +231,13 @@ describe('renderHUD — tool activity merged into line 3', () => {
 
   it('merges diff and tool segment on line 3', () => {
     const payload = { ...fullPayload, transcript_path: transcriptPath };
+    // Anchor the per-transcript baseline first: under new-session semantics a
+    // fresh identity shows Δ=0, so render a zero-cost frame before the
+    // accumulated frame to keep the original diff+tool fusion assertions.
+    renderHUD({
+      ...payload,
+      cost: { ...fullPayload.cost, total_lines_added: 0, total_lines_removed: 0, total_duration_ms: 0, total_api_duration_ms: 0 },
+    }, defaultConfig);
     const output = renderHUD(payload, defaultConfig);
     const lines = output.split('\n');
     assert.equal(lines.length, 3);
@@ -312,8 +319,8 @@ describe('renderHUD — tool activity merged into line 3', () => {
   });
 
   it('resets visible diff and duration after /clear while the transcript path remains stable', () => {
-    // Unique cwd keeps the cwd-scoped session-stats handoff record isolated
-    // from other tests that share the default fullPayload cwd.
+    // Dedicated transcript path keeps this test's identity (per-transcript
+    // session-stats state) isolated from other tests in this file.
     const clearCwd = nodePath.join(tmpDir, 'clear-proj');
     const clearTranscript = nodePath.join(tmpDir, 'clear-session.jsonl');
     fs.writeFileSync(clearTranscript, '');
@@ -335,6 +342,12 @@ describe('renderHUD — tool activity merged into line 3', () => {
         current_usage: { ...fullPayload.context_window.current_usage, input_tokens: 90000 },
       },
     };
+    // Anchor the baseline with a zero-cost frame first (new-session semantics:
+    // a fresh identity starts at Δ=0), then assert the accumulated frame.
+    renderHUD({
+      ...beforeClear,
+      cost: { ...beforeClear.cost, total_lines_added: 0, total_lines_removed: 0, total_duration_ms: 0, total_api_duration_ms: 0 },
+    }, defaultConfig);
     assert.ok(renderHUD(beforeClear, defaultConfig).includes('+1.7k'));
 
     const afterClear = {

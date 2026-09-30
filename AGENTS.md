@@ -33,7 +33,7 @@ runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--d
   ├ model-info.js              推理深度 effort 解析与 credits 提取
   ├ encoding.js                代码页探测与 Unicode/ASCII 字形回退
   ├ sanitize.js                终端安全防御（过滤 ANSI/OSC/Bidi 注入）
-  ├ paths.js                   ~/.codebuddy 状态文件与 handoff 路径解析
+  ├ paths.js                   ~/.codebuddy 状态文件路径解析
   ├ lang.js                    多语言 i18n 字典（zh/en）
   ├ statusline-installer.js    --setup 写 settings.json 并生成 Windows shim
   ├ settings-file.js           JSONC 解析、配置权限与符号链接保护
@@ -51,7 +51,7 @@ skills/hud-config/SKILL.md     HUD 交互式配置 Agent 技能指南
 ```
 
 > **深度参考指针（按需查阅，避免全量预载）**：
-> - **模块契约与状态机**（修改接口签名、状态落盘格式、会话基线与 handoff 逻辑）：查阅 [docs/module-reference.md](docs/module-reference.md)。
+> - **模块契约与状态机**（修改接口签名、状态落盘格式、会话基线逻辑）：查阅 [docs/module-reference.md](docs/module-reference.md)。
 > - **系统架构与数据流**（理解物理双层隔离、宿主时序、逆向滑窗遥测与故障降级）：查阅 [docs/architecture_zh.md](docs/architecture_zh.md)。
 
 ## 测试与验证命令
@@ -91,11 +91,9 @@ node runtime/bin/codebuddy-hud.js --theme list
     - 宿主 statusLine payload 并不存在 `agents` 或 `tasks` 字段（源码逆向确认宿主未构造此二键）；
     - 真实工具活动取自 transcript 真实遥测（`type: 'function_call'` 和 `type: 'function_call_result'`），由 `runtime/transcript.js` 解析；
     - 工具活动并入 Line 3 尾部展示；payload fixtures 中不应包含假造的 `agents`/`tasks` 字段。
-11. **/clear 换新 transcript 的基线交接（handoff）**：
-    - 宿主 /clear 后会切换到全新 transcript 文件（实测换文件而非截断），per-identity 状态失联，且所有 reset 信号都要求 `previous` 存在，进程级累计 Δ/⏱ 会全额漏显；
-    - `session-stats.js` 另存按 cwd 寻址的 handoff 记录（`codebuddy-hud-session-state/handoff-<sha256(cwd)>.json`），每次刷新写入最新原始累计 cost；
-    - identity 未命中时读取 handoff：存在 5 分钟 TTL（`HANDOFF_MAX_AGE_MS` 防跨天污染）；cost 累计序列未下跌（同宿主进程延续）且跨平台归一化 cwd 一致 → 继承其值为新基线，Δ/⏱ 归零；cost 下跌（新宿主进程启动）或 cwd 不同 → 不继承。
-    - 已漏显的旧会话状态无法自愈，下一次 /clear 起生效。
+11. **/clear 换新 transcript 的会话语义（identity miss 即新会话）**：
+    - 宿主 /clear 后会切换到全新 transcript 文件（实测换文件而非截断），per-identity 状态失联；identity miss（含新窗口首帧）直接把当前 payload 累计锚定为新基线，Δ/⏱ 归零重来，无需任何历史状态恢复；
+    - 无按 cwd 共享的跨 identity 状态（旧 handoff 机制已整体退役：其共享水位在空闲 >5min TTL 拒收、多窗口覆写、单调防线拒收三种路径下均会漏显）；存量 `handoff-*.json` 由 uninstall 整目录 rmSync 兜底清理，`paths.js` 的 `getSessionStatsHandoffPath` 保留为存量清理接口（无运行时引用）。
 12. **/compact 后 context 显示旧值（宿主刷新时序）**：
     - 宿主 payload 的 `context_window.current_usage` 来自 `UsageUtils.getLatestUsage()`：取活跃链最近一条真实 API 调用的 usage，跳过 `agent === "compact"` 的条目；
     - 故 /compact 完成后、下一次真实 API 响应落盘前，payload 携带压缩前旧值（实测可达十余分钟）；

@@ -297,7 +297,7 @@ codebuddy-hud/
 │   ├── renderer.js / renderer/   # 3-line layout assembly and segment rendering (format / diff-render / agents-render)
 │   ├── parser.js                 # Payload parsing (token / diff / cost)
 │   ├── transcript.js             # Tail-reads the transcript: turn tool counts + usage aggregation
-│   ├── session-stats.js          # /clear reset detection and baseline handoff
+│   ├── session-stats.js          # /clear reset detection and incremental baselines
 │   ├── config.js                 # Theme presets, dark/light resolution, deepMerge
 │   ├── theme-selector.js / lang.js          # Interactive theme picker and i18n dictionary
 │   ├── doctor.js / statusline-installer.js  # Environment diagnostics / host config writer
