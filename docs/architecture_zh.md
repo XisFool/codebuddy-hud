@@ -44,7 +44,7 @@
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **插件声明层 (Plugin Layer)**：包含 `.codebuddy-plugin/` 与 `skills/`，声明插件指令集（`status`, `setup`, `uninstall`, `theme`, `doctor`）与 AI Agent 自助配置能力。
+- **插件声明层 (Plugin Layer)**：包含 `.codebuddy-plugin/` 元数据声明与 `skills/hud-config/`，提供 AI Agent 自助交互配置能力。
 - **运行时执行层 (Runtime Layer)**：包含所有核心业务逻辑、渲染管道、状态机缓存与跨平台 Shim 适配脚本。
 
 ---
@@ -240,6 +240,7 @@ sequenceDiagram
 4. **配置写入与卸载清理**：
    - JSONC 解析保留字符串。原子替换跟随有效符号链接，保留现有 POSIX 权限和所有者；新配置及首次备份默认 `0600`。多硬链接目标会被拒绝，避免悄悄断链。
    - 卸载只恢复非本 HUD 的 `statusLine`（备份记录的命令含 `codebuddy-hud` 则改为移除该项），保留其他 settings 及用户主题；备份解析成功即回收，解析或写入失败时保留。
+   - 技能生命周期管理：`setup` 时自动将 `skills/hud-config/` 挂载至 `~/.codebuddy/skills/hud-config/`（Windows 优先 Junction，POSIX 优先目录软链，支持递归复制降级）；`uninstall` 时自动清理已部署的技能目录与软链。
    - 卸载时自动清理系统级 PATH 注册（从 Windows 用户注册表 Path 移除 runtime 目录，macOS/Linux 删除 `~/.local/bin/codebuddy-hud` 软链接）；在测试沙箱模式下（`CODEBUDDY_HOME` 已设）自动跳过系统级 PATH 清理以保障环境隔离安全。
 5. **验证隔离**：
    - 安装卸载测试同时隔离 runtime、settings 和用户目录；仅设置 `CODEBUDDY_HOME` 不能保护真实 shim。

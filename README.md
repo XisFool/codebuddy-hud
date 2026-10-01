@@ -70,7 +70,7 @@ powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.c
 curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.sh | bash
 ```
 
-> **为什么不是一条 插件安装 命令？** 插件清单（`.codebuddy-plugin/plugin.json`）只声明元数据，不会下载运行时，也不会写入 `settings.json` 的 `statusLine`（宿主清单 schema 无 statusLine 字段）。安装脚本负责这两件事：把 runtime 落到 `~/.codebuddy/codebuddy-hud-runtime/runtime/`，再写入 `statusLine.command`。
+> **为什么不是一条 插件安装 命令？** 插件清单（`.codebuddy-plugin/plugin.json`）只声明元数据，不会下载运行时，也不会写入 `settings.json` 的 `statusLine`（宿主清单 schema 无 statusLine 字段）。安装脚本负责这三件事：把 runtime 落到 `~/.codebuddy/codebuddy-hud-runtime/runtime/`，写入 `statusLine.command`，并自动挂载 `hud-config` 技能至 `~/.codebuddy/skills/hud-config/`。
 
 安装器行为：
 
@@ -78,6 +78,7 @@ curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/script
 2. 下载 runtime 至 `~/.codebuddy/codebuddy-hud-runtime/`。
 3. 备份并写入 `~/.codebuddy/settings.json` 的 `statusLine.command`；Windows 同时生成 `.cmd` shim，烘焙 Node 绝对路径，不依赖系统 PATH。
 4. 自动注册 PATH：Windows 自动向用户级注册表 PATH 追加 runtime bin 目录并刷新当前会话；macOS / Linux 若 PATH 包含 `~/.local/bin` 则自动创建软链接（可通过设置 `CODEBUDDY_HUD_NO_PATH=1` 跳过自动注册）。
+5. 自动挂载技能：将内置的 `hud-config` 技能挂载至 `~/.codebuddy/skills/hud-config`（Windows 优先 Junction，POSIX 优先软链接，支持目录降级复制），无需手动配置即可在 CodeBuddy 会话内通过自然语言交互换肤与定制看板。
 
 **幂等**：重复运行同一条命令即可修复、升级或清理旧版本残留。
 
@@ -197,7 +198,8 @@ codebuddy-hud --uninstall
 1. 从安装时保留的原始备份还原其中的 `statusLine`；若备份记录的命令本身指向 codebuddy-hud（例如更早的安装副本），则直接移除 `statusLine` 项。
 2. 删除 Windows `.cmd` shim。
 3. 清理 HUD 自身的缓存与状态文件（编码缓存、Git 缓存、使用量 checkpoint、会话统计、credit 状态、更新状态）。
-4. 清理 PATH 注册与软链接：从 Windows 用户级注册表 PATH 中移除 runtime bin 目录；在 macOS / Linux 上删除 `~/.local/bin/codebuddy-hud` 软链接（沙箱测试模式下自动跳过）。
+4. 清理已部署或挂载的 `~/.codebuddy/skills/hud-config/` 技能目录与软链接。
+5. 清理 PATH 注册与软链接：从 Windows 用户级注册表 PATH 中移除 runtime bin 目录；在 macOS / Linux 上删除 `~/.local/bin/codebuddy-hud` 软链接（沙箱测试模式下自动跳过）。
 
 用户主题配置（`codebuddy-hud.config.json`）与已安装的 `~/.codebuddy/codebuddy-hud-runtime/` 运行时目录会被保留（可按需手动删除）；除 `statusLine` 外，不会改动 `settings.json` 中的任何其他配置项。
 

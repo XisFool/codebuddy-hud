@@ -35,9 +35,9 @@ runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--d
   ├ sanitize.js                终端安全防御（过滤 ANSI/OSC/Bidi 注入）
   ├ paths.js                   ~/.codebuddy 状态文件路径解析
   ├ lang.js                    多语言 i18n 字典（zh/en）
-  ├ statusline-installer.js    --setup 写 settings.json 并生成 Windows shim
+  ├ statusline-installer.js    --setup 写 settings.json、挂载技能并生成 Windows shim
   ├ settings-file.js           JSONC 解析、配置权限与符号链接保护
-  └ uninstall.js               --uninstall 清理配置、shim、缓存与状态
+  └ uninstall.js               --uninstall 清理配置、shim、技能、缓存与状态
 tests/fixtures/*.json          3 个 payload fixture
 tests/unit/*.test.mjs          22 个核心单元测试文件
 scripts/install.ps1            Windows PowerShell 一键在线安装脚本
@@ -46,7 +46,7 @@ scripts/bootstrap.js           Release 远程在线安装与自举更新器
 scripts/run-tests.js           跨平台测试驱动（全量路径参数转发）
 scripts/verify-display.js      E2E 看板与 CLI 命令形态契约验证
 scripts/verify-install.js      隔离宿主安装/卸载生命周期契约验证
-.codebuddy-plugin/plugin.json  插件元数据与 CLI 声明
+.codebuddy-plugin/plugin.json  插件元数据清单
 skills/hud-config/SKILL.md     HUD 交互式配置 Agent 技能指南
 ```
 

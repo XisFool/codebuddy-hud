@@ -10,6 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] (待发布)
 
+### Fixed (缺陷修复)
+- **修复 `/clear` 后 Δ/⏱ 漏显并退役 handoff 机制**：
+  - 针对宿主在 `/clear` 后切换全新 transcript 导致的会话失联与 Δ/⏱ 漏显问题，退役旧的跨 identity 水位共享（handoff）机制（消除其在空闲超时 >5min 拒收、多窗口覆写与单调防线拒收三条路径下的漏显缺陷）；
+  - 确立「identity miss 即新会话」语义，直接以当前 payload 累计为新基线，Δ/⏱ 归零重来；`paths.js` 将 `getSessionStatsHandoffPath` 降级为存量清理接口；全量单元测试用例扩充至 417 个。
+
+### Added (新增特性)
+- **支持 `hud-config` 技能自动挂载与卸载清理**：
+  - `--setup` 安装时自动将内置的 `skills/hud-config` 挂载至宿主全局技能目录 `~/.codebuddy/skills/hud-config`（Windows 优先 Junction，POSIX 优先目录软链，支持递归复制降级），支持在 CodeBuddy 会话内通过自然语言直接调用 Agent 换肤与配置看板；
+  - `--uninstall` 卸载时彻底清理已部署或挂载的技能目录与软链；`scripts/verify-install.js` 补充技能生命周期端到端自动化断言。
+
+### Performance (性能优化)
+- **推理强度扫描快筛阻断**：在 `runtime/model-info.js` 的 `scanChunkForEffortSignal` 中加入针对 `/effort` 等指令的前置字符串快速快筛，阻断大文件 65%+ 的无用 `JSON.parse` 开销。
+
+### Removed (移除与清理)
+- **清理插件清单无效命令**：移除 `.codebuddy-plugin/plugin.json` 中的 `commands` 数组，消除 CodeBuddy 宿主加载时的非标准指令集告警。
+- **清除配置死键**：彻底移除 `runtime/config.js` 与配置模板中已废弃的残留死键 `showAgentStatus`。
+- **精简文档体系**：移除冗余的 `docs/README.md` 跳板文档，直连架构与模块参考手册。
+
+### Documentation (文档对齐)
+- **宿主刷新机制与局限说明**：双语 README 新增独立章节，AGENTS.md 同步对齐 CodeBuddy Code v2.157.0 模块 54030/83451 逆向确证（短命子进程模型、5 个离散事件触发 300ms 防抖、空闲与只读工具静默）。
+- **GBK 终端 ASCII 降级对照**：双语 README 补充 Windows 代码页 936 等非 UTF-8 终端下的纯 ASCII 降级显示对照示例。
+
 ## [v0.3.7] - 2026-09-22
 
 ### Changed (变更与优化)

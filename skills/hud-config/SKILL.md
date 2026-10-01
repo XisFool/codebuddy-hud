@@ -23,7 +23,7 @@ description: 当用户想要配置、美化或自定义 codebuddy-hud 状态栏�
      - `showDiffStats`（Git 代码变更增删行，默认 true）
      - `showCost`（Credits 实际消费，默认 true）
      - `showDuration`（会话耗时，默认 true）
-     - `showToolActivity`（最近工具调用活动，默认 true；替代历史遗留的 `showAgentStatus`）
+     - `showToolActivity`（最近工具调用活动，默认 true）
      - `showGitBranch`（Git 分支名与修改标记，默认 true）
      - `showCurrentDir`（当前工作区目录名，默认 true）
      - `showVersion`（Line 1 客户端版本号，默认 false）

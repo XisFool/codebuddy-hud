@@ -238,6 +238,7 @@ The host (verified as a hard constant up to v2.157.0) retains only the first thr
 4. **Settings Writes & Uninstall Cleanup**:
    - JSONC parsing preserves string content. Atomic replacement follows valid symlinks and retains existing POSIX permissions and ownership; new settings and first backups default to `0600`. Multiple hard links are rejected rather than silently detached.
    - Uninstall restores only a non-HUD `statusLine` (a backup whose command mentions `codebuddy-hud` results in the entry being removed instead), preserves other settings and user themes, and consumes the backup once parsed — it is retained only when parsing or writing fails.
+   - **Skill Lifecycle Management**: `setup` automatically deploys `skills/hud-config/` to `~/.codebuddy/skills/hud-config/` (Junction on Windows, symlink on POSIX, recursive copy fallback); `uninstall` automatically cleans up the deployed skill directory or symlink.
    - Uninstall automatically cleans up system PATH registration (removes runtime directory from Windows user registry Path, unlinks `~/.local/bin/codebuddy-hud` on macOS/Linux); automatically skipped in sandbox testing mode (`CODEBUDDY_HOME` set) to protect host environment isolation.
 5. **Verification Isolation**:
    - Setup/uninstall tests isolate runtime, settings and user state together. `CODEBUDDY_HOME` alone cannot protect the checkout's generated shim.

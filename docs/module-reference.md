@@ -345,7 +345,7 @@ export function getLogicalSessionCostData(
   totalDurationMs: number;
   apiDurationMs: number;
 };
-export function getSessionIdentity(cbData: CodeBuddyPayload, cwd?: string): string;
+export function getSessionIdentity(cbData: CodeBuddyPayload, cwd?: string): string | null;
 export function getResetSignal(cbData: CodeBuddyPayload): {
   totalInputTokens: number | null;
   currentInputTokens: number | null;
@@ -423,7 +423,7 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 - `getSessionStatsStatePath(identity: string): string`: 按会话 identity 哈希隔离的基线状态路径。
 - `getSessionStatsHandoffPath(cwd: string): string`: 存量清理接口——旧版 `/clear` handoff 状态路径（`handoff-<sha256(cwd)>.json`）。handoff 机制已退役（identity miss 直接锚定当前累计），现无运行时引用；函数保留以便定位/清理存量文件，uninstall 按整目录 rmSync 兜底覆盖。
 - `getSessionEffortStatePath(transcriptPath: string): string`: 返回按 transcript 路径哈希寻址的会话 effort 状态文件 `codebuddy-hud-session-state/effort-<sha256>.json`。
-- `resolveCodeBuddyPath(rel: string): string`: 将相对路径解析为基于 `CODEBUDDY_HOME` 的绝对路径。
+- `resolveCodeBuddyPath(...segments: string[]): string`: 将相对路径解析为基于 `CODEBUDDY_HOME` 的绝对路径。
 - `getUserSkillsDir(): string`: 返回用户级技能根目录（`~/.codebuddy/skills/`）。
 - `getHudSkillTargetDir(): string`: 返回 `hud-config` 技能部署目标目录（`~/.codebuddy/skills/hud-config/`）。
 - `normalizePlatformPath(p: string): string`: 平台感知路径归一化——Windows 下 resolve 后整体小写（消除盘符 `d:`/`D:` 哈希分裂），POSIX 保留大小写语义。

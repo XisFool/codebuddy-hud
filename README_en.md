@@ -70,7 +70,7 @@ powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.c
 curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.sh | bash
 ```
 
-> **Why not a single plugin install command?** The plugin manifest (`.codebuddy-plugin/plugin.json`) only declares metadata — it does not download runtime files, nor does it write `statusLine` into `settings.json` (the host plugin manifest schema has no statusLine field). The installer script handles both: placing the runtime at `~/.codebuddy/codebuddy-hud-runtime/runtime/` and configuring `statusLine.command`.
+> **Why not a single plugin install command?** The plugin manifest (`.codebuddy-plugin/plugin.json`) only declares metadata — it does not download runtime files, nor does it write `statusLine` into `settings.json` (the host plugin manifest schema has no statusLine field). The installer script handles three things: placing the runtime at `~/.codebuddy/codebuddy-hud-runtime/runtime/`, configuring `statusLine.command`, and auto-mounting the `hud-config` skill to `~/.codebuddy/skills/hud-config/`.
 
 The installer:
 
@@ -78,6 +78,7 @@ The installer:
 2. Downloads the runtime to `~/.codebuddy/codebuddy-hud-runtime/`.
 3. Backs up and writes `statusLine.command` into `~/.codebuddy/settings.json`; on Windows, also generates a `.cmd` shim with the Node absolute path baked in (PATH-independent).
 4. Automatically registers PATH: on Windows, appends the runtime bin directory to user-level registry PATH and refreshes the current session; on macOS/Linux, symlinks into `~/.local/bin` if it is present in PATH (skip via `CODEBUDDY_HUD_NO_PATH=1`).
+5. Automatically mounts skills: mounts the built-in `hud-config` skill into `~/.codebuddy/skills/hud-config` (Junction on Windows, symlink on POSIX, directory copy fallback), enabling in-session natural language theme switching and display customization without manual setup.
 
 **Idempotent** — re-run the same command anytime to repair drift, upgrade, or clean stale files left by older versions.
 
@@ -197,7 +198,8 @@ The uninstaller:
 1. Restores the `statusLine` from the original backup taken at install time; if the command recorded in the backup itself points to codebuddy-hud (e.g. an earlier install copy), the `statusLine` entry is removed instead.
 2. Removes the Windows `.cmd` shim.
 3. Cleans HUD-owned cache and state files (encoding cache, Git cache, usage checkpoints, session stats, credit state, update status).
-4. Cleans up PATH registration and symlinks: removes the runtime bin directory from the Windows user registry PATH, and unlinks `~/.local/bin/codebuddy-hud` on macOS/Linux (automatically skipped in sandbox testing mode).
+4. Cleans up deployed or mounted `~/.codebuddy/skills/hud-config/` skill directories and symlinks.
+5. Cleans up PATH registration and symlinks: removes the runtime bin directory from the Windows user registry PATH, and unlinks `~/.local/bin/codebuddy-hud` on macOS/Linux (automatically skipped in sandbox testing mode).
 
 Your theme config (`codebuddy-hud.config.json`) and the installed runtime directory (`~/.codebuddy/codebuddy-hud-runtime/`) are preserved — delete them manually if desired. Nothing else in `settings.json` is touched.
 
