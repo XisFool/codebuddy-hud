@@ -1,6 +1,6 @@
 # CodeBuddy HUD 系统架构设计全景文档
 
-> **目标版本：** `v0.3.7+`  
+> **目标版本：** `v0.3.8+`  
 > **宿主兼容性：** CodeBuddy Code CLI（涵盖最新 v2.157.0+；受下文说明的 Windows 引号兼容与三行显示契约约束）
 > **底层运行环境：** 纯 Node.js 标准库 (`>= 18.0.0`，绝对零外部 npm 依赖)
 
@@ -231,7 +231,7 @@ sequenceDiagram
    - 自动将路径中的 `%` 批量转义为 `%%`，免疫 `cmd.exe` 变量误展开。
    - 当路径包含非 ASCII 字符时，通过 `resolveShortPath()` 解析 Windows 8.3 短路径并强制注入 `@chcp 65001 >nul`，彻底规避批处理对非 ASCII 路径解析崩溃。
    - shim 为 UTF-8，必要时先 `chcp 65001`；实测 cmd.exe 不支持 UTF-16LE 批处理文件。
-   - v2.146.0 containment 会二次转义字面引号。安全 ASCII shim 路径省略引号；需要引号的路径保留引号，仍受宿主兼容限制。
+   - 针对 Windows 宿主启动器可能二次转义字面引号的兼容限制，安全 ASCII shim 路径省略引号；需要引号的路径保留引号，仍受宿主兼容限制。
 2. **终端编码自动探测与缓存**：
    - Windows 下通过 `chcp.com` 探测代码页并缓存于 `codebuddy-hud-cache-state.json`（`65001`）。
    - 在不支持 UTF-8 的终端自动无缝回退至纯 ASCII 字符集（`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`, `[t]`, `[T]`）。

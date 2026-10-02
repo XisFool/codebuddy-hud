@@ -106,6 +106,11 @@ node runtime/bin/codebuddy-hud.js --theme list
     - 该误判与 HUD 耗时无关，HUD 侧无法阻止（实测 HUD 仅 0.1~0.3s：直连 node ~0.1s，经 `.cmd` shim ~0.15~0.32s）；
     - 排查入口：`~/.codebuddy/logs/<date>/<project>__*.log` 搜 `Status line command failed`；本地复现只需让宿主父进程阻塞 ≥5s（如执行 `sleep 6`）即可得到逐字相同的错误串。
     - 最新 v2.157.0 逆向确证（模块 54030 / 83451）：`executeStatusLine` 依然保持 10240B 捕获上限、前 3 行截断和 5000ms 硬超时；`StatusManager` 依然仅由 5 个离散事件（session / result / permission / settings / cost）触发 300ms 防抖，空闲与只读工具运行中完全静默，无周期心跳定时器；`current_usage` 统计口径虽与 `/context` 对齐，但仍为单次请求后的静态快照。
+14. **伴生技能生命周期管理（hud-config 挂载与清理契约）**：
+    - `--setup` 安装时将内置 `skills/hud-config` 挂载至 `~/.codebuddy/skills/hud-config`；
+    - 挂载机制支持三级容灾：Windows 平台优先使用免管理员权限的 NTFS Junction，POSIX 平台优先使用目录软链（`'dir'`），权限受限环境自动降级为递归目录拷贝（`fs.cpSync`）；
+    - 防御守卫：前置校验源目录 `SKILL.md` 存在性（防止缺失文件报错）、校验源目录与目标目录路径规范化防自环循环，且全程外层 try-catch 包裹，挂载异常绝不阻断 statusLine 主配置写入；
+    - 对称卸载：`--uninstall` 彻底清理已部署或挂载的技能目录（符号链接优先使用 `fs.unlinkSync` 解除挂载，避免误删源文件）；测试必须同时隔离 `CODEBUDDY_HOME` 环境变量以保证沙箱安全性。
 
 ## 提交与工作流契约
 

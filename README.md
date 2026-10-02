@@ -120,7 +120,7 @@ node scripts/bootstrap.js
 
 ```bash
 export CODEBUDDY_HUD_BOOTSTRAP_URL=https://your-mirror/scripts/bootstrap.js
-export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.3.7
+export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.3.8
 curl -fsSL https://your-mirror/scripts/install.sh | bash
 ```
 
@@ -128,7 +128,7 @@ curl -fsSL https://your-mirror/scripts/install.sh | bash
 
 ```powershell
 $env:CODEBUDDY_HUD_BOOTSTRAP_URL = 'https://your-mirror/scripts/bootstrap.js'
-$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.3.7'
+$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.3.8'
 irm https://your-mirror/scripts/install.ps1 | iex
 ```
 
@@ -282,11 +282,11 @@ codebuddy-hud --theme list      # 仅列出全部主题
 
 | 命令 | 说明 |
 | :--- | :--- |
-| `--setup` | 将 `statusLine` 写入 `settings.json`（源码本地安装时使用） |
+| `--setup` | 将 `statusLine` 写入 `settings.json`、自动挂载 `hud-config` 技能并注册 PATH（源码本地安装使用） |
 | `--status` | 以演示数据渲染一次看板并退出 |
 | `--theme [name\|list]` | 交互式主题选择器；`list` 列出主题；带名称时直接切换 |
 | `--doctor` / `-d` `[--json]` | 输出环境诊断报告（支持 `--json` 输出结构化数据） |
-| `--uninstall` | 卸载并从备份还原配置 |
+| `--uninstall` | 卸载并从备份还原配置，彻底清理已挂载技能与 PATH 注册 |
 
 ---
 

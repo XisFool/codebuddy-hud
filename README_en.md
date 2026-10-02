@@ -120,7 +120,7 @@ Local install mode copies files directly from the repository — zero remote HTT
 
 ```bash
 export CODEBUDDY_HUD_BOOTSTRAP_URL=https://your-mirror/scripts/bootstrap.js
-export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.3.7
+export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.3.8
 curl -fsSL https://your-mirror/scripts/install.sh | bash
 ```
 
@@ -128,7 +128,7 @@ curl -fsSL https://your-mirror/scripts/install.sh | bash
 
 ```powershell
 $env:CODEBUDDY_HUD_BOOTSTRAP_URL = 'https://your-mirror/scripts/bootstrap.js'
-$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.3.7'
+$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.3.8'
 irm https://your-mirror/scripts/install.ps1 | iex
 ```
 
@@ -282,11 +282,11 @@ Fields:
 
 | Command | Description |
 | :--- | :--- |
-| `--setup` | Write `statusLine` into `settings.json` (for source-based local installs) |
+| `--setup` | Write `statusLine` into `settings.json`, automatically deploy the `hud-config` skill, and register PATH |
 | `--status` | Render the HUD once from demo data and exit |
 | `--theme [name\|list]` | Interactive theme picker; `list` prints themes; a name switches directly |
 | `--doctor` / `-d` `[--json]` | Print the environment diagnostic report (supports `--json` for machine consumption) |
-| `--uninstall` | Uninstall and restore the config from backup |
+| `--uninstall` | Uninstall and restore config from backup, cleanly removing deployed skills and PATH registration |
 
 ---
 
@@ -366,7 +366,7 @@ npm test && npm run verify && npm run verify:install   # Full verification
 References:
 
 - [AGENTS.md](AGENTS.md) — development constraints, pitfalls, and the commit verification loop.
-- [docs/architecture_zh.md](docs/architecture_zh.md) — system architecture and data flow (English: [architecture.md](docs/architecture.md)).
+- [docs/architecture.md](docs/architecture.md) — system architecture and data flow (Chinese: [architecture_zh.md](docs/architecture_zh.md)).
 - [docs/module-reference.md](docs/module-reference.md) — module interfaces and persisted state.
 - [CHANGELOG.md](CHANGELOG.md) — release history.
 

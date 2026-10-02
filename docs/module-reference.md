@@ -1,6 +1,6 @@
 # CodeBuddy HUD 模块 API 参考手册 (Module Reference)
 
-> **版本：** `v0.3.7+`  
+> **版本：** `v0.3.8+`  
 > **根路径：** 所有模块相对路径均以仓库根目录或 `~/.codebuddy/codebuddy-hud-runtime/` 为基准。
 
 ---
@@ -40,8 +40,8 @@
 **职责：** 状态栏执行入口，注册为 `statusLine.command`。负责命令行参数分发、stdin 管道超时竞争与异常诊断日志记录、顶层错误捕获与自然 Drain 退出。
 
 ### 命令行参数支持 (CLI Flags)
-- `--setup`: 执行安装，写入 `settings.json` 并生成 Windows `.cmd` shim。
-- `--uninstall`: 仅恢复备份中的 `statusLine`（备份记录的命令自身指向 codebuddy-hud 时改为移除该项），清理缓存及 shim，保留其他 settings 与用户主题配置。
+- `--setup`: 执行安装，写入 `settings.json`、自动挂载 `hud-config` 技能至 `~/.codebuddy/skills/`、注册系统 PATH 并生成 Windows `.cmd` shim。
+- `--uninstall`: 仅恢复备份中的 `statusLine`（备份记录的命令自身指向 codebuddy-hud 时改为移除该项），彻底清理已部署或挂载的技能目录、缓存、系统 PATH 注册及 shim，保留其他 settings 与用户主题配置。
 - `--theme [name]`: 交互式切换或指定设置主题（如 `--theme cyberpunk`、`--theme list`）。
 - `--doctor [--json]`, `-d`: 运行全面诊断体检报告（`-d` 为短参数别名，支持 `--json` 输出结构化数据）。
 - `--status`: 冒烟探测当前状态栏能否正常渲染（3 行输出与 exit 0）。

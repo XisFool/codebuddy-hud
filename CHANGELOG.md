@@ -8,25 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] (待发布)
+## [v0.3.8] - 2026-10-02
 
 ### Fixed (缺陷修复)
-- **修复 `/clear` 后 Δ/⏱ 漏显并退役 handoff 机制**：
-  - 针对宿主在 `/clear` 后切换全新 transcript 导致的会话失联与 Δ/⏱ 漏显问题，退役旧的跨 identity 水位共享（handoff）机制（消除其在空闲超时 >5min 拒收、多窗口覆写与单调防线拒收三条路径下的漏显缺陷）；
-  - 确立「identity miss 即新会话」语义，直接以当前 payload 累计为新基线，Δ/⏱ 归零重来；`paths.js` 将 `getSessionStatsHandoffPath` 降级为存量清理接口；全量单元测试用例扩充至 417 个。
+- **修复 `/clear` 后 Δ/⏱ 漏显并彻底退役 handoff 机制**：
+  - 针对宿主在 `/clear` 后切换全新 transcript 导致的会话失联与 Δ/⏱ 漏显问题，退役旧的跨 identity 水位共享（handoff）机制，彻底根除其在空闲超时 >5min 拒收、同目录多窗口覆写串扰与单调防线拒收三条路径下的漏显缺陷；
+  - 确立「identity miss 即新会话」语义，无论新开窗口还是 `/clear` 换新会话，首帧直接以当前 payload 累计为新基线，Δ/⏱ 归零重来并在次帧平滑累加；
+  - 状态持久化失败或异常时安全锚定为 Δ=0（消除旧版回退至宿主全量巨额累计的缺陷）；`paths.js` 将 `getSessionStatsHandoffPath` 降级为存量清理接口。
 
 ### Added (新增特性)
 - **支持 `hud-config` 技能自动挂载与卸载清理**：
-  - `--setup` 安装时自动将内置的 `skills/hud-config` 挂载至宿主全局技能目录 `~/.codebuddy/skills/hud-config`（Windows 优先 Junction，POSIX 优先目录软链，支持递归复制降级），支持在 CodeBuddy 会话内通过自然语言直接调用 Agent 换肤与配置看板；
-  - `--uninstall` 卸载时彻底清理已部署或挂载的技能目录与软链；`scripts/verify-install.js` 补充技能生命周期端到端自动化断言。
+  - `--setup` 安装时自动将内置的 `skills/hud-config` 挂载至宿主全局技能目录 `~/.codebuddy/skills/hud-config`（Windows 优先免特权的 Junction，POSIX 优先目录软链，遇到权限限制自动降级为递归目录拷贝），支持在 CodeBuddy 会话内通过自然语言直接调用 Agent 换肤与配置看板；
+  - 挂载机制内置前置 `SKILL.md` 存在性校验、自环挂载守卫（Self-loop Guard）与全局异常非阻塞降级保护，决不影响 statusLine 主配置写入；
+  - `--uninstall` 卸载时彻底清理已部署或挂载的技能目录与软链（符号链接优先使用 `unlink` 解除挂载，避免损伤源目录）。
 
 ### Performance (性能优化)
-- **推理强度扫描快筛阻断**：在 `runtime/model-info.js` 的 `scanChunkForEffortSignal` 中加入针对 `/effort` 等指令的前置字符串快速快筛，阻断大文件 65%+ 的无用 `JSON.parse` 开销。
+- **推理强度扫描快筛阻断**：在 `runtime/model-info.js` 的 `scanChunkForEffortSignal` 中加入针对 `/effort`、`ultra_effort` 与 `reasoningEffort` 指令的前置快速字符串快筛，阻断大文件 65%~99% 的无用 `JSON.parse` 与 GC 开销，严格遵守 40 行扫描预算上限。
 
 ### Removed (移除与清理)
 - **清理插件清单无效命令**：移除 `.codebuddy-plugin/plugin.json` 中的 `commands` 数组，消除 CodeBuddy 宿主加载时的非标准指令集告警。
-- **清除配置死键**：彻底移除 `runtime/config.js` 与配置模板中已废弃的残留死键 `showAgentStatus`。
+- **清除配置死键与技能文案校准**：彻底移除 `runtime/config.js` 与配置模板中已废弃的残留死键 `showAgentStatus`，同步校准 `skills/hud-config/SKILL.md` 配置指导文案，减少 LLM 认知负荷。
 - **精简文档体系**：移除冗余的 `docs/README.md` 跳板文档，直连架构与模块参考手册。
+
+### Changed (视觉与资源微调)
+- **SVG 预览图色彩与层级校准**：校准 `assets/codebuddy-hud-preview.svg` 权限模式色值为标准 ANSI 95 高亮紫（`#cba6f7`），取消 cache 命中率粗体以对齐 v0.3.7 slim 细体排版规范，优化活跃图标与工具完成态视觉层级。
+
+### Tests (测试与验证工程)
+- **基线状态机与多窗口隔离回归矩阵**：重构 `tests/unit/session-stats.test.mjs`，新增 P1/P2/S6/S7/S8 全套测试用例，覆盖跨 transcript 归零、同工作区多窗口独立隔离、进程重启降值自适应及持久化异常降级场景；
+- **技能生命周期单测覆盖**：`tests/unit/statusline-installer.test.mjs` 增补技能目录初次挂载、幂等更新、卸载清理、缺少 SKILL.md 跳过及自环保护测试；
+- **E2E 隔离验证扩展**：`scripts/verify-install.js` 新增 `skill-installed-and-readable` 与 `skill-uninstalled-cleanly` 两项端到端生命周期断言；全量单元测试用例扩充至 417 个（415 passed, 2 skipped, 0 failed）。
 
 ### Documentation (文档对齐)
 - **宿主刷新机制与局限说明**：双语 README 新增独立章节，AGENTS.md 同步对齐 CodeBuddy Code v2.157.0 模块 54030/83451 逆向确证（短命子进程模型、5 个离散事件触发 300ms 防抖、空闲与只读工具静默）。

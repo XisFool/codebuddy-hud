@@ -1,6 +1,6 @@
 # CodeBuddy HUD System Architecture
 
-> **Target Version:** `v0.3.7+`  
+> **Target Version:** `v0.3.8+`  
 > **Host Compatibility:** CodeBuddy Code CLI (including latest v2.157.0+; subject to the Windows quoting and three-line display contracts below)
 > **Engine Baseline:** Pure Node.js Standard Library (`>= 18.0.0`, Zero npm dependencies)
 
@@ -229,7 +229,7 @@ The host (verified as a hard constant up to v2.157.0) retains only the first thr
    - Batch percent characters (`%`) in paths are automatically escaped as `%%` to avoid `cmd.exe` variable substitution corruption.
    - When paths contain non-ASCII characters, `resolveShortPath()` resolves Windows 8.3 short paths and prepends `@chcp 65001 >nul` to prevent `cmd.exe` parse crashes.
    - The shim is UTF-8, with `chcp 65001` when needed; UTF-16LE batch files are not supported by the tested cmd.exe invocation.
-   - v2.146.0 containment double-escapes literal quotes. Safe ASCII shim paths are left unquoted; paths requiring quotes retain them and remain subject to the host limitation.
+   - Windows host launcher double-escapes literal quotes across versions. Safe ASCII shim paths are left unquoted; paths requiring quotes retain them and remain subject to the host limitation.
 2. **Terminal UTF-8 Auto-Detection**:
    - On Windows, queries `chcp.com` and caches the result (`65001`) in `codebuddy-hud-cache-state.json`.
    - Seamlessly falls back to ASCII glyphs (`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`, `[t]`, `[T]`) when UTF-8 / Unicode is unsupported.
