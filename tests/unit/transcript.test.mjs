@@ -495,6 +495,23 @@ describe('getTurnUsageMetrics — per-turn aggregation', () => {
     assert.equal(m.promptTokens, 3000);
   });
 
+  it('keeps sliding-window semantics once a turn outgrows the scan budget', () => {
+    // 301 records exceed MAX_TURN_SCAN_LINES (200), so the scan stops before
+    // reaching the user boundary. The pinned contract: the badge reports the
+    // most recent window (200 warm calls = 100%), NOT a whole-turn average
+    // (66.7%) and NOT `cache --`. A recent hit rate is the honest answer to
+    // "is the cache warm right now".
+    const lines = [userMsg('start')];
+    for (let i = 0; i < 100; i++) lines.push(call(1000, 0));    // cold phase
+    for (let i = 0; i < 200; i++) lines.push(call(1000, 1000)); // warm phase
+    const p = writeTmp('turn-window-slide.jsonl', lines.join('\n') + '\n');
+
+    const m = getTurnUsageMetrics(p);
+    assert.equal(m.callCount, 200, 'only the newest 200 records fit the window');
+    assert.equal(m.promptTokens, 200000);
+    assert.equal(m.hitTokens, 200000, 'window value is the recent hit rate, not the 66.7% turn average');
+  });
+
   it('collects the previous completed turn when the file ends with an unresponded user message', () => {
     // Reproduces the idle/input state where a new user prompt has been appended
     // to transcript but the assistant has not made any API calls yet.

@@ -76,7 +76,7 @@ node runtime/bin/codebuddy-hud.js --theme list
 5. **Cache 命中率口径**：
    - 遥测仅存在于 transcript 的 `providerData.rawUsage`（避开 `cache_read_input_tokens: 0` 陷阱字段）；
    - `rawUsage.prompt_tokens` 有效时依次取 `prompt_cache_hit_tokens`、`prompt_tokens_details.cached_tokens`、`cached_tokens`，缺失则为 0；否则以 `usage.inputTokens` 和 `inputTokensDetails[].cached_tokens` 聚合兜底；
-   - 聚合范围：`getTurnUsageMetrics()` 从 EOF 回扫至 `role: 'user'`，展示本轮聚合（`sum(hitTokens) / sum(promptTokens)`），非单次调用瞬时值；
+   - 聚合范围：`getTurnUsageMetrics()` 从 EOF 回扫，预算为至多 200 条记录 / 256KiB；扫至 `role: 'user'` 边界或文件头即为完整本轮；超窗未达边界时窗口自然滑动至最近调用，徽章口径为「近期调用命中率」而非整轮平均（`sum(hitTokens) / sum(promptTokens)`，测试 `turn-window-slide` 钉死该语义），非单次调用瞬时值；
    - 三态契约：`null`（渲染层兜底为 `{available:false}`，显示 `cache --`）、`{available:false}`（`cache --`）、`{available:true, X%}`（正常数值）。
 6. **Token、变更与 Credits 口径**：
    - Token 资源块（Line 2）显示当前上下文输入占用与容量（`Context Token in/size`），进度条分子严格使用 `inTokens`（与 `used_percentage` 同基底）；高缓存命中率或服务商将 miss 视作 creation（如 DeepSeek）时，宿主将 `current_usage.input_tokens` 扣减为 0，HUD 自动按 `combined = rawInput + cacheRead + cacheCreation` 还原活跃上下文占用；未扣减提示词与缓存并存时，结合 `used_percentage` 倒推残差仲裁防翻倍；`outTokens` 独立展示，compact 压缩后宿主尚未提供新 usage 时显示 `--` 与显式等待提示（上下文新鲜度支持双向遥测匹配）；

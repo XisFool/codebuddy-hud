@@ -227,9 +227,11 @@ function extractUsageMetrics(entry) {
 // avg 19.3 calls/turn, max 38). Every call carries its own prompt_tokens and
 // prompt_cache_hit_tokens. Sampling only the newest call makes the badge swing
 // wildly — the first call after a cache miss is ~0% while later calls hit
-// 96-99% — so a "per-turn" figure must aggregate every call in the turn.
-// 200 lines covers a long turn; parsing 200 lines costs ~1.9ms, which is ~0.5%
-// of a single HUD run, so this is deliberately generous.
+// 96-99% — so the badge aggregates every call inside the scan window instead.
+// 200 lines covers a typical turn; parsing them costs ~1.9ms, ~0.5% of a
+// single HUD run. A turn that outgrows the budget slides the window to the
+// most recent calls: by contract the badge is a RECENT hit rate, never a
+// whole-turn average (pinned by the `turn-window-slide` test).
 const MAX_TURN_SCAN_LINES = 200;
 
 // Slide a window backwards from EOF collecting usage blocks, newest first.
@@ -333,8 +335,10 @@ function getRecentUsageMetrics(transcriptPath, opts) {
   return collected.length > 0 ? collected[0] : null;
 }
 
-// Aggregate every API call in the current conversation turn:
-// sum(hit) / sum(prompt) and credits across the turn's calls.
+// Aggregate the turn's API calls within the scan budget (at most the most
+// recent MAX_TURN_SCAN_LINES records / MAX_TOTAL_BYTES before EOF):
+// sum(hit) / sum(prompt) and credits. Past the budget the window slides to
+// the newest calls — a recent hit rate, not a claimed turn average.
 function getTurnUsageMetrics(transcriptPath, opts) {
   return getTurnMetricsAndActivity(transcriptPath, opts).turnUsage;
 }

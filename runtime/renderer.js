@@ -157,16 +157,19 @@ function renderHUD(cbData, config) {
     }
 
     if (disp.showCacheHitRate !== false) {
-      // Real per-turn cache telemetry lives in the transcript's providerData.
-      // Two shapes exist there: rawUsage (authoritative, hit + miss ===
+      // Real cache telemetry lives in the transcript's providerData. Two
+      // shapes exist there: rawUsage (authoritative, hit + miss ===
       // prompt_tokens) and the hard-zero cache_read_input_tokens trap field.
-      // A conversation turn spans many API calls (avg 19.3), so the badge
-      // aggregates the whole current turn — sampling only the newest call
-      // swings between ~0% (cold start) and ~99%.
-      // No payload fallback: the statusLine payload carries only the newest
-      // call, so echoing its cache fields would present one call as the whole
-      // turn. With no usable transcript telemetry the badge degrades to
-      // `cache --`.
+      // The badge answers "is the cache warm right now": it aggregates the
+      // calls inside the transcript scan window — at most the most recent
+      // 200 records / 256KiB before EOF. Early in a turn that window is the
+      // whole turn; once a turn outgrows the budget the window slides to the
+      // newest calls. The contract is a RECENT hit rate — never a single
+      // call (the payload's newest-call figure swings ~0%↔99%) and never a
+      // claimed whole-turn average.
+      // No payload fallback: echoing the statusLine payload's cache fields
+      // would present one call as the window. With no usable transcript
+      // telemetry the badge degrades to `cache --`.
       let cacheMetrics = turnUsage
         ? metricsFromPromptCache(turnUsage.hitTokens, turnUsage.promptTokens)
         : null;
