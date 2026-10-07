@@ -1,6 +1,6 @@
 'use strict';
 
-const { execSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { getCacheStatePath } = require('./paths');
@@ -8,18 +8,22 @@ const { getCacheStatePath } = require('./paths');
 let _unicodeSupported = null;
 
 // The host spawns a fresh process for every statusLine refresh (~300ms), so a
-// module-level cache never pays off. chcp.com costs ~80ms per run on Windows —
-// roughly a third of the whole budget — so the probe result is persisted to a
-// state file instead: the first run pays the spawn, every later run reads a
-// ~50-byte JSON file. The console code page effectively never changes mid-
-// session; CODEBUDDY_HUD_FORCE_ASCII / FORCE_UNICODE always override, and
-// `--uninstall` (or deleting the file) resets the cache.
+// module-level cache never pays off. Probing chcp.com directly (no cmd.exe
+// shell) costs ~23ms p50 on Windows — ~38ms via execSync's shell — so the
+// probe result is persisted to a state file instead: the first run pays the
+// spawn, every later run reads a ~50-byte JSON file. The console code page
+// effectively never changes mid-session; CODEBUDDY_HUD_FORCE_ASCII /
+// FORCE_UNICODE always override, and `--uninstall` (or deleting the file)
+// resets the cache.
 function readUnicodeSupportCache() {
   try {
     const data = JSON.parse(fs.readFileSync(getCacheStatePath(), 'utf8'));
     if (data && typeof data.unicodeSupported === 'boolean') {
       const savedAt = typeof data.savedAt === 'number' ? data.savedAt : (data.savedAt ? Date.parse(data.savedAt) : 0);
-      if (!savedAt || (Date.now() - savedAt < 3600000)) {
+      // probeTtlMs shortens the retention of negative probe results (see
+      // supportsUnicode): a probe failure is "no data", not a code-page answer.
+      const ttl = typeof data.probeTtlMs === 'number' && data.probeTtlMs > 0 ? data.probeTtlMs : 3600000;
+      if (!savedAt || (Date.now() - savedAt < ttl)) {
         return data.unicodeSupported;
       }
     }
@@ -29,7 +33,7 @@ function readUnicodeSupportCache() {
   return null;
 }
 
-function writeUnicodeSupportCache(value) {
+function writeUnicodeSupportCache(value, probeTtlMs) {
   const cachePath = getCacheStatePath();
   const tmpPath = `${cachePath}.tmp-${process.pid}-${Date.now()}`;
   try {
@@ -41,6 +45,11 @@ function writeUnicodeSupportCache(value) {
     } catch {}
     existing.unicodeSupported = value;
     existing.savedAt = Date.now();
+    if (Number.isFinite(probeTtlMs) && probeTtlMs > 0) {
+      existing.probeTtlMs = probeTtlMs;
+    } else {
+      delete existing.probeTtlMs;
+    }
     fs.writeFileSync(tmpPath, JSON.stringify(existing));
     fs.renameSync(tmpPath, cachePath);
   } catch {
@@ -98,21 +107,36 @@ function supportsUnicode() {
     if (cached !== null) {
       _unicodeSupported = cached;
     } else {
+      // Probe the console code page directly (no cmd.exe shell): measured
+      // p50 ~23ms vs ~38ms through execSync's shell. The 300ms cap keeps an
+      // AV/EDR interception spike far below the host's 5s statusLine kill
+      // while leaving ~8x headroom over the healthy p50.
+      let probed = null;
       try {
-        // stdio pins stderr to ignore: execSync forwards child stderr to the
-        // parent's stderr by default, and the HUD must never emit noise.
-        const out = execSync('chcp.com', {
+        const res = spawnSync('chcp.com', [], {
           encoding: 'utf8',
-          timeout: 2000,
+          timeout: 300,
           windowsHide: true,
           stdio: ['ignore', 'pipe', 'ignore'],
         });
+        const out = !res.error && res.status === 0 ? String(res.stdout || '') : '';
         const match = out.match(/(\d+)/);
-        _unicodeSupported = match ? match[1] === '65001' : false;
-        writeUnicodeSupportCache(_unicodeSupported);
+        probed = match ? match[1] === '65001' : null;
       } catch {
+        probed = null;
+      }
+      if (probed !== null) {
+        // A real code-page answer (65001 or not) is stable for the console's
+        // lifetime — cache it for the standard hour.
+        _unicodeSupported = probed;
+        writeUnicodeSupportCache(probed);
+      } else {
+        // No data this frame (spawn failure or 300ms timeout). Degrade to
+        // ASCII now, but only remember the failure briefly: persisting a
+        // timeout as a 1h "false" would keep Unicode glyphs off for an hour
+        // after a single spike on an otherwise UTF-8 console.
         _unicodeSupported = false;
-        writeUnicodeSupportCache(false);
+        writeUnicodeSupportCache(false, 60000);
       }
     }
   } else {
