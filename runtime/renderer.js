@@ -134,7 +134,7 @@ function renderHUD(cbData, config) {
     // (current_usage based). Previously we used totalInput (session-cumulative)
     // while the bar/percent used current_usage, producing wildly inconsistent
     // displays like `1.1M/1M [█░░░░░░░░░]6%`.
-    const ctxLabel = `${bold(color('Context Token ', themePrimary))}${color(inputText, themeAccent)}${color('/', 'gray')}${color(sizeText, themePrimary)}`;
+    const ctxLabel = `${bold(color('Context Token ', themePrimary))}${color(inputText, themePrimary)}${color('/', 'gray')}${color(sizeText, themePrimary)}`;
 
     if (contextStatus === 'fresh' && tokenData.ctxSize > 0
         && Number.isFinite(cbData.context_window.used_percentage)) {

@@ -43,6 +43,28 @@ describe('theme-selector', () => {
     }
   });
 
+  it('renders cyberpunk preview with 249k and 1M having matching primary colors', () => {
+    const preview = renderThemePreview('cyberpunk');
+    const line2 = preview[1];
+    // In cyberpunk dark mode, primary is brightMagenta (\x1b[38;5;219m), accent is cyan (\x1b[36m).
+    // Both 249k and 1M must use primary brightMagenta.
+    assert.ok(line2.includes('\x1b[38;5;219m249k\x1b[0m'), 'cyberpunk preview 249k must be brightMagenta');
+    assert.ok(line2.includes('\x1b[38;5;219m1M\x1b[0m'), 'cyberpunk preview 1M must be brightMagenta');
+    assert.ok(!line2.includes('\x1b[36m249k\x1b[0m'), 'cyberpunk preview 249k must not be cyan');
+  });
+
+  it('renders monochrome dark preview with brightWhite model and white tokens', () => {
+    const preview = renderThemePreview('monochrome');
+    const [line1, line2] = preview;
+    // In monochrome dark mode, model is brightWhite (\x1b[97m), gitBranch is white (\x1b[37m)
+    // primary is white (\x1b[37m), accent is gray (\x1b[90m)
+    assert.ok(line1.includes('\x1b[97mDeepseek-V4.1-Flash\x1b[0m'), 'model must use brightWhite');
+    assert.ok(line1.includes('\x1b[37mmain\x1b[0m'), 'branch must use white');
+    assert.ok(line1.includes('\x1b[90mcodebuddy-cli-hud\x1b[0m'), 'project name must use gray accent');
+    assert.ok(line2.includes('\x1b[37m249k\x1b[0m'), '249k must use white');
+    assert.ok(line2.includes('\x1b[37m1M\x1b[0m'), '1M must use white');
+  });
+
   it('saves user theme to config and reads it back in getActiveThemeName and loadConfig', () => {
     const configPath = saveUserTheme('cyberpunk');
     assert.ok(fs.existsSync(configPath));

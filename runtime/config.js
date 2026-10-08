@@ -114,15 +114,15 @@ const THEME_PRESETS = {
     name: 'monochrome',
     label: '黑白极简 (Monochrome)',
     dark: {
-      primary: 'gray',
+      primary: 'white',
       secondary: 'gray',
       warning: 'yellow',
       critical: 'red',
       accent: 'gray',
       diffAdd: 'green',
       diffRemove: 'red',
-      model: 'gray',
-      gitBranch: 'gray',
+      model: 'brightWhite',
+      gitBranch: 'white',
     },
     light: {
       primary: 'gray',

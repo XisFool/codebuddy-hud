@@ -91,7 +91,7 @@ function renderThemePreview(themeName, mode = 'dark') {
   const line1 = `${modelPart}${sep}${branchPart}${sep}${projectPart}${sep}${permPart}`;
 
   // Line 2: Context Window & Tokens
-  const inTokens = color('249k', a);
+  const inTokens = color('249k', p);
   const sizeText = color('1M', p);
   const ctxLabel = `${bold(color('Context Token ', p))}${inTokens}${color('/', 'gray')}${sizeText}`;
   const bar = `${color('███', 'green')}${dim('░░░░░░░')}`;

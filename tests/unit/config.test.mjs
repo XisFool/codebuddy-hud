@@ -166,7 +166,10 @@ describe('THEME_PRESETS and resolveTheme', () => {
     assert.equal(amber.name, 'amber');
 
     const monochrome = resolveTheme({ theme: 'monochrome', themeMode: 'dark' });
-    assert.equal(monochrome.primary, 'gray');
+    assert.equal(monochrome.primary, 'white');
+    assert.equal(monochrome.model, 'brightWhite');
+    assert.equal(monochrome.gitBranch, 'white');
+    assert.equal(monochrome.accent, 'gray');
     assert.equal(monochrome.name, 'monochrome');
   });
 
