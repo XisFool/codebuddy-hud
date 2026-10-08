@@ -150,7 +150,7 @@ export const THEME_PRESETS: Record<string, ThemePreset>;
 - `emerald`: 翡翠绿清新护眼 (dark: `brightGreen`/`gray`, light: `green`/`gray`)
 - `cyberpunk`: 赛博朋克炫酷粉紫+荧光青 (dark: `brightMagenta`/`cyan`, light: `magenta`/`blue`)
 - `amber`: 琥珀金耀眼质感 (dark/light: `gold`/`gray`)
-- `monochrome`: 黑白极简经典终端 (dark/light: `gray`/`gray`)
+- `monochrome`: 黑白极简经典终端 (dark: `white`/`gray`, light: `gray`/`gray`)
 
 ### 安全机制 (Why)
 `deepMerge()` 内部校验：

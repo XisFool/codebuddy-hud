@@ -10,7 +10,7 @@ HUD 同步输出 ≤3 行 ANSI 看板并退出。CommonJS，Node >=18。
    - 单次预算 <1500ms（实际 p50 ~200ms；入口 `TIMEOUT_MS` 设 800ms 管道保底超时）。
    - 任何内部异常静默降级，入口监听 `process.stdout/stderr.on('error')` 防 EPIPE 崩溃；
    - 入口采用 `process.exitCode = 0` + 事件循环自然排空，防 stdout 异步管道截断。
-3. **输出严格 ≤3 行**（`runtime/config.js` 中 `display.maxLines: 3`）：结构上限 3 行，完全对齐宿主 CodeBuddy Code 实测截断（v2.157.0 模块 54030 源码确认为 `stdout.split("\n").slice(0, 3)`，stdout 捕获上限 10KB），无数据行自动隐藏。
+3. **输出严格 ≤3 行**（`runtime/config.js` 中 `display.maxLines: 3`）：结构上限 3 行，完全对齐宿主 CodeBuddy Code 实测截断（v2.162.0 模块 54030 源码确认为 `stdout.split("\n").slice(0, 3)`，stdout 捕获上限 10KB），无数据行自动隐藏。
 4. **终端安全防御**：所有外部文本必须经 `sanitizeTerminalText()`，剔除 ANSI CSI、OSC、C0/C1（`U+0080-U+009F`）及 Bidi 字符（`U+202E` 等）；`effort` 走白名单校验。
 5. **数据真实性契约**：Cache 与 Credits 取自 transcript 真实遥测，绝不伪造或硬编码，无数据时优雅降级（如 `cache --`）。
 
@@ -71,7 +71,10 @@ node runtime/bin/codebuddy-hud.js --theme list
 2. **Windows `.cmd` Shim**：烘焙安装时的 `process.execPath` 绝对路径（`statusline-installer.js`），不依赖系统 PATH；路径中 `%` 批量转义为 `%%`；含非 ASCII 字符时自动解析 Windows 8.3 短路径并前置 `@chcp 65001 >nul`。
    - 针对 Windows 宿主启动器的字面引号转义限制，安装器对安全 ASCII 路径省略引号；含空格或 shell 特殊字符的路径保留引号。
    - `.cmd` 使用 UTF-8，必要时先 `chcp 65001`。不要改成 UTF-16LE；已实测 cmd.exe 无法正常执行该格式。
-3. **终端编码探测缓存**：`chcp.com` 探测结果缓存在 `~/.codebuddy/codebuddy-hud-cache-state.json`（`encoding.js`）；`CODEBUDDY_HUD_FORCE_ASCII/UNICODE` 优先于缓存。
+3. **终端编码探测缓存与预算**：
+   - Windows 下直连 `spawnSync('chcp.com', ...)` 免除 cmd.exe 壳进程（实测 p50 由 ~38ms 降至 ~23ms），探测超时收紧至 300ms（对健康 p50 留充足余量，防系统尖刺触碰宿主 5s 判死线）；
+   - 拆分缓存 TTL 语义：明确代码页结果缓存在 `~/.codebuddy/codebuddy-hud-cache-state.json` 保持 1 小时；超时/进程失败视为暂无数据，当帧 ASCII 降级但仅缓存 60 秒（`probeTtlMs`），过期自动重探，杜绝单次抖动导致字形降级 1 小时；
+   - `CODEBUDDY_HUD_FORCE_ASCII/UNICODE` 优先于缓存。
 4. **错误日志轮转**：`~/.codebuddy/codebuddy-hud-error.log` 超过 1MB 自动重置，防高频刷新写满磁盘。
 5. **Cache 命中率口径**：
    - 遥测仅存在于 transcript 的 `providerData.rawUsage`（避开 `cache_read_input_tokens: 0` 陷阱字段）；
@@ -105,7 +108,7 @@ node runtime/bin/codebuddy-hud.js --theme list
     - 若宿主自身事件循环被占住 ≥5s（实测会话启动期 `bash -l` shell snapshot 8~10s、插件市场加载 5.4s、云端配置 2.4s、`rebuildAgents` / `readDynamic` 各 10s 上限），恢复后 **timers 阶段先于已排队的 `close` 回调**，于是一个 0.2s 就跑完的 HUD 也会被判超时（此时 `kill()` 因直接子进程已退出而返回 false，故错误串带 "and failed to terminate"）；
     - 该误判与 HUD 耗时无关，HUD 侧无法阻止（实测 HUD 仅 0.1~0.3s：直连 node ~0.1s，经 `.cmd` shim ~0.15~0.32s）；
     - 排查入口：`~/.codebuddy/logs/<date>/<project>__*.log` 搜 `Status line command failed`；本地复现只需让宿主父进程阻塞 ≥5s（如执行 `sleep 6`）即可得到逐字相同的错误串。
-    - 最新 v2.157.0 逆向确证（模块 54030 / 83451）：`executeStatusLine` 依然保持 10240B 捕获上限、前 3 行截断和 5000ms 硬超时；`StatusManager` 依然仅由 5 个离散事件（session / result / permission / settings / cost）触发 300ms 防抖，空闲与只读工具运行中完全静默，无周期心跳定时器；`current_usage` 统计口径虽与 `/context` 对齐，但仍为单次请求后的静态快照。
+    - 最新 v2.162.0 逆向确证（模块 54030 / 83451 / 14616）：`executeStatusLine` 依然保持 10240B 捕获上限、前 3 行截断和 5000ms 硬超时；`StatusManager` 依然仅由 5 个离散事件（session / result / permission / settings / cost）触发 300ms 防抖，空闲与只读工具运行中完全静默，无周期心跳定时器；`current_usage` 统计口径虽与 `/context` 对齐，但仍为单次请求后的静态快照。
 14. **伴生技能生命周期管理（hud-config 挂载与清理契约）**：
     - `--setup` 安装时将内置 `skills/hud-config` 挂载至 `~/.codebuddy/skills/hud-config`；
     - 挂载机制支持三级容灾：Windows 平台优先使用免管理员权限的 NTFS Junction，POSIX 平台优先使用目录软链（`'dir'`），权限受限环境自动降级为递归目录拷贝（`fs.cpSync`）；

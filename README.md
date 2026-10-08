@@ -41,10 +41,10 @@ Context Token 249k/1M [###-------] 25%  |  out 1.1k  |  cache 96.8%
 ### 布局说明
 
 - **Line 1（身份）**：模型名称、推理强度（如 `● max`）、Git 分支（`*` 表示有未提交改动）、工作区目录名、当前权限模式。
-- **Line 2（资源）**：当前上下文输入占用、窗口进度条与百分比（分子口径与宿主 `used_percentage` 一致）、输出 Token 与 Prompt Cache 本轮命中率；压缩后宿主尚未提供新 usage 时显示 `--` 和等待提示。
+- **Line 2（资源）**：当前上下文输入占用、窗口进度条与百分比（分子口径与宿主 `used_percentage` 一致）、输出 Token 与近期 Prompt Cache 命中率（滑动窗口聚合）；压缩后宿主尚未提供新 usage 时显示 `--` 和等待提示。
 - **Line 3（本轮活动）**：代码变更行数 `Δ +N -M`（ASCII 终端降级为 `[D]`）、会话实际消费（credits；不可得时回退 `$USD`）、会话耗时、AI 当前动作、本轮已完成工具调用频次（最多 3 项）。
 
-3 行为硬上限，对齐宿主 CodeBuddy Code（实测至最新 v2.157.0+ 均按 stdout 前 3 行截断）；无数据的行或字段整体隐藏，不会输出多余空行。
+3 行为硬上限，对齐宿主 CodeBuddy Code（实测至最新 v2.162.0+ 均按 stdout 前 3 行截断）；无数据的行或字段整体隐藏，不会输出多余空行。
 
 ---
 
@@ -120,7 +120,7 @@ node scripts/bootstrap.js
 
 ```bash
 export CODEBUDDY_HUD_BOOTSTRAP_URL=https://your-mirror/scripts/bootstrap.js
-export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/v0.3.8
+export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/vX.Y.Z
 curl -fsSL https://your-mirror/scripts/install.sh | bash
 ```
 
@@ -128,7 +128,7 @@ curl -fsSL https://your-mirror/scripts/install.sh | bash
 
 ```powershell
 $env:CODEBUDDY_HUD_BOOTSTRAP_URL = 'https://your-mirror/scripts/bootstrap.js'
-$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/v0.3.8'
+$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/vX.Y.Z'
 irm https://your-mirror/scripts/install.ps1 | iex
 ```
 
@@ -337,7 +337,7 @@ codebuddy-hud/
    - 权限模式或配置变更
 3. **工具执行与空闲期静默**：在长时间执行只读命令（如 `bash`、`grep`）、模型流式思考/生成中、以及终端空闲等待输入期间，宿主**完全不会触发** statusLine 命令。
 
-> **版本实测**：经深度源码逆向确认，实测至 CodeBuddy Code 当前最新版本 **v2.157.0**（2026-09-23）该机制依然保持一致。HUD 已针对宿主契约做到极限优化（单次渲染 <200ms 极速自然排空退出），在宿主官方引入周期性心跳通知前，本表现为当前宿主生态下的正常行为。
+> **版本实测**：经深度源码逆向确认，实测至 CodeBuddy Code 当前最新版本 **v2.162.0** 该机制依然保持一致。HUD 已针对宿主契约做到极限优化（单次渲染 <200ms 极速自然排空退出），在宿主官方引入周期性心跳通知前，本表现为当前宿主生态下的正常行为。
 
 ---
 

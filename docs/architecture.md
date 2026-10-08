@@ -1,7 +1,7 @@
 # CodeBuddy HUD System Architecture
 
 > **Target Version:** `v0.3.8+`  
-> **Host Compatibility:** CodeBuddy Code CLI (including latest v2.157.0+; subject to the Windows quoting and three-line display contracts below)
+> **Host Compatibility:** CodeBuddy Code CLI (including latest v2.162.0+; subject to the Windows quoting and three-line display contracts below)
 > **Engine Baseline:** Pure Node.js Standard Library (`>= 18.0.0`, Zero npm dependencies)
 
 ---
@@ -90,7 +90,7 @@ graph TD
 
 ## 4. Execution Lifecycle & Timing
 
-The host (verified up to latest v2.157.0) debounces statusline invocations by ~300ms across 5 discrete event streams. Idle sessions and read-only tool executions do not poll; failed executions clear the statusline without automatic retry.
+The host (verified up to latest v2.162.0) debounces statusline invocations by ~300ms across 5 discrete event streams. Idle sessions and read-only tool executions do not poll; failed executions clear the statusline without automatic retry.
 
 ```mermaid
 sequenceDiagram
@@ -182,15 +182,15 @@ sequenceDiagram
   - `emerald`: Mint green eye-care theme (dark: `121` mint green, light: `green`/`gray`);
   - `cyberpunk`: Neon pink & cyan (dark: `219` pastel pink + cyan, light: `magenta`/`blue`);
   - `amber`: Amber gold (both dark & light use standard 16-color high-intensity `gold` `\x1b[93m` with `gray`);
-  - `monochrome`: Minimalist terminal gray (both modes use `gray`/`gray`).
+  - `monochrome`: Minimalist terminal black-and-white (dark: `white`/`gray`, light: `gray`/`gray`).
 - **Security Guard**: `deepMerge()` skips `__proto__` and caps recursion at 64. Config files are read directly on each load; the settings effort fallback keeps only a process-local cache, while the transcript effort signal is persisted per transcript hash under the session-state directory (`effort-<sha256>.json`), supporting tail-scan adjudication, cache inheritance, and a bounded cold-start head scan.
 
 ### 5.5 3-Line Adaptive Layout & Pruning (`renderer.js`)
 - **Line 1 (Identity & Status)**: Model Display Name (`bold`) · Reasoning Effort Icon · Git Branch & Dirty (`*`) · Workspace Name · Permission Mode (standard 16-color `brightPurple`, slim).
-- **Line 2 (Tokens & Context)**: Current context input/capacity (title `bold`; restores occupancy when host deducts input to 0, arbitrated against `used_percentage` residual to prevent double-counting) · progress bar and percentage · output tokens · turn cache hit badge (slim); renders in three states: `fresh` (progress bar and out enabled), `stale` (post-compact waiting, `--` numerator, progress bar and out hidden), and `unknown` (numerator shown, progress bar hidden, "last reported" hint).
+- **Line 2 (Tokens & Context)**: Current context input/capacity (title `bold`; restores occupancy when host deducts input to 0, arbitrated against `used_percentage` residual to prevent double-counting) · progress bar and percentage · output tokens · recent cache hit badge (slim); renders in three states: `fresh` (progress bar and out enabled), `stale` (post-compact waiting, `--` numerator, progress bar and out hidden), and `unknown` (numerator shown, progress bar hidden, "last reported" hint).
 - **Line 3 (Diff & Cost & Latency & Tool Activity)**: `Δ +Added -Removed` · Actual Credits · Total Duration · Current tool activity and turn-aggregated tool badges (`◐ Edit: parser.js`, `✓ Edit ×3`). (Omitted if all are zero).
 
-The host (verified as a hard constant up to v2.157.0) retains only the first three stdout lines. The HUD's own three-line contract is strictly aligned with this truncation limit; tool activity is merged into Line 3 so every key segment stays visible.
+The host (verified as a hard constant up to v2.162.0) retains only the first three stdout lines. The HUD's own three-line contract is strictly aligned with this truncation limit; tool activity is merged into Line 3 so every key segment stays visible.
 
 ---
 
