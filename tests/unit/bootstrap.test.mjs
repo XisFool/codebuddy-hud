@@ -265,6 +265,7 @@ describe('bootstrap installer', () => {
       assert.equal(installed.code, 0, installed.output);
       assert.match(installed.output, /Mode: Remote download/);
       assert.ok(requests.includes('runtime/settings-file.js'));
+      assert.ok(requests.includes('runtime/update-checker.js'));
       assert.equal(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).model, 'retained');
       assert.ok(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).statusLine.command);
       const removed = await run(path.join(targetDir, 'runtime', 'bin', 'codebuddy-hud.js'), ['--uninstall']);

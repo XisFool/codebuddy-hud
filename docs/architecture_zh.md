@@ -40,6 +40,7 @@
 │   lang.js · model-info.js · settings-file.js · statusline-installer.js   │
 │   theme-selector.js · doctor.js · session-stats.js                       │
 │   transcript.js (逆向滑窗扫描与 SHA-256 增量遥测状态机) · uninstall.js   │
+│   update-checker.js (--update 版本解析与自举升级)                        │
 │   renderer.js (3 行看板装配引擎) ──> renderer/ (format, diff, agents)    │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
@@ -64,6 +65,7 @@ graph TD
     Entry --> ThemeSelector["runtime/theme-selector.js"]
     Entry --> Installer["runtime/statusline-installer.js"]
     Entry --> Uninstall["runtime/uninstall.js"]
+    Entry --> UpdateChecker["runtime/update-checker.js (--update)"]
     Entry --> Paths["runtime/paths.js"]
 
     Renderer --> Format["runtime/renderer/format.js"]

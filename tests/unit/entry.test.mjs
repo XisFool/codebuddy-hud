@@ -6,6 +6,7 @@ import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -127,6 +128,31 @@ test('--status renders and exits 0', async () => {
   assert.match(plainOutput, /Deepseek-V4\.1-Flash/);
   assert.match(plainOutput, /82\.04 credits/);
   assert.equal(err, '');
+});
+
+test('--update reports already up to date and exits 0', async () => {
+  const pkg = JSON.parse(fs.readFileSync(path.resolve(BIN, '..', '..', '..', 'package.json'), 'utf8'));
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ tag_name: `v${pkg.version}` }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/release.json`;
+    const child = spawn(process.execPath, [BIN, '--update'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...TEST_ENV, CODEBUDDY_HUD_LATEST_RELEASE_URL: url },
+    });
+    let out = '', err = '';
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.on('data', (d) => { err += d; });
+    const code = await new Promise((resolve) => child.on('close', resolve));
+    assert.equal(code, 0);
+    assert.match(out, new RegExp(`Already up to date \\(v${pkg.version}\\)`));
+    assert.equal(err, '');
+  } finally {
+    server.close();
+  }
 });
 
 test('--theme list renders theme options and exits 0', async () => {

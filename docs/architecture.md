@@ -38,6 +38,7 @@
 │   lang.js · model-info.js · settings-file.js · statusline-installer.js   │
 │   theme-selector.js · doctor.js · session-stats.js                       │
 │   transcript.js (sliding-window telemetry & SHA-256 checkpoint) · uninstall│
+│   update-checker.js (--update version resolution & self-upgrade)          │
 │   renderer.js (3-line layout engine) ──> renderer/ (format, diff, agents) │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
@@ -62,6 +63,7 @@ graph TD
     Entry --> ThemeSelector["runtime/theme-selector.js"]
     Entry --> Installer["runtime/statusline-installer.js"]
     Entry --> Uninstall["runtime/uninstall.js"]
+    Entry --> UpdateChecker["runtime/update-checker.js (--update)"]
     Entry --> Paths["runtime/paths.js"]
 
     Renderer --> Format["runtime/renderer/format.js"]

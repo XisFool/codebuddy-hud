@@ -50,6 +50,7 @@ const RUNTIME_FILES = [
   'runtime/theme-selector.js',
   'runtime/transcript.js',
   'runtime/uninstall.js',
+  'runtime/update-checker.js',
   'runtime/bin/codebuddy-hud.js',
   'skills/hud-config/SKILL.md',
 ];
@@ -318,7 +319,16 @@ async function install() {
 }
 
 if (require.main === module) {
-  install();
+  if (process.argv.includes('--delay-start')) {
+    // The --update flow spawns bootstrap detached right as the HUD process
+    // exits; on Windows the runtime files are still momentarily locked, so
+    // give the parent a second to fully exit before rewriting them.
+    setTimeout(() => {
+      install();
+    }, 1000);
+  } else {
+    install();
+  }
 }
 
 module.exports = {

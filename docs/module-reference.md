@@ -27,11 +27,12 @@
 18. [`runtime/doctor.js` — 环境体检与排障诊断子系统](#18-runtimedoctorjs--环境体检与排障诊断)
 19. [`runtime/theme-selector.js` — 交互式终端主题选择器](#19-runtimetheme-selectorjs--交互式主题选择器)
 20. [`runtime/uninstall.js` — 卸载还原与状态深度清理器](#20-runtimeuninstalljs--卸载还原与深度清理)
-21. [`scripts/bootstrap.js` — 跨平台原子安装引导程序](#21-scriptsbootstrapjs--跨平台原子安装引导)
-22. [`scripts/run-tests.js` — 跨平台测试分发驱动脚本](#22-scriptsrun-testsjs--跨平台测试分发驱动)
-23. [`scripts/verify-display.js` — 看板端到端验证](#23-scriptsverify-displayjs--看板端到端验证)
-24. [`scripts/verify-install.js` — 隔离宿主生命周期验证](#24-scriptsverify-installjs--隔离宿主生命周期验证)
-25. [`skills/hud-config/SKILL.md` — HUD 配置技能](#25-skillshud-configskillmd--hud-配置技能)
+21. [`runtime/update-checker.js` — 用户主动更新与版本解析](#21-runtimeupdate-checkerjs--用户主动更新与版本解析)
+22. [`scripts/bootstrap.js` — 跨平台原子安装引导程序](#22-scriptsbootstrapjs--跨平台原子安装引导)
+23. [`scripts/run-tests.js` — 跨平台测试分发驱动脚本](#23-scriptsrun-testsjs--跨平台测试分发驱动)
+24. [`scripts/verify-display.js` — 看板端到端验证](#24-scriptsverify-displayjs--看板端到端验证)
+25. [`scripts/verify-install.js` — 隔离宿主生命周期验证](#25-scriptsverify-installjs--隔离宿主生命周期验证)
+26. [`skills/hud-config/SKILL.md` — HUD 配置技能](#26-skillshud-configskillmd--hud-配置技能)
 
 ---
 
@@ -45,6 +46,7 @@
 - `--theme [name]`: 交互式切换或指定设置主题（如 `--theme cyberpunk`、`--theme list`）。
 - `--doctor [--json]`, `-d`: 运行全面诊断体检报告（`-d` 为短参数别名，支持 `--json` 输出结构化数据）。
 - `--status`: 冒烟探测当前状态栏能否正常渲染（3 行输出与 exit 0）。
+- `--update`: 用户主动更新（检查 + 升级二合一）；解析最新 Release tag，落后时后台下载该 tag 的 bootstrap 完成自举升级，渲染路径零网络契约不受影响。
 
 ### 内部常数配置
 ```javascript
@@ -532,9 +534,36 @@ export function uninstall(options?: object): void;
 
 ---
 
-## 21. `scripts/bootstrap.js` — 跨平台原子安装引导
+## 21. `runtime/update-checker.js` — 用户主动更新与版本解析
 
-**职责：** 支持本地与 GitHub Raw 远程安装，通过临时目录 `.tmp-<pid>` + 原子重命名完成无缝安装覆盖。按 302 重定向（无 API 限流）→ REST API（`GITHUB_TOKEN`/`GH_TOKEN` 提升限额）的顺序解析 Latest Release 的 `tag_name`，再从对应不可变 tag 下载；`CODEBUDDY_HUD_VERSION` 可固定 tag，`CODEBUDDY_HUD_RAW_BASE` 直接指定下载源并跳过 tag 解析。`CODEBUDDY_HUD_MIRROR` 为上述全部 GitHub URL（runtime 下载、tag 查询、API 兜底）加镜像前缀，tag 查询与 API 兜底在镜像未覆盖时自动回退直连，runtime 文件始终经镜像下载。
+**职责：** 为 `--update` 命令提供版本解析、比较与自举升级能力。是「渲染路径零网络」契约下唯一的联网入口：仅在用户显式调用 `--update` 时发起请求，无后台巡逻、无状态文件写入、无状态栏提示元素。
+
+### 接口定义
+```typescript
+export function parseSemver(v: string): [number, number, number];
+export function parseSemverDetail(v: string): { numbers: [number, number, number], prerelease: string[] };
+export function compareVersions(v1: string, v2: string): -1 | 0 | 1;
+export function getLocalVersion(): string | null;
+export function getReleaseVersion(release: object): string | null;
+export async function resolveLatestTag(options?: object): Promise<string>;
+export function fetchLatestTagVia302(url: string): Promise<string>;
+export function rawBaseForTag(tag: string): string;
+export async function runUpdate(options?: object): Promise<{ ok: boolean, message: string, latest?: string, local?: string, bootstrapPath?: string }>;
+```
+
+### 关键契约
+- **tag 契约**：`resolveLatestTag` 保留 GitHub 原始 ref（含 `v` 前缀，trim 后原样返回）；下载 URL 与子进程 `CODEBUDDY_HUD_VERSION` 必须使用原始 ref（去 `v` 会导致 raw 404）；比较与消息经 `normalizeTag` 归一化为 `vX.Y.Z` 形态（杜绝 `vv` 双前缀）。
+- **getLocalVersion**：读 runtime 上级 `package.json`；不可读返回 `null`（不伪造版本），此时 `runUpdate` 提示重跑安装脚本。
+- **tag 解析三级策略（resolveLatestTag）**：显式 `CODEBUDDY_HUD_LATEST_RELEASE_URL`（兼容旧名 `CODEBUDDY_HUD_REMOTE_PKG_URL`）→ `github.com/releases/latest` 302 Location（免 API 限流）→ `api.github.com` REST 兜底（仅直连 host 附带 `GITHUB_TOKEN/GH_TOKEN`，镜像不带）；超时 8s。
+- **白名单校验（rawBaseForTag）**：tag 必须匹配 `^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$` 才允许拼入下载 URL，拒绝路径注入。
+- **环境变量**：`CODEBUDDY_HUD_MIRROR`（镜像前缀，语义与 bootstrap.js 一致：镜像候选优先、直连兜底）、`CODEBUDDY_HUD_BOOTSTRAP_URL`（覆盖 bootstrap 下载源）、`CODEBUDDY_HUD_VERSION`（派生子进程时钉住 tag，bootstrap 免二次解析）。
+- **自举升级流程（runUpdate）**：解析原始 ref 并预校验 tag 形态（畸形即失败，不落入假 "up to date"）→ 落后判定（归一化后 `compareVersions > 0`）→ 下载该原始 ref 的 `scripts/bootstrap.js` 至 `os.tmpdir()` → detached 派生 `node <tmp> --delay-start`（`stdio: 'inherit'`，`windowsHide`，`CODEBUDDY_HUD_VERSION` 钉原始 ref）；bootstrap 延迟 1s 等父进程完全退出后再原子重装 runtime，规避 Windows 文件锁。`--update` 分支恒 `exit 0`，失败信息走 stderr。
+
+---
+
+## 22. `scripts/bootstrap.js` — 跨平台原子安装引导
+
+**职责：** 支持本地与 GitHub Raw 远程安装，通过临时目录 `.tmp-<pid>` + 原子重命名完成无缝安装覆盖。按 302 重定向（无 API 限流）→ REST API（`GITHUB_TOKEN`/`GH_TOKEN` 提升限额）的顺序解析 Latest Release 的 `tag_name`，再从对应不可变 tag 下载；`CODEBUDDY_HUD_VERSION` 可固定 tag，`CODEBUDDY_HUD_RAW_BASE` 直接指定下载源并跳过 tag 解析。`CODEBUDDY_HUD_MIRROR` 为上述全部 GitHub URL（runtime 下载、tag 查询、API 兜底）加镜像前缀，tag 查询与 API 兜底在镜像未覆盖时自动回退直连，runtime 文件始终经镜像下载。支持 `--delay-start` 参数（`--update` 派生场景）：延迟 1s 再开始重装，等父进程完全退出以规避 Windows 文件锁。
 
 ### 核心导出与内部函数
 - `install(): Promise<void>`: 核心安装入口，支持本地复制与远端下载，通过临时目录 + 原子重命名完成安装。
@@ -549,24 +578,24 @@ export function uninstall(options?: object): void;
 
 ---
 
-## 22. `scripts/run-tests.js` — 跨平台测试分发驱动
+## 23. `scripts/run-tests.js` — 跨平台测试分发驱动
 
 **职责：** `npm test` 底层执行驱动。遍历 `tests/unit/` 目录下全部 `*.test.mjs` 单元测试文件的绝对路径，直接向 `node --test` 喂入全量文件参数，彻底规避 Node 18/20 glob 在 Windows 路径反斜杠下的跨平台匹配陷阱与 `MODULE_NOT_FOUND` 假阳性。
 
 ---
 
-## 23. `scripts/verify-display.js` — 看板端到端验证
+## 24. `scripts/verify-display.js` — 看板端到端验证
 
 **职责：** 执行 `npm run verify` 的 10 个 CLI、payload 与边界场景，验证看板行数（严格 $\le 3$ 行）、命令形态与容错契约。
 
 ---
 
-## 24. `scripts/verify-install.js` — 隔离宿主生命周期验证
+## 25. `scripts/verify-install.js` — 隔离宿主生命周期验证
 
 **职责：** 执行 `npm run verify:install`，在全隔离的临时沙箱中验证真实环境下的安装与卸载闭环。必须同时三重隔离 `CODEBUDDY_HOME`、`CODEBUDDY_SETTINGS_PATH` 与运行时目录，防止测试执行污染或误删工作区开发中的真实 `.cmd` shim。
 
 ---
 
-## 25. `skills/hud-config/SKILL.md` — HUD 配置技能
+## 26. `skills/hud-config/SKILL.md` — HUD 配置技能
 
 **职责：** 为 AI Agent 提供主题、图标与显示项配置的交互式引导，并将选择写入项目或全局 `codebuddy-hud.config.json`。

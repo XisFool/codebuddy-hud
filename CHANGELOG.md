@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] (待发布)
+
+### Added (新增特性)
+- **新增 `--update` 用户主动更新命令**：
+  - 检查 + 升级二合一：解析最新 Release tag 并与本地版本比较，落后时下载该 tag 的 `scripts/bootstrap.js` 至临时文件，以 `--delay-start` detached 派生完成原子自举重装（`CODEBUDDY_HUD_VERSION` 钉住 tag），已最新则打印 `Already up to date`；
+  - tag 解析三级策略（`runtime/update-checker.js`）：显式 `CODEBUDDY_HUD_LATEST_RELEASE_URL`（兼容旧名 `CODEBUDDY_HUD_REMOTE_PKG_URL`）→ `github.com/releases/latest` 302 Location（免 API 限流）→ `api.github.com` REST 兜底（仅直连附带 `GITHUB_TOKEN/GH_TOKEN`）；`CODEBUDDY_HUD_MIRROR` 镜像语义与 bootstrap.js 完全一致；
+  - tag 比较与消息经 `normalizeTag` 归一化为 `vX.Y.Z` 形态，下载寻址与 `CODEBUDDY_HUD_VERSION` 保留 GitHub 原始 ref（含 `v` 前缀）；`rawBaseForTag` 白名单校验拒绝路径注入；`bootstrap.js` 的 `RUNTIME_FILES` 清单补录 `runtime/update-checker.js`，远程安装不再缺失该模块；
+  - 严守「渲染路径零网络」契约：无后台巡逻、无状态栏提示元素、无自动/静默升级，更新感知完全由用户显式触发；同时清理 `runtime/lang.js` 中自 938ece0 起遗留的死文案键 `updateAvailable`/`updateTip`。
+
 ## [v0.3.8] - 2026-10-02
 
 ### Fixed (缺陷修复)

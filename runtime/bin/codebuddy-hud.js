@@ -167,6 +167,22 @@ if (args.includes('--setup')) {
     context_window: { total_input_tokens: 249000, total_output_tokens: 1100, context_window_size: 1000000, used_percentage: 25, current_usage: { input_tokens: 249000, output_tokens: 1100, cache_read_input_tokens: 241032, cache_creation_input_tokens: 0 } },
   });
   handleRender(samplePayload);
+} else if (args.includes('--update')) {
+  (async () => {
+    try {
+      const { runUpdate } = require('../update-checker');
+      const result = await runUpdate();
+      if (result.ok) {
+        console.log(result.message);
+      } else {
+        console.error(result.message);
+      }
+    } catch (err) {
+      logError(err);
+      console.error('update failed (see codebuddy-hud-error.log)');
+    }
+    process.exitCode = 0;
+  })();
 } else {
   // Normal statusLine mode: read stdin
   const MAX_STDIN_SIZE = 1024 * 1024;

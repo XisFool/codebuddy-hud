@@ -17,7 +17,7 @@ HUD 同步输出 ≤3 行 ANSI 看板并退出。CommonJS，Node >=18。
 ## 架构（入口 → 数据流）
 
 ```
-runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--doctor/-d
+runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--doctor/-d/--update
   ├ parser.js                  从 payload 提取 token/diff/cost
   ├ config.js                  内置 THEME_PRESETS、Dark/Light 模式解析与 deepMerge
   ├ codebuddy-hud.config.json  默认内置配置模板与阈值预设
@@ -37,9 +37,10 @@ runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--d
   ├ lang.js                    多语言 i18n 字典（zh/en）
   ├ statusline-installer.js    --setup 写 settings.json、挂载技能并生成 Windows shim
   ├ settings-file.js           JSONC 解析、配置权限与符号链接保护
-  └ uninstall.js               --uninstall 清理配置、shim、技能、缓存与状态
+  ├ uninstall.js               --uninstall 清理配置、shim、技能、缓存与状态
+  └ update-checker.js          --update 版本解析、比较与 bootstrap 自举更新
 tests/fixtures/*.json          3 个 payload fixture
-tests/unit/*.test.mjs          22 个核心单元测试文件
+tests/unit/*.test.mjs          23 个核心单元测试文件
 scripts/install.ps1            Windows PowerShell 一键在线安装脚本
 scripts/install.sh             POSIX Shell 一键在线安装脚本
 scripts/bootstrap.js           Release 远程在线安装与自举更新器
@@ -114,6 +115,11 @@ node runtime/bin/codebuddy-hud.js --theme list
     - 挂载机制支持三级容灾：Windows 平台优先使用免管理员权限的 NTFS Junction，POSIX 平台优先使用目录软链（`'dir'`），权限受限环境自动降级为递归目录拷贝（`fs.cpSync`）；
     - 防御守卫：前置校验源目录 `SKILL.md` 存在性（防止缺失文件报错）、校验源目录与目标目录路径规范化防自环循环，且全程外层 try-catch 包裹，挂载异常绝不阻断 statusLine 主配置写入；
     - 对称卸载：`--uninstall` 彻底清理已部署或挂载的技能目录（符号链接优先使用 `fs.unlinkSync` 解除挂载，避免误删源文件）；测试必须同时隔离 `CODEBUDDY_HOME` 环境变量以保证沙箱安全性。
+15. **`--update` 网络边界（渲染路径零网络契约）**：
+    - 更新感知完全由用户主动触发（`--update`），渲染路径不发起任何网络请求、无后台巡逻、无状态栏提示元素；
+    - tag 解析三级策略（`runtime/update-checker.js`）：显式 `CODEBUDDY_HUD_LATEST_RELEASE_URL`（兼容旧名 `CODEBUDDY_HUD_REMOTE_PKG_URL`）→ `github.com/releases/latest` 302 Location（免 API 限流）→ `api.github.com` REST 兜底（仅直连 host 携带 `GITHUB_TOKEN/GH_TOKEN`，镜像不带）；`CODEBUDDY_HUD_MIRROR` 语义与 bootstrap.js 一致（镜像候选优先、直连兜底）；
+    - 落后时下载该 tag 的 `scripts/bootstrap.js` 至临时文件并以 `--delay-start` detached 派生（`CODEBUDDY_HUD_VERSION` 钉住 tag），bootstrap 延迟 1s 等父进程退出后再原子重装 runtime，规避 Windows 文件锁；
+    - tag 契约：解析出口保留 GitHub 原始 ref（含 `v` 前缀）用于下载寻址与子进程 `CODEBUDDY_HUD_VERSION` 钉版；比较与消息经 `normalizeTag` 归一化为 `vX.Y.Z` 形态（防 `vv` 双前缀）；`rawBaseForTag` 白名单校验 tag 形态，拒绝路径注入。
 
 ## 提交与工作流契约
 

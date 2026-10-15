@@ -82,11 +82,13 @@ curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/script
 
 **幂等**：重复运行同一条命令即可修复、升级或清理旧版本残留。
 
+**更新**：已安装后可用 `codebuddy-hud --update` 一键检查并升级到最新 Release（也可重跑安装命令）。更新感知完全由用户主动触发，渲染路径不发起任何网络请求、不做后台检查、不显示状态栏提示。
+
 **触发方式**：安装后重启 CodeBuddy Code，并发送任意一条消息。宿主在会话事件后约 300ms 去抖触发刷新；空闲会话不绘制状态栏，因此刚进入会话时底部为空属正常现象。
 
 ### 国内镜像加速安装
 
-如果直连 GitHub 超时或网络不稳定，把镜像域名设为 `CODEBUDDY_HUD_MIRROR`。安装脚本与 `bootstrap.js` 会用该前缀拼出它们请求的所有 GitHub URL：`raw.githubusercontent.com`（runtime 文件）、`github.com/releases/latest`（release tag 查询）与 `api.github.com`（查询兜底），格式为 `https://镜像域名/原始GitHub URL`。
+如果直连 GitHub 超时或网络不稳定，把镜像域名设为 `CODEBUDDY_HUD_MIRROR`。安装脚本、`bootstrap.js` 与 `--update` 会用该前缀拼出它们请求的所有 GitHub URL：`raw.githubusercontent.com`（runtime 文件）、`github.com/releases/latest`（release tag 查询）与 `api.github.com`（查询兜底），格式为 `https://镜像域名/原始GitHub URL`。
 
 **Windows（PowerShell）**
 
@@ -286,6 +288,7 @@ codebuddy-hud --theme list      # 仅列出全部主题
 | `--status` | 以演示数据渲染一次看板并退出 |
 | `--theme [name\|list]` | 交互式主题选择器；`list` 列出主题；带名称时直接切换 |
 | `--doctor` / `-d` `[--json]` | 输出环境诊断报告（支持 `--json` 输出结构化数据） |
+| `--update` | 检查最新 Release 并在落后时后台下载 bootstrap 完成自举升级（不自动触发，需用户主动调用） |
 | `--uninstall` | 卸载并从备份还原配置，彻底清理已挂载技能与 PATH 注册 |
 
 ---

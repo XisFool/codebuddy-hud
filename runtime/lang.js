@@ -51,10 +51,6 @@ const DICTIONARY = {
     removedSessionState: 'Removed session statistics state',
     removedCreditState: 'Removed credit state',
     removedUserConfig: 'Removed user configuration',
-
-    // Update
-    updateAvailable: '发现新版本',
-    updateTip: '运行安装脚本即可更新',
   },
   en: {
     contextPending: 'awaiting usage after compact',
@@ -106,10 +102,6 @@ const DICTIONARY = {
     removedSessionState: 'Removed session statistics state',
     removedCreditState: 'Removed credit state',
     removedUserConfig: 'Removed user configuration',
-
-    // Update
-    updateAvailable: 'New version available',
-    updateTip: 'Run install script to update',
   },
 };
 

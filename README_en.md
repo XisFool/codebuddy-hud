@@ -82,11 +82,13 @@ The installer:
 
 **Idempotent** — re-run the same command anytime to repair drift, upgrade, or clean stale files left by older versions.
 
+**Updating** — after installation, `codebuddy-hud --update` checks the latest release and upgrades in one step (re-running the install command also works). Update awareness is strictly user-initiated: the render path never touches the network, runs no background checks, and shows no status bar hints.
+
 **Trigger**: restart CodeBuddy Code after installation and send any message. The host debounces ~300ms after session events before refreshing; idle sessions render nothing, so an empty bottom line right after opening a session is expected.
 
 ### China Mirror Accelerated Install
 
-If direct GitHub connections are slow or unreliable, point `CODEBUDDY_HUD_MIRROR` at a mirror domain. Both install scripts and `bootstrap.js` prefix every GitHub URL they request with it: `raw.githubusercontent.com` (runtime files), `github.com/releases/latest` (release-tag lookup) and `api.github.com` (lookup fallback). The format is `https://mirror-domain/original-GitHub-URL`.
+If direct GitHub connections are slow or unreliable, point `CODEBUDDY_HUD_MIRROR` at a mirror domain. Install scripts, `bootstrap.js` and `--update` all prefix every GitHub URL they request with it: `raw.githubusercontent.com` (runtime files), `github.com/releases/latest` (release-tag lookup) and `api.github.com` (lookup fallback). The format is `https://mirror-domain/original-GitHub-URL`.
 
 **Windows (PowerShell)**
 
@@ -286,6 +288,7 @@ Fields:
 | `--status` | Render the HUD once from demo data and exit |
 | `--theme [name\|list]` | Interactive theme picker; `list` prints themes; a name switches directly |
 | `--doctor` / `-d` `[--json]` | Print the environment diagnostic report (supports `--json` for machine consumption) |
+| `--update` | Check the latest release and, when outdated, download bootstrap in the background to self-upgrade (never automatic; user-invoked only) |
 | `--uninstall` | Uninstall and restore config from backup, cleanly removing deployed skills and PATH registration |
 
 ---
