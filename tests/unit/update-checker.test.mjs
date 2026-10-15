@@ -9,7 +9,6 @@ import path from 'node:path';
 const require = createRequire(import.meta.url);
 const {
   compareVersions,
-  parseSemver,
   parseSemverDetail,
   getLocalVersion,
   getReleaseVersion,
@@ -37,13 +36,6 @@ async function waitFor(filePath, timeoutMs = 10000) {
 }
 
 describe('update-checker', () => {
-  test('parseSemver parses standard and prefixed versions', () => {
-    assert.deepEqual(parseSemver('1.2.3'), [1, 2, 3]);
-    assert.deepEqual(parseSemver('v2.0.4'), [2, 0, 4]);
-    assert.deepEqual(parseSemver('0.1'), [0, 1, 0]);
-    assert.deepEqual(parseSemver('invalid'), [0, 0, 0]);
-  });
-
   test('compareVersions accurately compares semver strings', () => {
     assert.equal(compareVersions('0.2.0', '0.1.0'), 1);
     assert.equal(compareVersions('0.1.0', '0.2.0'), -1);

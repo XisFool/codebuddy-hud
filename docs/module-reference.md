@@ -540,7 +540,6 @@ export function uninstall(options?: object): void;
 
 ### 接口定义
 ```typescript
-export function parseSemver(v: string): [number, number, number];
 export function parseSemverDetail(v: string): { numbers: [number, number, number], prerelease: string[] };
 export function compareVersions(v1: string, v2: string): -1 | 0 | 1;
 export function getLocalVersion(): string | null;
@@ -552,12 +551,12 @@ export async function runUpdate(options?: object): Promise<{ ok: boolean, messag
 ```
 
 ### 关键契约
-- **tag 契约**：`resolveLatestTag` 保留 GitHub 原始 ref（含 `v` 前缀，trim 后原样返回）；下载 URL 与子进程 `CODEBUDDY_HUD_VERSION` 必须使用原始 ref（去 `v` 会导致 raw 404）；比较与消息经 `normalizeTag` 归一化为 `vX.Y.Z` 形态（杜绝 `vv` 双前缀）。
+- **tag 单一形态**：`resolveLatestTag` 返回 GitHub 原始 ref（trim 后原样返回），下载 URL、子进程 `CODEBUDDY_HUD_VERSION`、比较与消息全程原样使用（`compareVersions` 自兼容 `v` 前缀）——不存在第二种归一化形态，结构上杜绝混用导致的 raw 404 与双前缀。
 - **getLocalVersion**：读 runtime 上级 `package.json`；不可读返回 `null`（不伪造版本），此时 `runUpdate` 提示重跑安装脚本。
 - **tag 解析三级策略（resolveLatestTag）**：显式 `CODEBUDDY_HUD_LATEST_RELEASE_URL`（兼容旧名 `CODEBUDDY_HUD_REMOTE_PKG_URL`）→ `github.com/releases/latest` 302 Location（免 API 限流）→ `api.github.com` REST 兜底（仅直连 host 附带 `GITHUB_TOKEN/GH_TOKEN`，镜像不带）；超时 8s。
 - **白名单校验（rawBaseForTag）**：tag 必须匹配 `^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$` 才允许拼入下载 URL，拒绝路径注入。
 - **环境变量**：`CODEBUDDY_HUD_MIRROR`（镜像前缀，语义与 bootstrap.js 一致：镜像候选优先、直连兜底）、`CODEBUDDY_HUD_BOOTSTRAP_URL`（覆盖 bootstrap 下载源）、`CODEBUDDY_HUD_VERSION`（派生子进程时钉住 tag，bootstrap 免二次解析）。
-- **自举升级流程（runUpdate）**：解析原始 ref 并预校验 tag 形态（畸形即失败，不落入假 "up to date"）→ 落后判定（归一化后 `compareVersions > 0`）→ 下载该原始 ref 的 `scripts/bootstrap.js` 至 `os.tmpdir()` → detached 派生 `node <tmp> --delay-start`（`stdio: 'inherit'`，`windowsHide`，`CODEBUDDY_HUD_VERSION` 钉原始 ref）；bootstrap 延迟 1s 等父进程完全退出后再原子重装 runtime，规避 Windows 文件锁。`--update` 分支恒 `exit 0`，失败信息走 stderr。
+- **自举升级流程（runUpdate）**：解析原始 ref 并预校验 tag 形态（畸形即失败，不落入假 "up to date"）→ 落后判定（`compareVersions > 0`，自兼容 `v` 前缀）→ 下载该原始 ref 的 `scripts/bootstrap.js` 至 `os.tmpdir()` → detached 派生 `node <tmp> --delay-start`（`stdio: 'inherit'`，`windowsHide`，`CODEBUDDY_HUD_VERSION` 钉原始 ref）；bootstrap 延迟 1s 等父进程完全退出后再原子重装 runtime，规避 Windows 文件锁。`--update` 分支恒 `exit 0`，失败信息走 stderr。
 
 ---
 

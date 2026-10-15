@@ -119,7 +119,7 @@ node runtime/bin/codebuddy-hud.js --theme list
     - 更新感知完全由用户主动触发（`--update`），渲染路径不发起任何网络请求、无后台巡逻、无状态栏提示元素；
     - tag 解析三级策略（`runtime/update-checker.js`）：显式 `CODEBUDDY_HUD_LATEST_RELEASE_URL`（兼容旧名 `CODEBUDDY_HUD_REMOTE_PKG_URL`）→ `github.com/releases/latest` 302 Location（免 API 限流）→ `api.github.com` REST 兜底（仅直连 host 携带 `GITHUB_TOKEN/GH_TOKEN`，镜像不带）；`CODEBUDDY_HUD_MIRROR` 语义与 bootstrap.js 一致（镜像候选优先、直连兜底）；
     - 落后时下载该 tag 的 `scripts/bootstrap.js` 至临时文件并以 `--delay-start` detached 派生（`CODEBUDDY_HUD_VERSION` 钉住 tag），bootstrap 延迟 1s 等父进程退出后再原子重装 runtime，规避 Windows 文件锁；
-    - tag 契约：解析出口保留 GitHub 原始 ref（含 `v` 前缀）用于下载寻址与子进程 `CODEBUDDY_HUD_VERSION` 钉版；比较与消息经 `normalizeTag` 归一化为 `vX.Y.Z` 形态（防 `vv` 双前缀）；`rawBaseForTag` 白名单校验 tag 形态，拒绝路径注入。
+    - tag 单一形态契约：解析、下载寻址、子进程 `CODEBUDDY_HUD_VERSION` 钉版、比较与消息全程原样使用 GitHub 原始 ref（`compareVersions` 自兼容 `v` 前缀），不存在第二种归一化形态，从结构上杜绝两形态混用导致的 raw 404 与双前缀；`rawBaseForTag` 白名单校验 tag 形态，拒绝路径注入。
 
 ## 提交与工作流契约
 

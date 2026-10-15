@@ -12,17 +12,9 @@ const RELEASES_LATEST_URL = 'https://github.com/XisFool/codebuddy-hud/releases/l
 const LATEST_RELEASE_API_URL = 'https://api.github.com/repos/XisFool/codebuddy-hud/releases/latest';
 const FETCH_TIMEOUT_MS = 8000;
 
-function parseSemver(v) {
-  if (typeof v !== 'string') return [0, 0, 0];
-  const clean = v.trim().replace(/^v/, '');
-  const parts = clean.split('.').map(p => parseInt(p, 10) || 0);
-  while (parts.length < 3) parts.push(0);
-  return parts.slice(0, 3);
-}
-
-// Full semver decomposition used only for comparison. Keeps the numeric triple
-// plus the prerelease identifiers (build metadata is ignored for precedence).
-// parseSemver above stays as the public 3-tuple (numeric-only) contract.
+// Full semver decomposition used only for comparison. Accepts both `v`-prefixed
+// and bare forms; keeps the numeric triple plus the prerelease identifiers
+// (build metadata is ignored for precedence).
 function parseSemverDetail(v) {
   if (typeof v !== 'string') return { numbers: [0, 0, 0], prerelease: [] };
   const clean = v.trim().replace(/^v/, '');
@@ -101,18 +93,6 @@ function getReleaseVersion(release) {
   return null;
 }
 
-// Release tags are conventionally `v`-prefixed while package.json versions are
-// not. Tag resolution deliberately preserves the raw ref (it addresses the
-// immutable release tag in raw URLs and in the CODEBUDDY_HUD_VERSION pin);
-// callers normalize here for comparison and the user-facing `vX.Y.Z` messages
-// so neither doubles the prefix.
-function normalizeTag(tag) {
-  if (typeof tag !== 'string') return null;
-  const trimmed = tag.trim();
-  if (!trimmed) return null;
-  return trimmed.replace(/^v(?=\d)/i, '');
-}
-
 // `CODEBUDDY_HUD_MIRROR` (e.g. `https://your-mirror`) is prepended to every
 // GitHub URL resolved here. Each URL keeps its un-mirrored form as a fallback,
 // so a mirror that fails to proxy one of the hosts degrades to a direct
@@ -182,10 +162,10 @@ function fetchLatestTagVia302(url) {
   });
 }
 
-// Resolves the latest release ref. Returns the raw GitHub tag (trimmed, `v`
-// prefix preserved): it addresses the immutable tag in raw download URLs and
-// in the CODEBUDDY_HUD_VERSION pin, where a stripped `v` would 404. Comparison
-// and display callers derive the normalized `X.Y.Z` form via normalizeTag.
+// Resolves the latest release ref as the raw GitHub tag (trimmed). The tag is
+// used verbatim everywhere — raw download URLs, the CODEBUDDY_HUD_VERSION pin,
+// comparison (compareVersions accepts both `v`-prefixed and bare forms) and
+// user-facing messages — so the v-prefixed and bare forms can never be mixed up.
 async function resolveLatestTag(options = {}) {
   const explicit = (options.latestReleaseUrl
     || process.env.CODEBUDDY_HUD_LATEST_RELEASE_URL
@@ -271,9 +251,8 @@ async function runUpdate(options = {}) {
     return { ok: false, message: err && err.message ? err.message : String(err) };
   }
 
-  const latestVersion = normalizeTag(latestTag) || latestTag;
-  if (compareVersions(latestVersion, localVersion) <= 0) {
-    return { ok: true, message: `Already up to date (v${localVersion}).`, latest: latestVersion, local: localVersion };
+  if (compareVersions(latestTag, localVersion) <= 0) {
+    return { ok: true, message: `Already up to date (v${localVersion}).`, latest: latestTag, local: localVersion };
   }
 
   const override = (options.bootstrapUrl || process.env.CODEBUDDY_HUD_BOOTSTRAP_URL || '').trim();
@@ -321,8 +300,8 @@ async function runUpdate(options = {}) {
 
   return {
     ok: true,
-    message: `Update to v${latestVersion} started in the background; it will finish in a few seconds. Start a new CodeBuddy session to load it.`,
-    latest: latestVersion,
+    message: `Update to ${latestTag} started in the background; it will finish in a few seconds. Start a new CodeBuddy session to load it.`,
+    latest: latestTag,
     local: localVersion,
     bootstrapPath: tmpPath,
   };
@@ -330,7 +309,6 @@ async function runUpdate(options = {}) {
 
 module.exports = {
   compareVersions,
-  parseSemver,
   parseSemverDetail,
   getLocalVersion,
   getReleaseVersion,
