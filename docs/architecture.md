@@ -1,6 +1,6 @@
 # CodeBuddy HUD System Architecture
 
-> **Target Version:** `v0.3.8+`  
+> **Target Version:** `v0.3.9+`  
 > **Host Compatibility:** CodeBuddy Code CLI (including latest v2.167.0+; subject to the Windows quoting and three-line display contracts below)
 > **Engine Baseline:** Pure Node.js Standard Library (`>= 18.0.0`, Zero npm dependencies)
 

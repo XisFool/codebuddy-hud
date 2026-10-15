@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] (待发布)
+## [v0.3.9] - 2026-10-15
 
 ### Added (新增特性)
 - **新增 `--update` 用户主动更新命令**：
@@ -16,6 +16,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - tag 解析三级策略（`runtime/update-checker.js`）：显式 `CODEBUDDY_HUD_LATEST_RELEASE_URL`（兼容旧名 `CODEBUDDY_HUD_REMOTE_PKG_URL`）→ `github.com/releases/latest` 302 Location（免 API 限流）→ `api.github.com` REST 兜底（仅直连附带 `GITHUB_TOKEN/GH_TOKEN`）；`CODEBUDDY_HUD_MIRROR` 镜像语义与 bootstrap.js 完全一致；
   - tag 全程单一形态：解析、下载寻址、`CODEBUDDY_HUD_VERSION`、比较与消息均原样使用 GitHub 原始 ref（`compareVersions` 自兼容 `v` 前缀），无第二归一化形态，结构上杜绝混用导致的 raw 404 与双前缀；`rawBaseForTag` 白名单校验拒绝路径注入；`bootstrap.js` 的 `RUNTIME_FILES` 清单补录 `runtime/update-checker.js`，远程安装不再缺失该模块；
   - 严守「渲染路径零网络」契约：无后台巡逻、无状态栏提示元素、无自动/静默升级，更新感知完全由用户显式触发；同时清理 `runtime/lang.js` 中自 938ece0 起遗留的死文案键 `updateAvailable`/`updateTip`。
+
+### Performance & Hardening (性能与稳健性加固)
+- **Windows 终端编码探测优化与超时预算收紧**：
+  - `runtime/encoding.js` 中的 `chcp.com` 探测改用 `spawnSync` 直接派生，免除 `cmd.exe` 壳进程开销，实测 p50 由 ~38ms 降至 ~23ms；
+  - 探测超时由 2000ms 严格收紧至 300ms，对健康 p50 保留约 8 倍余量，彻底远离宿主 5s statusLine 判死线；
+  - 拆分失败缓存语义：真实代码页结果正常缓存 1 小时；超时或派生失败视为暂无数据，当帧安全降级为 ASCII 显示，但仅缓存 60 秒（`probeTtlMs`），过期自动重探，杜绝单次系统卡顿导致终端字形被锁死降级 1 小时。
+
+### Changed (口径校准与视觉优化)
+- **Cache 徽章超窗滑动校准为「近期调用命中率」**：
+  - `runtime/transcript.js` 中 `getTurnUsageMetrics()` 从 EOF 回扫超出 200 条记录 / 256KiB 扫描预算时，滑动窗口自然截止于最近调用；
+  - 明确徽章数值口径为「近期调用命中率」（`sum(hitTokens) / sum(promptTokens)`，由 `turn-window-slide` 测试钉死），消除先前误标为“整轮平均”的语义歧义；三态契约保持不变。
+- **Context Token 比例主色统一与黑白极简主题对比度优化**：
+  - 统一 Context Token 比例数字在所有主题下均高亮为主色（primary color）；
+  - 优化黑白极简主题（`monochrome`）高对比度色彩表现，提升暗色终端辨识度与阅读体验。
+
+### Documentation (宿主兼容性复核与文档对齐)
+- **全面对齐 CodeBuddy Code v2.167.0 逆向确证**：
+  - 深入逆向确证 CodeBuddy Code v2.167.0 模块 254030：输出前 3 行截断（`eT=3`）、10240 字节捕获上限（`eD=10240`）、5000ms 硬超时、5 类离散事件触发 300ms 去抖刷新、空闲与只读工具静默等运行机制；
+  - 双语 README、`docs/architecture.md`、`docs/architecture_zh.md`、`docs/module-reference.md` 与 `AGENTS.md` 全量校准对齐。
+
+### Tests (测试与验证工程)
+- **单测用例扩充至 436 个**：
+  - 新增 `tests/unit/update-checker.test.mjs`（14 个用例，覆盖 semver 比较、tag 解析、302 跳转、镜像拼装、自举子进程派生等）；
+  - 新增 `tests/unit/entry.test.mjs` 中的 `--update` CLI 端到端测试；
+  - 新增 `tests/unit/transcript.test.mjs` 中的 `turn-window-slide` 滑窗测试；
+  - 新增 `tests/unit/renderer.layout.test.mjs` 与 `theme-selector.test.mjs` 主题色彩对比度测试。
 
 ## [v0.3.8] - 2026-10-02
 
@@ -164,7 +190,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 提供跨平台一键安装、卸载、环境体检诊断与隔离环境安装验证闭环。
 - 基于 GitHub Release 不变 tag 实现高可靠安装与静默后台更新检测。
 
-[Unreleased]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.7...HEAD
+[Unreleased]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.9...HEAD
+[v0.3.9]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.8...v0.3.9
+[v0.3.8]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.7...v0.3.8
 [v0.3.7]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.5...v0.3.7
 [v0.3.5]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.2...v0.3.5
 [v0.3.2]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.0...v0.3.2
