@@ -44,7 +44,7 @@ Context Token 249k/1M [###-------] 25%  |  out 1.1k  |  cache 96.8%
 - **Line 2 (resources)**: current context input usage, context window bar and percentage (numerator aligned with the host's `used_percentage`), output tokens and recent prompt cache hit rate (sliding window aggregation); after compact, stale host data is marked as waiting for a fresh usage report.
 - **Line 3 (turn activity)**: diff stats `Δ +N -M` (falls back to `[D]` on ASCII terminals), actual session spend (credits, falling back to `$USD` when unavailable), session duration, current AI action, and completed tool-call counts (up to 3).
 
-3 lines is a hard cap, aligned with CodeBuddy Code host limits (verified up to latest v2.162.0+ to truncate stdout at the first three lines); lines or fields without data are omitted entirely, never rendered blank.
+3 lines is a hard cap, aligned with CodeBuddy Code host limits (verified up to latest v2.167.0+ to truncate stdout at the first three lines); lines or fields without data are omitted entirely, never rendered blank.
 
 ---
 
@@ -337,7 +337,7 @@ This is determined by the **architectural contract of CodeBuddy Code**, not a bu
    - Permission mode or configuration changes
 3. **Silence during tool execution and idle**: During long-running read-only tools (e.g. `bash`, `grep`), streaming generation/thinking, or idle input waiting, the host **never triggers** the statusLine command.
 
-> **Host Version Note**: Verified via deep source-code reverse engineering up to CodeBuddy Code **v2.162.0**, this mechanism remains unchanged. HUD is optimized to the theoretical limit of this contract (<200ms natural-drain exits). Until the upstream host introduces periodic heartbeat refreshes, this behavior is expected and normal.
+> **Host Version Note**: Verified via deep source-code reverse engineering up to CodeBuddy Code **v2.167.0** (re-verified 2026-10-15), this mechanism remains unchanged. HUD is optimized to the theoretical limit of this contract (<200ms natural-drain exits). Until the upstream host introduces periodic heartbeat refreshes, this behavior is expected and normal.
 
 ---
 
