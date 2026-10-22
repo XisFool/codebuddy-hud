@@ -98,9 +98,15 @@ function uninstall(options) {
             // checkout, or the `npm link` global shim); reinstating it would
             // report a successful uninstall while leaving the HUD configured.
             if (backup.statusLine && !isHudStatusLine(backup.statusLine)) {
-              settings.statusLine = backup.statusLine;
-              backupAction = 'Restored settings from backup';
-              modified = true;
+              if (isHudStatusLine(settings.statusLine)) {
+                settings.statusLine = backup.statusLine;
+                backupAction = 'Restored settings from backup';
+                modified = true;
+              } else {
+                // The statusLine was replaced or removed after installation;
+                // that later choice wins over the install-time snapshot.
+                backupAction = 'Discarded backup (statusLine changed after install)';
+              }
             } else {
               if (isHudStatusLine(settings.statusLine)) {
                 delete settings.statusLine;

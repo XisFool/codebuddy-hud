@@ -548,6 +548,34 @@ test('uninstall leaves a user statusLine that replaced the HUD', () => {
   }
 });
 
+test('uninstall keeps a statusLine set after install instead of restoring an older user command', () => {
+  const originalSettingsPath = process.env.CODEBUDDY_SETTINGS_PATH;
+  const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-laterline-'));
+  const settingsPath = path.join(tempRoot, 'settings.json');
+  const runtimeDir = path.join(tempRoot, 'runtime');
+  const backupPath = settingsPath + '.bak.codebuddy-hud';
+  const beforeInstall = { type: 'command', command: 'before-install-statusline', padding: 0 };
+  const afterInstall = { type: 'command', command: 'after-install-statusline', padding: 1 };
+  fs.mkdirSync(runtimeDir, { recursive: true });
+  fs.writeFileSync(backupPath, JSON.stringify({ statusLine: beforeInstall }, null, 2));
+  fs.writeFileSync(settingsPath, JSON.stringify({ statusLine: afterInstall }, null, 2));
+  process.env.CODEBUDDY_SETTINGS_PATH = settingsPath;
+  process.env.CODEBUDDY_HOME = path.join(tempRoot, 'home');
+  try {
+    uninstall({ settingsPath, runtimeDir, platform: 'linux' });
+    const after = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    assert.deepEqual(after.statusLine, afterInstall, 'the later user statusLine must win over the backup');
+    assert.equal(fs.existsSync(backupPath), false, 'the backup must still be consumed');
+  } finally {
+    if (originalSettingsPath === undefined) delete process.env.CODEBUDDY_SETTINGS_PATH;
+    else process.env.CODEBUDDY_SETTINGS_PATH = originalSettingsPath;
+    if (originalCodeBuddyHome === undefined) delete process.env.CODEBUDDY_HOME;
+    else process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test('setup and uninstall manage skill directory correctly', () => {
   const originalSettingsPath = process.env.CODEBUDDY_SETTINGS_PATH;
   const originalCodeBuddyHome = process.env.CODEBUDDY_HOME;
