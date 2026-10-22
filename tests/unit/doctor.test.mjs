@@ -109,6 +109,27 @@ describe('doctor diagnosis tool', () => {
     });
   });
 
+  test('does not report shell-escaped POSIX paths as missing', () => {
+    withIsolatedSettings(({ tmpDir, writeSettings }) => {
+      // A directory containing '$' forces escapeShellArg to emit '\$' plus
+      // doubled backslashes; doctor must unescape before existsSync.
+      const binDir = path.join(tmpDir, 'node-$18');
+      const hudScript = path.join(binDir, 'codebuddy-hud.js');
+      fs.mkdirSync(binDir, { recursive: true });
+      fs.writeFileSync(hudScript, '#!/usr/bin/env node\n');
+      const BS = String.fromCharCode(92);
+      const escapeShellArg = (value) => value
+        .split(BS).join(BS + BS)
+        .split('"').join(BS + '"')
+        .split('`').join(BS + '`')
+        .split('$').join(BS + '$');
+      writeSettings(JSON.stringify({
+        statusLine: { command: `"${escapeShellArg(process.execPath)}" "${escapeShellArg(hudScript)}"` },
+      }));
+      assert.equal(getStatusLineCheck(runDoctor({ cwd: process.cwd() })).status, 'ok');
+    });
+  });
+
   test('flags a Windows shim whose forwarded script is missing', () => {
     withIsolatedSettings(({ tmpDir, writeSettings }) => {
       const shim = path.join(tmpDir, 'bin', 'codebuddy-hud.cmd');

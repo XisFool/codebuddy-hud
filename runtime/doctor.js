@@ -45,26 +45,37 @@ function checkNodeEnvironment(i18n) {
 // and win32 a .cmd shim that forwards to a sibling `codebuddy-hud.js`
 // (see statusline-installer). Checking only the first token let a missing HUD
 // entrypoint (or a shim whose forwarded script is gone) pass as healthy.
+// POSIX installs are written through escapeShellArg (\ " ` $ escaped), so a
+// quoted token must be tokenized with escape awareness and checked in both its
+// literal and unescaped form. The raw form is tried first: win32 commands are
+// written unescaped, where \\ and \$ are literal path characters (UNC paths,
+// $-prefixed directories) and must not be rewritten.
+function shellTokenCandidates(token) {
+  const unescaped = token.replace(/\\(["\\`$])/g, '$1');
+  return unescaped === token ? [token] : [token, unescaped];
+}
+
 function findMissingStatusLineTargets(command) {
   const tokens = [];
-  const tokenRe = /"([^"]+)"|(\S+)/g;
+  const tokenRe = /"((?:\\.|[^"\\])*)"|(\S+)/g;
   let match;
   while ((match = tokenRe.exec(command)) !== null) {
-    tokens.push(match[1] || match[2]);
+    tokens.push(match[1] !== undefined ? match[1] : match[2]);
   }
 
   const pathLike = tokens.filter(t => /[\\/]/.test(t));
   if (pathLike.length === 0) {
     const first = tokens[0];
-    return first && fs.existsSync(first) ? [] : [first];
+    return first && shellTokenCandidates(first).some(t => fs.existsSync(t)) ? [] : [first];
   }
 
   const missing = [];
   for (const token of pathLike) {
-    if (!fs.existsSync(token)) {
+    const existing = shellTokenCandidates(token).find(t => fs.existsSync(t));
+    if (!existing) {
       missing.push(token);
-    } else if (/\.cmd$/i.test(token)) {
-      const forwarded = path.join(path.dirname(token), 'codebuddy-hud.js');
+    } else if (/\.cmd$/i.test(existing)) {
+      const forwarded = path.join(path.dirname(existing), 'codebuddy-hud.js');
       if (!fs.existsSync(forwarded)) missing.push(forwarded);
     }
   }
