@@ -42,7 +42,21 @@ describe('sanitizeTerminalText', () => {
   it('strips C1 control bytes including the single-byte CSI 0x9B', () => {
     const out = sanitizeTerminalText('x\u009B2yy');
     assert.ok(!out.includes('\u009B'), 'C1 CSI survived');
-    assert.equal(sanitizeTerminalText('a\u0090b\u009cc'), 'abc');
+    // 0x90 is the C1 DCS introducer and 0x9C its ST terminator: the string
+    // sequence is removed whole — payload included — not just the two bytes.
+    assert.equal(sanitizeTerminalText('a\u0090b\u009cc'), 'ac');
+  });
+
+  it('strips DCS/APC/PM/SOS control strings without leaking their payload', () => {
+    assert.equal(sanitizeTerminalText('main\x1bP+q544e\x1b\\'), 'main');
+    assert.equal(sanitizeTerminalText('file\x1b_Gimage-data\x1b\\'), 'file');
+    assert.equal(sanitizeTerminalText('a\x1b^private\x1b\\b'), 'ab');
+    assert.equal(sanitizeTerminalText('a\x1bXsos-payload\x1b\\b'), 'ab');
+    // Unterminated string sequence: swallowed through end of input.
+    assert.equal(sanitizeTerminalText('a\x1bPunterminated'), 'a');
+    // Single-byte C1 forms: CSI params and OSC payload must not surface as text.
+    assert.equal(sanitizeTerminalText('x\x9b31mred\x9b0m'), 'xred');
+    assert.equal(sanitizeTerminalText('\x9d0;title\x07text'), 'text');
   });
 
   it('strips bidi and invisible formatting controls', () => {
