@@ -256,6 +256,29 @@ function isPresetName(name) {
   return typeof name === 'string' && Object.hasOwn(THEME_PRESETS, name);
 }
 
+// Theme colors reach stdout verbatim: color()/getThemeColor() treat any string
+// starting with ESC[ as a raw SGR sequence. The overrides object merges project
+// config (codebuddy-hud.config.json from the conversation cwd), which is
+// untrusted input — a value like "\x1b[2J\x1b]52;c;..." would otherwise execute
+// arbitrary terminal control (clear screen, OSC clipboard write) from a repo.
+// Accept only strict SGR sequences or plain color names, on palette keys only.
+const RAW_SGR_RE = /^\x1b\[[0-9;:]{0,48}m$/;
+
+function isSafeThemeOverrideValue(value) {
+  if (typeof value !== 'string') return false;
+  if (RAW_SGR_RE.test(value)) return true;
+  return value.length <= 32 && !/[\x00-\x1f\x7f-\x9f]/.test(value);
+}
+
+function pickSafeThemeOverrides(overrides, palette) {
+  const safe = {};
+  for (const key of Object.keys(overrides)) {
+    if (!Object.hasOwn(palette, key)) continue;
+    if (isSafeThemeOverrideValue(overrides[key])) safe[key] = overrides[key];
+  }
+  return safe;
+}
+
 function resolveTheme(config) {
   const mode = detectThemeMode(config);
   let themeVal = config && config.theme;
@@ -278,7 +301,7 @@ function resolveTheme(config) {
 
   return {
     ...palette,
-    ...overrides,
+    ...pickSafeThemeOverrides(overrides, palette),
     name: presetName,
     mode,
   };

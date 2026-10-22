@@ -173,6 +173,32 @@ describe('THEME_PRESETS and resolveTheme', () => {
     assert.equal(monochrome.name, 'monochrome');
   });
 
+  it('rejects unsafe theme overrides from untrusted project config', () => {
+    const theme = resolveTheme({
+      theme: {
+        name: 'ocean',
+        primary: '\x1b[2J\x1b]52;c;ZXZpbA==\x07',
+        accent: { nested: true },
+        model: 'magenta',
+        unexpectedKey: 'white',
+      },
+      themeMode: 'dark',
+    });
+    assert.equal(theme.primary, 'cyan', 'OSC/ED payload must fall back to the preset');
+    assert.equal(theme.accent, 'cyan', 'non-string values must fall back');
+    assert.equal(theme.model, 'magenta', 'plain color names stay supported');
+    assert.equal(theme.unexpectedKey, undefined, 'non-palette keys are dropped');
+  });
+
+  it('keeps strict SGR overrides but rejects sequences with extra control bytes', () => {
+    const ok = resolveTheme({ theme: { name: 'ocean', primary: '\x1b[38;5;196m' }, themeMode: 'dark' });
+    assert.equal(ok.primary, '\x1b[38;5;196m');
+    const colon = resolveTheme({ theme: { name: 'ocean', primary: '\x1b[38:2::1:2:3m' }, themeMode: 'dark' });
+    assert.equal(colon.primary, '\x1b[38:2::1:2:3m', 'colon-form truecolor SGR stays supported');
+    const bad = resolveTheme({ theme: { name: 'ocean', primary: '\x1b[31m\n\x1b]0;x\x07' }, themeMode: 'dark' });
+    assert.equal(bad.primary, 'cyan');
+  });
+
   it('resolves light mode palettes with higher contrast', () => {
     const oceanLight = resolveTheme({ theme: 'ocean', themeMode: 'light' });
     assert.equal(oceanLight.primary, 'blue');
