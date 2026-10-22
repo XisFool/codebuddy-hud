@@ -1,7 +1,7 @@
 # CodeBuddy HUD System Architecture
 
 > **Target Version:** `v0.3.9+`  
-> **Host Compatibility:** CodeBuddy Code CLI (including latest v2.167.0+; subject to the Windows quoting and three-line display contracts below)
+> **Host Compatibility:** CodeBuddy Code CLI (including latest v2.171.0+; subject to the Windows quoting and three-line display contracts below)
 > **Engine Baseline:** Pure Node.js Standard Library (`>= 18.0.0`, Zero npm dependencies)
 
 ---
@@ -92,7 +92,7 @@ graph TD
 
 ## 4. Execution Lifecycle & Timing
 
-The host (verified up to latest v2.167.0) debounces statusline invocations by ~300ms across 5 discrete event streams. Idle sessions and read-only tool executions do not poll; failed executions clear the statusline without automatic retry.
+The host (verified up to latest v2.171.0) debounces statusline invocations by ~300ms across 5 discrete event streams. Idle sessions and read-only tool executions do not poll; failed executions clear the statusline without automatic retry.
 
 ```mermaid
 sequenceDiagram
@@ -153,8 +153,8 @@ sequenceDiagram
 - **State Machine**:
   1. Persists logical session baselines in `~/.codebuddy/codebuddy-hud-session-state/<hash>.json`.
   2. Detects a clear boundary when any of the following holds:
-     - **Cliff drop**: current `input_tokens` drops ≥50% relatively and ≥3000 absolutely;
-     - **Return to initial**: current input $\le 4096$ with previous $\ge 6000$ (a ≥35% drop);
+    - **Cliff drop**: current context occupancy (the restored value shared with Line 2; cache hits/deductions do not move it) drops ≥50% relatively and ≥3000 absolutely;
+    - **Return to initial**: current context occupancy $\le 4096$ with previous $\ge 6000$ (a ≥35% drop);
      - Cumulative `total_input_tokens` decreases;
      - A new `session_id` for the same transcript, a physically truncated transcript (file size shrinks), or an explicit host `clear_signal` / `is_clear`;
      - Lines added/removed or duration counters drop below their stored baselines (the cost baseline then resets to zero).
@@ -185,14 +185,14 @@ sequenceDiagram
   - `cyberpunk`: Neon pink & cyan (dark: `219` pastel pink + cyan, light: `magenta`/`blue`);
   - `amber`: Amber gold (both dark & light use standard 16-color high-intensity `gold` `\x1b[93m` with `gray`);
   - `monochrome`: Minimalist terminal black-and-white (dark: `white`/`gray`, light: `gray`/`gray`).
-- **Security Guard**: `deepMerge()` skips `__proto__` and caps recursion at 64. Config files are read directly on each load; the settings effort fallback keeps only a process-local cache, while the transcript effort signal is persisted per transcript hash under the session-state directory (`effort-<sha256>.json`), supporting tail-scan adjudication, cache inheritance, and a bounded cold-start head scan.
+- **Security Guard**: `deepMerge()` skips `__proto__` and caps recursion at 64; theme overrides accept only palette keys with strict SGR sequences or plain color names (non-strings/control characters fall back to the preset), blocking terminal injection from project configs. Config files are read directly on each load; the settings effort fallback keeps only a process-local cache, while the transcript effort signal is persisted per transcript hash under the session-state directory (`effort-<sha256>.json`), supporting tail-scan adjudication, cache inheritance, and a bounded cold-start head scan.
 
 ### 5.5 3-Line Adaptive Layout & Pruning (`renderer.js`)
 - **Line 1 (Identity & Status)**: Model Display Name (`bold`) · Reasoning Effort Icon · Git Branch & Dirty (`*`) · Workspace Name · Permission Mode (standard 16-color `brightPurple`, slim).
 - **Line 2 (Tokens & Context)**: Current context input/capacity (title `bold`; restores occupancy when host deducts input to 0, arbitrated against `used_percentage` residual to prevent double-counting) · progress bar and percentage · output tokens · recent cache hit badge (slim); renders in three states: `fresh` (progress bar and out enabled), `stale` (post-compact waiting, `--` numerator, progress bar and out hidden), and `unknown` (numerator shown, progress bar hidden, "last reported" hint).
 - **Line 3 (Diff & Cost & Latency & Tool Activity)**: `Δ +Added -Removed` · Actual Credits · Total Duration · Current tool activity and turn-aggregated tool badges (`◐ Edit: parser.js`, `✓ Edit ×3`). (Omitted if all are zero).
 
-The host (verified as a hard constant up to v2.167.0) retains only the first three stdout lines. The HUD's own three-line contract is strictly aligned with this truncation limit; tool activity is merged into Line 3 so every key segment stays visible.
+The host (verified as a hard constant up to v2.171.0) retains only the first three stdout lines. The HUD's own three-line contract is strictly aligned with this truncation limit; tool activity is merged into Line 3 so every key segment stays visible.
 
 ---
 
@@ -203,9 +203,10 @@ The host (verified as a hard constant up to v2.167.0) retains only the first thr
 | Threat Vector | Attack Payload Example | Defense Mechanism (`runtime/sanitize.js`) |
 | :--- | :--- | :--- |
 | **ANSI CSI Escape Injection** | `\x1b[2J\x1b[H` (Clear screen exploit) | Strips all CSI sequences matching `/\x1b\[[0-?]*[ -/]*[@-~]/g`. |
-| **OSC Escape Payloads** | `\x1b]52;c;...\x07` (Clipboard hijack) | Strips all OSC sequences matching `/\x1b\][^\x07]*?(?:\x07|\x1b\\|$)/g`. |
+| **OSC Escape Payloads** | `\x1b]52;c;...\x07` (Clipboard hijack) | Strips OSC sequences (including the C1 `0x9D` form) through BEL / ST (`\x1b\\`, `0x9C`) / end of input. |
+| **DCS/APC/PM/SOS String Injection** | `\x1bP+q544e\x1b\\`, `\x1b_G...\x1b\\` | Swallows the whole string sequence through ST or end of input (including C1 `0x90/0x98/0x9E/0x9F` forms); the payload cannot surface as text. |
 | **Bidi Text Disguise** | `\u202E` (Right-to-Left Override) | Removes bidirectional/format Trojan characters (`U+200B`-`U+200F`, `U+202A`-`U+202E`, `U+2028`/`U+2029`, `U+2060`, `U+2066`-`U+206F`, `U+061C`). |
-| **Terminal Control Chars** | `\x00-\x1F`, `\x7F-\x9F` | Strips all C0/C1 control codes (including NUL and the single-byte CSI `0x9B`). |
+| **Terminal Control Chars** | `\x00-\x1F`, `\x7F-\x9F` | Strips all C0/C1 control codes (including NUL and the single-byte `0x9B` CSI / `0x9D` OSC forms; string sequences are swallowed whole as above). |
 | **Oversized String Floods** | 50,000 char git branch name | Hard truncation to safe viewport boundaries (default cap 120 chars; call sites tighten to 10-1024). |
 
 ---
@@ -239,7 +240,7 @@ The host (verified as a hard constant up to v2.167.0) retains only the first thr
    - Eliminates abrupt `process.exit()` in rendering path. Releases all active `stdin` handles, timer handles, and let libuv naturally exit to prevent stdout buffer truncation.
 4. **Settings Writes & Uninstall Cleanup**:
    - JSONC parsing preserves string content. Atomic replacement follows valid symlinks and retains existing POSIX permissions and ownership; new settings and first backups default to `0600`. Multiple hard links are rejected rather than silently detached.
-   - Uninstall restores only a non-HUD `statusLine` (a backup whose command mentions `codebuddy-hud` results in the entry being removed instead), preserves other settings and user themes, and consumes the backup once parsed — it is retained only when parsing or writing fails.
+   - Uninstall restores only a non-HUD `statusLine` (a backup whose command mentions `codebuddy-hud` results in the entry being removed instead; restoration happens only while the current `statusLine` still points at this HUD — later user replacements or removals are kept), preserves other settings and user themes, and consumes the backup once parsed — it is retained only when parsing or writing fails.
    - **Skill Lifecycle Management**: `setup` automatically deploys `skills/hud-config/` to `~/.codebuddy/skills/hud-config/` (Junction on Windows, symlink on POSIX, recursive copy fallback); `uninstall` automatically cleans up the deployed skill directory or symlink.
    - Uninstall automatically cleans up system PATH registration (removes runtime directory from Windows user registry Path, unlinks `~/.local/bin/codebuddy-hud` on macOS/Linux); automatically skipped in sandbox testing mode (`CODEBUDDY_HOME` set) to protect host environment isolation.
 5. **Verification Isolation**:

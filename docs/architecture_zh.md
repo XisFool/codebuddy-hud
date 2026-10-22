@@ -1,7 +1,7 @@
 # CodeBuddy HUD 系统架构设计全景文档
 
 > **目标版本：** `v0.3.9+`  
-> **宿主兼容性：** CodeBuddy Code CLI（涵盖最新 v2.167.0+；受下文说明的 Windows 引号兼容与三行显示契约约束）
+> **宿主兼容性：** CodeBuddy Code CLI（涵盖最新 v2.171.0+；受下文说明的 Windows 引号兼容与三行显示契约约束）
 > **底层运行环境：** 纯 Node.js 标准库 (`>= 18.0.0`，绝对零外部 npm 依赖)
 
 ---
@@ -94,7 +94,7 @@ graph TD
 
 ## 4. 单次交互执行流与生命周期时序 (Execution Flow)
 
-宿主（实测至最新 v2.167.0）在会话、结果、配置等 5 大离散事件后约 300ms 去抖触发 HUD。空闲与只读工具执行时不周期刷新；命令失败会清空 HUD，且不会自动定时重试。
+宿主（实测至最新 v2.171.0）在会话、结果、配置等 5 大离散事件后约 300ms 去抖触发 HUD。空闲与只读工具执行时不周期刷新；命令失败会清空 HUD，且不会自动定时重试。
 
 ```mermaid
 sequenceDiagram
@@ -155,8 +155,8 @@ sequenceDiagram
 - **状态机**：
   1. 在 `~/.codebuddy/codebuddy-hud-session-state/<hash>.json` 记录会话基线。
   2. 触发判定（任一命中）：
-     - **Cliff Drop**：当前 `input_tokens` 相对降幅 ≥50%，且绝对降幅 ≥3000；
-     - **Return to Initial**：当前输入 ≤4096，且此前 ≥6000（相对降幅 ≥35%）；
+    - **Cliff Drop**：当前上下文占用（与 Line 2 同源的还原值，缓存命中/扣除不改变该值）相对降幅 ≥50%，且绝对降幅 ≥3000；
+    - **Return to Initial**：当前上下文占用 ≤4096，且此前 ≥6000（相对降幅 ≥35%）；
      - 累计 `total_input_tokens` 下降；
      - 同一 transcript 的 `session_id` 变化、transcript 文件物理截断（size 变小），或宿主显式 `clear_signal` / `is_clear`；
      - 代码增删或耗时计数低于已存基线，此时将 cost 基线归零。
@@ -187,14 +187,14 @@ sequenceDiagram
   - `cyberpunk`：赛博朋克霓虹（暗色：浅马卡龙粉紫 `219` + 荧光青，亮色：`magenta`/`blue`）；
   - `amber`：琥珀金耀眼质感（双模式主色与强调色统一升级为标准 16 色高亮金色 `gold`，`\x1b[93m`，搭配 `gray`）；
   - `monochrome`：黑白极简经典终端（暗色：白字灰辅 `white`/`gray`，亮色：`gray`/`gray`）。
-- **安全性防护**：`deepMerge()` 跳过 `__proto__`，递归深度上限 64。配置文件每次直接读取；settings effort 仅保留进程内缓存，transcript effort 信号则按 transcript 哈希持久化到会话状态目录（`effort-<sha256>.json`），支持长任务的尾部扫描裁决、缓存继承与冷启动头扫兜底。
+- **安全性防护**：`deepMerge()` 跳过 `__proto__`，递归深度上限 64；主题覆盖值仅接受调色板键 + 严格 SGR 序列或纯色名，非字符串/控制字符一律回退预设（阻断项目配置终端注入）。配置文件每次直接读取；settings effort 仅保留进程内缓存，transcript effort 信号则按 transcript 哈希持久化到会话状态目录（`effort-<sha256>.json`），支持长任务的尾部扫描裁决、缓存继承与冷启动头扫兜底。
 
 ### 5.5 3 行自适应布局与自裁剪规则 (`renderer.js`)
 - **Line 1 (标识与状态)**：模型名称（`bold` 加粗）· 推理深度 (effort) · Git 分支与 Dirty 状态 (`*`) · 工作区目录 · 权限模式（标准 16 色高亮紫 `brightPurple`，细体 slim）。
 - **Line 2 (Tokens 与上下文)**：当前上下文输入占用/窗口容量（标题 `bold` 加粗；高缓存扣减至 0 场景自动还原活跃上下文总占用并引入残差仲裁防翻倍）· 进度条与百分比 · 输出 Token · 近期 Cache 命中率（细体 slim）；支持 `fresh`（完整展示进度条与 out）、`stale`（压缩后待刷新，分子显示 `--` 且隐藏进度条与 out）、`unknown`（显示分子、隐藏进度条、提示上次上报）三态渲染。
 - **Line 3 (变更、消费、耗时与工具活动)**：`Δ +增加 -删除` · 实际 Credits · 总耗时 · 当前工具活动与本轮完成频次聚合（`◐ Edit: parser.js`、`✓ Edit ×3`）。（无数据自动隐藏整行）。
 
-宿主（源码复核至最新 v2.167.0 仍为常量）仅保留 stdout 前 3 行。HUD 的 3 行输出契约与该截断上限严格对齐；工具活动并入 Line 3，确保所有关键信息在截断限制下完整可见。
+宿主（源码复核至最新 v2.171.0 仍为常量）仅保留 stdout 前 3 行。HUD 的 3 行输出契约与该截断上限严格对齐；工具活动并入 Line 3，确保所有关键信息在截断限制下完整可见。
 
 ---
 
@@ -205,9 +205,10 @@ sequenceDiagram
 | 攻击威胁 | 载荷示例 | 防御过滤实现 (`runtime/sanitize.js`) |
 | :--- | :--- | :--- |
 | **ANSI CSI 注入** | `\x1b[2J\x1b[H` (清屏覆盖攻击) | 正则剔除 `/\x1b\[[0-?]*[ -/]*[@-~]/g` |
-| **OSC 剪贴板/标题劫持** | `\x1b]52;c;...\x07` (剪贴板注入) | 正则剔除 `/\x1b\][^\x07]*?(?:\x07|\x1b\\|$)/g` |
+| **OSC 剪贴板/标题劫持** | `\x1b]52;c;...\x07` (剪贴板注入) | 正则剔除 OSC（含 C1 `0x9D` 形式）至 BEL / ST(`\x1b\\`、`0x9C`) / 行尾 |
+| **DCS/APC/PM/SOS 串式注入** | `\x1bP+q544e\x1b\\`、`\x1b_G...\x1b\\` | 整串吞至 ST 或未终止串结尾（含 C1 `0x90/0x98/0x9E/0x9F` 形式），payload 不残留 |
 | **Unicode Bidi 伪装** | `\u202E` (从右向左覆盖伪装) | 剔除 `U+200B` ~ `U+200F`、`U+202A` ~ `U+202E`、`U+2028/U+2029`、`U+2060`、`U+2066` ~ `U+206F`、`U+061C` 等格式控制符 |
-| **C0/C1 控制符污染** | `\x00-\x1F`, `\x7F-\x9F` | 剔除全部 C0/C1 控制符（含 NUL 与单字节 CSI `0x9B`） |
+| **C0/C1 控制符污染** | `\x00-\x1F`, `\x7F-\x9F` | 剔除全部 C0/C1 控制符（含 NUL 与单字节 `0x9B` CSI / `0x9D` OSC 等，串式序列按上表整串处理） |
 | **超长字符串溢出** | 50,000 字符的畸形 Git 分支名 | 按视口安全边界强制截断（默认上限 120 字符，调用点按场景收紧至 10~1024） |
 
 ---
@@ -241,7 +242,7 @@ sequenceDiagram
    - 渲染完成后主动释放 Stdin 句柄与定时器，依靠 Node.js 事件循环自然排空退出，杜绝 `process.exit()` 引起的异步 Stdout 缓冲区截断。
 4. **配置写入与卸载清理**：
    - JSONC 解析保留字符串。原子替换跟随有效符号链接，保留现有 POSIX 权限和所有者；新配置及首次备份默认 `0600`。多硬链接目标会被拒绝，避免悄悄断链。
-   - 卸载只恢复非本 HUD 的 `statusLine`（备份记录的命令含 `codebuddy-hud` 则改为移除该项），保留其他 settings 及用户主题；备份解析成功即回收，解析或写入失败时保留。
+   - 卸载只恢复非本 HUD 的 `statusLine`（备份记录的命令含 `codebuddy-hud` 则改为移除该项；且仅当当前 `statusLine` 仍指向本 HUD，用户装后替换或删除的不被回滚），保留其他 settings 及用户主题；备份解析成功即回收，解析或写入失败时保留。
    - 技能生命周期管理：`setup` 时自动将 `skills/hud-config/` 挂载至 `~/.codebuddy/skills/hud-config/`（Windows 优先 Junction，POSIX 优先目录软链，支持递归复制降级）；`uninstall` 时自动清理已部署的技能目录与软链。
    - 卸载时自动清理系统级 PATH 注册（从 Windows 用户注册表 Path 移除 runtime 目录，macOS/Linux 删除 `~/.local/bin/codebuddy-hud` 软链接）；在测试沙箱模式下（`CODEBUDDY_HOME` 已设）自动跳过系统级 PATH 清理以保障环境隔离安全。
 5. **验证隔离**：

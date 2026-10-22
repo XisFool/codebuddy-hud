@@ -10,8 +10,8 @@ HUD 同步输出 ≤3 行 ANSI 看板并退出。CommonJS，Node >=18。
    - 单次预算 <1500ms（实际 p50 ~200ms；入口 `TIMEOUT_MS` 设 800ms 管道保底超时）。
    - 任何内部异常静默降级，入口监听 `process.stdout/stderr.on('error')` 防 EPIPE 崩溃；
    - 入口采用 `process.exitCode = 0` + 事件循环自然排空，防 stdout 异步管道截断。
-3. **输出严格 ≤3 行**（`runtime/config.js` 中 `display.maxLines: 3`）：结构上限 3 行，完全对齐宿主 CodeBuddy Code 实测截断（v2.167.0 复核：模块 254030 常量 `eT=3`，stdout 去空行后取前 3 行；捕获上限 `eD=10240`），无数据行自动隐藏。
-4. **终端安全防御**：所有外部文本必须经 `sanitizeTerminalText()`，剔除 ANSI CSI、OSC、C0/C1（`U+0080-U+009F`）及 Bidi 字符（`U+202E` 等）；`effort` 走白名单校验。
+3. **输出严格 ≤3 行**（`runtime/config.js` 中 `display.maxLines: 3`）：结构上限 3 行，完全对齐宿主 CodeBuddy Code 实测截断（v2.171.0 复核：模块 254030 常量 `eT=3`，stdout 去空行后取前 3 行；捕获上限 `eD=10240` 个 UTF-16 字符，追加前判定），无数据行自动隐藏。
+4. **终端安全防御**：所有外部文本必须经 `sanitizeTerminalText()`，剔除 ANSI CSI、OSC、DCS/APC/PM/SOS 串式序列、C0/C1（`U+0080-U+009F`）及 Bidi 字符（`U+202E` 等）；`effort` 走白名单校验，主题色值走 `resolveTheme` 的 SGR 白名单。
 5. **数据真实性契约**：Cache 与 Credits 取自 transcript 真实遥测，绝不伪造或硬编码，无数据时优雅降级（如 `cache --`）。
 
 ## 架构（入口 → 数据流）
@@ -32,7 +32,7 @@ runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--d
   ├ git.js                     Git 状态探测与 direct HEAD 读取缓存
   ├ model-info.js              推理深度 effort 解析与 credits 提取
   ├ encoding.js                代码页探测与 Unicode/ASCII 字形回退
-  ├ sanitize.js                终端安全防御（过滤 ANSI/OSC/Bidi 注入）
+  ├ sanitize.js                终端安全防御（过滤 ANSI/OSC/DCS/APC/Bidi 注入）
   ├ paths.js                   ~/.codebuddy 状态文件路径解析
   ├ lang.js                    多语言 i18n 字典（zh/en）
   ├ statusline-installer.js    --setup 写 settings.json、挂载技能并生成 Windows shim
@@ -97,6 +97,7 @@ node runtime/bin/codebuddy-hud.js --theme list
     - 工具活动并入 Line 3 尾部展示；payload fixtures 中不应包含假造的 `agents`/`tasks` 字段。
 11. **/clear 换新 transcript 的会话语义（identity miss 即新会话）**：
     - 宿主 /clear 后会切换到全新 transcript 文件（实测换文件而非截断），per-identity 状态失联；identity miss（含新窗口首帧）直接把当前 payload 累计锚定为新基线，Δ/⏱ 归零重来，无需任何历史状态恢复；
+    - 同身份的断崖兜底（Cliff Drop / Return to Initial）以与 Line 2 同源的还原占用判定（`parser.resolveContextInputTokens`），缓存命中/扣除不改变该值，不会误判 /clear；
     - 无按 cwd 共享的跨 identity 状态（旧 handoff 机制已整体退役：其共享水位在空闲 >5min TTL 拒收、多窗口覆写、单调防线拒收三种路径下均会漏显）；存量 `handoff-*.json` 由 uninstall 整目录 rmSync 兜底清理，`paths.js` 的 `getSessionStatsHandoffPath` 保留为存量清理接口（无运行时引用）。
 12. **/compact 后 context 显示旧值（宿主刷新时序）**：
     - 宿主 payload 的 `context_window.current_usage` 来自 `UsageUtils.getLatestUsage()`：取活跃链最近一条真实 API 调用的 usage，跳过 `agent === "compact"` 的条目；
@@ -109,7 +110,7 @@ node runtime/bin/codebuddy-hud.js --theme list
     - 若宿主自身事件循环被占住 ≥5s（实测会话启动期 `bash -l` shell snapshot 8~10s、插件市场加载 5.4s、云端配置 2.4s、`rebuildAgents` / `readDynamic` 各 10s 上限），恢复后 **timers 阶段先于已排队的 `close` 回调**，于是一个 0.2s 就跑完的 HUD 也会被判超时（此时 `kill()` 因直接子进程已退出而返回 false，故错误串带 "and failed to terminate"）；
     - 该误判与 HUD 耗时无关，HUD 侧无法阻止（实测 HUD 仅 0.1~0.3s：直连 node ~0.1s，经 `.cmd` shim ~0.15~0.32s）；
     - 排查入口：`~/.codebuddy/logs/<date>/<project>__*.log` 搜 `Status line command failed`；本地复现只需让宿主父进程阻塞 ≥5s（如执行 `sleep 6`）即可得到逐字相同的错误串。
-    - 最新 v2.167.0 逆向确证（模块 254030；headless 与 lite-wb 构建同构）：`executeStatusLine` 依然保持 10240B 捕获上限、前 3 行截断和 5000ms 硬超时；`StatusManager` 依然仅由 5 个离散事件（session / result / permission / settings / cost）触发 300ms 防抖，空闲与只读工具运行中完全静默，无周期心跳定时器；`current_usage` 统计口径虽与 `/context` 对齐，但仍为单次请求后的静态快照。
+    - 最新 v2.171.0 逆向确证（模块 254030；headless 与 lite-wb 构建同构）：`executeStatusLine` 依然保持 10240 个 UTF-16 字符的 stdout 捕获上限（先判长度再追加，stderr 无上限）、前 3 行截断和 5000ms 硬超时；`StatusManager` 依然仅由 5 个离散事件（session / result / permission / settings / cost）触发 300ms 防抖，空闲与只读工具运行中完全静默，无周期心跳定时器；`current_usage` 统计口径虽与 `/context` 对齐，但仍为单次请求后的静态快照。
 14. **伴生技能生命周期管理（hud-config 挂载与清理契约）**：
     - `--setup` 安装时将内置 `skills/hud-config` 挂载至 `~/.codebuddy/skills/hud-config`；
     - 挂载机制支持三级容灾：Windows 平台优先使用免管理员权限的 NTFS Junction，POSIX 平台优先使用目录软链（`'dir'`），权限受限环境自动降级为递归目录拷贝（`fs.cpSync`）；

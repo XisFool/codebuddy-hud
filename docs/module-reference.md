@@ -83,6 +83,8 @@ export function extractTokenData(cbData: CodeBuddyPayload): {
   ctxPercent: number;
 } | null;
 
+export function resolveContextInputTokens(cw: ContextWindow): number | null;
+
 export function extractDiffStats(cbData: CodeBuddyPayload): {
   linesAdded: number;
   linesRemoved: number;
@@ -98,7 +100,7 @@ export function num(val: any): number;
 ```
 
 > **Token 占用还原与仲裁机制**：
-> 针对 DeepSeek 等服务商将 miss 视作 creation 导致宿主 `current_usage.input_tokens` 扣减为 0 的场景，`extractTokenData` 自动通过 `combined = rawInput + cacheRead + cacheCreation` 还原活跃上下文输入总占用（与 `used_percentage` 基底对齐）；当未扣减提示词与缓存并存时，通过比对 `combined` 与 `rawInput` 相对 `used_percentage` 理论占用的残差距离执行动态仲裁，杜绝翻倍缺陷。
+> 针对 DeepSeek 等服务商将 miss 视作 creation 导致宿主 `current_usage.input_tokens` 扣减为 0 的场景，`extractTokenData` 自动通过 `combined = rawInput + cacheRead + cacheCreation` 还原活跃上下文输入总占用（与 `used_percentage` 基底对齐）；当未扣减提示词与缓存并存时，通过比对 `combined` 与 `rawInput` 相对 `used_percentage` 理论占用的残差距离执行动态仲裁，杜绝翻倍缺陷。该占用还原同时被 `session-stats.js` 复用为 /clear 重置信号，保证判定与 Line 2 展示同源。
 
 ### 数据结构 Shape
 ```javascript
@@ -159,7 +161,7 @@ export const THEME_PRESETS: Record<string, ThemePreset>;
 ```javascript
 if (key === '__proto__') continue;
 ```
-严格阻断恶意配置文件通过伪造 `__proto__` 污染 V8 原型链。
+严格阻断恶意配置文件通过伪造 `__proto__` 污染 V8 原型链。主题覆盖值另经白名单校验：仅保留调色板已有关键字，值必须是严格 SGR 序列或不含控制字符的纯色名；非字符串与越界值回退预设，阻断项目配置注入终端控制序列。
 
 ---
 
@@ -355,7 +357,7 @@ export function getResetSignal(cbData: CodeBuddyPayload): {
 export const SESSION_STATS_VERSION: number;
 ```
 
-`cwd` 用于相对 `transcript_path` 的解析（identity 派生）；identity miss 即视为新会话，直接以当前 payload 累计为新基线。
+`cwd` 用于相对 `transcript_path` 的解析（identity 派生）；identity miss 即视为新会话，直接以当前 payload 累计为新基线。`getResetSignal` 的 `currentInputTokens` 取 `parser.resolveContextInputTokens` 的还原占用（与 Line 2 同源），缓存命中/扣除不改变该值；无可用输入字段时为 `null`，不参与断崖比较。
 
 ---
 
@@ -397,7 +399,7 @@ export function resetCache(): void;
 
 ## 14. `runtime/sanitize.js` — 终端文本安全清洗器
 
-**职责：** 剥离外部输入中的 ANSI CSI/OSC 控制序列、Unicode Bidi 伪装字符与 C0/C1 控制符。
+**职责：** 剥离外部输入中的 ANSI CSI/OSC 控制序列、DCS/APC/PM/SOS 串式控制串（含 C1 单字节形式）、Unicode Bidi 伪装字符与 C0/C1 控制符。
 
 ### 接口定义
 ```typescript
@@ -513,19 +515,21 @@ export function printDoctorReport(report: DoctorReport, isJson?: boolean, option
 
 ### 接口定义
 ```typescript
-export function selectThemeInteractive(opts?: { initialTheme?: string }): Promise<string | null>;
+export function selectThemeInteractive(opts?: { initialTheme?: string; config?: ResolvedConfig }): Promise<string | null>;
 export function saveUserTheme(themeName: string): string;
 export function getActiveThemeName(): string;
 export function renderThemePreview(themeName: string, mode?: 'dark' | 'light'): string[];
-export function printThemesList(): void;
+export function printThemesList(config?: ResolvedConfig): void;
 export const THEMES: Array<{ name: string; label: string }>;
 ```
+
+界面文案（列表标题、用法提示、选择器标题/快捷键提示、预览框标题）通过 `lang.js` 字典输出，`config.language` 生效；预览框顶边按显示宽度（CJK 双列）计算，与底边对齐。
 
 ---
 
 ## 20. `runtime/uninstall.js` — 卸载还原与深度清理
 
-**职责：** 从首次备份仅还原非本 HUD 的 `statusLine`——备份记录的命令含 `codebuddy-hud` 时（更早的安装副本或 `npm link` 全局 shim）改为移除 settings 中的该项，消除「报告卸载成功而 HUD 仍生效」；保留其他 settings 及用户主题配置；清理已部署的 `~/.codebuddy/skills/hud-config/` 技能目录/挂载；移除对应 runtime 的 Windows shim 与用户缓存；清理系统级 PATH 注册（从 Windows 用户注册表 Path 移除 runtime 目录，POSIX 移除 `~/.local/bin/codebuddy-hud` 软链接；沙箱测试模式下通过 `CODEBUDDY_HOME` 环境变量守卫自动跳过）。备份一经解析成功即回收，不依赖 settings 是否被写入；解析失败或写入失败时保留备份。
+**职责：** 从首次备份仅还原非本 HUD 的 `statusLine`（且仅当当前 `statusLine` 仍指向本 HUD；用户装后替换或删除的项保留）——备份记录的命令含 `codebuddy-hud` 时（更早的安装副本或 `npm link` 全局 shim）改为移除 settings 中的该项，消除「报告卸载成功而 HUD 仍生效」；保留其他 settings 及用户主题配置；清理已部署的 `~/.codebuddy/skills/hud-config/` 技能目录/挂载；移除对应 runtime 的 Windows shim 与用户缓存；清理系统级 PATH 注册（从 Windows 用户注册表 Path 移除 runtime 目录，POSIX 移除 `~/.local/bin/codebuddy-hud` 软链接；沙箱测试模式下通过 `CODEBUDDY_HOME` 环境变量守卫自动跳过）。备份一经解析成功即回收，不依赖 settings 是否被写入；解析失败或写入失败时保留备份。
 
 ### 接口定义
 ```typescript
