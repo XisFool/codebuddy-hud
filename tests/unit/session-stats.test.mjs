@@ -74,6 +74,40 @@ describe('getLogicalSessionCostData', () => {
     assert.deepEqual(cleared, cost({ added: 0, removed: 0, totalMs: 0, apiMs: 0 }));
   });
 
+  it('does not treat a warm-cache input drop as /clear', () => {
+    // Cold first call: the reported input is the full prompt.
+    const cold = payload({ totalInput: 100000, currentInput: 12000 });
+    cold.context_window.context_window_size = 200000;
+    cold.context_window.used_percentage = 6; // 12000 / 200000
+    sessionCost(cold, cost());
+    // Second call with a warm prompt cache: the host deducts the served cache
+    // from input_tokens, so only the miss residual remains. The restored
+    // occupancy is unchanged and the session must keep accumulating Δ/⏱.
+    const warm = payload({ totalInput: 112000, currentInput: 300 });
+    warm.context_window.current_usage.cache_read_input_tokens = 11700;
+    warm.context_window.context_window_size = 200000;
+    warm.context_window.used_percentage = 6;
+    const delta = sessionCost(warm, cost({ added: 1750, removed: 161, totalMs: 10030000, apiMs: 4984000 }));
+    assert.deepEqual(delta, cost({ added: 50, removed: 0, totalMs: 10000, apiMs: 4000 }));
+  });
+
+  it('does not reset when an un-deducted payload loses its cache figures', () => {
+    // Some hosts report the full prompt in input_tokens and add cache
+    // counters on top; arbitration keeps the raw input, so a cache TTL
+    // expiry (cache_read -> 0) is not a 50% cliff.
+    const cached = payload({ totalInput: 100000, currentInput: 12000 });
+    cached.context_window.current_usage.cache_read_input_tokens = 8000;
+    cached.context_window.context_window_size = 200000;
+    cached.context_window.used_percentage = 6; // raw 12000 is closer than 20000
+    sessionCost(cached, cost());
+    const expired = payload({ totalInput: 112000, currentInput: 12000 });
+    expired.context_window.current_usage.cache_read_input_tokens = 0;
+    expired.context_window.context_window_size = 200000;
+    expired.context_window.used_percentage = 6;
+    const delta = sessionCost(expired, cost({ added: 1750, removed: 161, totalMs: 10030000, apiMs: 4984000 }));
+    assert.deepEqual(delta, cost({ added: 50, removed: 0, totalMs: 10000, apiMs: 4000 }));
+  });
+
   it('resets when the host assigns a new session id to the same transcript', () => {
     sessionCost(payload({ sessionId: 'session-a' }), cost());
     const reset = sessionCost(payload({ sessionId: 'session-b', totalInput: 100100, currentInput: 90100 }), cost());

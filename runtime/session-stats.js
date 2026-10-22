@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { getSessionStatsStatePath, normalizePlatformPath } = require('./paths');
+const { resolveContextInputTokens } = require('./parser');
 
 const SESSION_STATS_VERSION = 1;
 // Adaptive /clear detection thresholds: balance long initial prompts (3-4k tokens
@@ -53,10 +54,20 @@ function getSessionIdentity(cbData, cwd) {
 
 function getResetSignal(cbData) {
   const context = cbData && cbData.context_window;
-  const usage = context && typeof context === 'object' && context.current_usage;
+  const usage = context && typeof context === 'object' ? context.current_usage : null;
+  const rawInput = finiteNonNegative(usage && typeof usage === 'object' ? usage.input_tokens : null);
+  const hasCacheData = Boolean(usage && typeof usage === 'object'
+    && (finiteNonNegative(usage.cache_read_input_tokens) !== null
+      || finiteNonNegative(usage.cache_creation_input_tokens) !== null));
+  // Compare the same occupied-context figure the HUD renders (see
+  // parser.resolveContextInputTokens): a warm-cache call usually arrives with
+  // the served cache deducted, so the raw residual reads as a cliff and the
+  // heuristics below would mislabel it /clear. The arbitration keeps a
+  // genuinely un-deducted payload intact and restores a deducted one.
+  // null means "no usable figure" and must never be compared as zero.
   return {
     totalInputTokens: finiteNonNegative(context && typeof context === 'object' ? context.total_input_tokens : null),
-    currentInputTokens: finiteNonNegative(usage && typeof usage === 'object' ? usage.input_tokens : null),
+    currentInputTokens: (rawInput === null && !hasCacheData) ? null : resolveContextInputTokens(context),
   };
 }
 

@@ -22,11 +22,20 @@ function parseCodeBuddyInput(jsonStr) {
   }
 }
 
-function extractTokenData(cbData) {
-  if (!cbData) return null;
-  const cw = cbData.context_window;
+// Resolve the active context occupancy from a context_window payload.
+// The host's current_usage.input_tokens is cache-adjusted
+// (max(0, usage.inputTokens - cacheRead - cacheCreation)).
+// For providers returning prompt_cache_miss_tokens (e.g. DeepSeek), the host
+// treats miss as creation (codebuddy.js:11493650), making
+// cacheRead + cacheCreation === usage.inputTokens, so input_tokens arrives
+// as 0 regardless of hit rate.
+// Restore the host total when deducted down to 0; when positive, arbitrate
+// against used_percentage occupancy (fromPercent) to avoid double-counting
+// if the host already sent the un-deducted prompt total. Exported so the
+// /clear reset heuristic compares the same figure the HUD renders, never
+// the raw deducted residual.
+function resolveContextInputTokens(cw) {
   if (!cw || typeof cw !== 'object') return null;
-
   const usage = cw.current_usage || {};
   const rawInput = num(usage.input_tokens);
   const cacheRead = num(usage.cache_read_input_tokens);
@@ -34,15 +43,6 @@ function extractTokenData(cbData) {
   const ctxSize = num(cw.context_window_size);
   const ctxPercent = num(cw.used_percentage);
 
-  // The host's current_usage.input_tokens is cache-adjusted
-  // (max(0, usage.inputTokens - cacheRead - cacheCreation)).
-  // For providers returning prompt_cache_miss_tokens (e.g. DeepSeek), the host
-  // treats miss as creation (codebuddy.js:11493650), making
-  // cacheRead + cacheCreation === usage.inputTokens, so input_tokens arrives
-  // as 0 regardless of hit rate.
-  // Restore host total when deducted down to 0; when positive, arbitrate
-  // against used_percentage occupancy (fromPercent) to avoid double-counting
-  // if the host already sent the un-deducted prompt total.
   const combined = rawInput + cacheRead + cacheWrite;
   const fromPercent = ctxPercent > 0 && ctxSize > 0
     ? Math.round((ctxPercent / 100) * ctxSize)
@@ -56,9 +56,22 @@ function extractTokenData(cbData) {
       inTokens = combined;
     }
   }
+  return inTokens;
+}
+
+function extractTokenData(cbData) {
+  if (!cbData) return null;
+  const cw = cbData.context_window;
+  if (!cw || typeof cw !== 'object') return null;
+
+  const usage = cw.current_usage || {};
+  const cacheRead = num(usage.cache_read_input_tokens);
+  const cacheWrite = num(usage.cache_creation_input_tokens);
+  const ctxSize = num(cw.context_window_size);
+  const ctxPercent = num(cw.used_percentage);
 
   return {
-    inTokens,
+    inTokens: resolveContextInputTokens(cw),
     outTokens: num(usage.output_tokens),
     cacheRead,
     cacheWrite,
@@ -93,6 +106,7 @@ function extractCostData(cbData) {
 module.exports = {
   parseCodeBuddyInput,
   extractTokenData,
+  resolveContextInputTokens,
   extractDiffStats,
   extractCostData,
   num,
