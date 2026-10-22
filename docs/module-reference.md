@@ -357,7 +357,7 @@ export function getResetSignal(cbData: CodeBuddyPayload): {
 export const SESSION_STATS_VERSION: number;
 ```
 
-`cwd` 用于相对 `transcript_path` 的解析（identity 派生）；identity miss 即视为新会话，直接以当前 payload 累计为新基线。`getResetSignal` 的 `currentInputTokens` 取 `parser.resolveContextInputTokens` 的还原占用（与 Line 2 同源），缓存命中/扣除不改变该值；无可用输入字段时为 `null`，不参与断崖比较。
+`cwd` 用于相对 `transcript_path` 的解析（identity 派生）；identity miss 即视为新会话，直接以当前 payload 累计为新基线。`getResetSignal` 的 `currentInputTokens` 取 `parser.resolveContextInputTokens` 的还原占用（与 Line 2 同源）：有 `context_window_size`/`used_percentage` 时缓存命中/扣除不改变该值；两者缺失时退回原始 `input_tokens`（缓存残差形态仍可能触发断崖）；`input_tokens` 缺失且 cache 计数为 0 时为 `null`，不参与断崖比较。
 
 ---
 

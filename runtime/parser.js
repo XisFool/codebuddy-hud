@@ -34,6 +34,9 @@ function parseCodeBuddyInput(jsonStr) {
 // if the host already sent the un-deducted prompt total. Exported so the
 // /clear reset heuristic compares the same figure the HUD renders, never
 // the raw deducted residual.
+// Without context_window_size/used_percentage there is no occupancy reference,
+// so a positive rawInput is kept as-is; a cache-adjusted residual can then
+// still look like a cliff to the reset heuristic (documented limitation).
 function resolveContextInputTokens(cw) {
   if (!cw || typeof cw !== 'object') return null;
   const usage = cw.current_usage || {};

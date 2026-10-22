@@ -56,9 +56,13 @@ function getResetSignal(cbData) {
   const context = cbData && cbData.context_window;
   const usage = context && typeof context === 'object' ? context.current_usage : null;
   const rawInput = finiteNonNegative(usage && typeof usage === 'object' ? usage.input_tokens : null);
-  const hasCacheData = Boolean(usage && typeof usage === 'object'
-    && (finiteNonNegative(usage.cache_read_input_tokens) !== null
-      || finiteNonNegative(usage.cache_creation_input_tokens) !== null));
+  // A zero counter is not usable cache telemetry. Treating it as "cache data
+  // exists" would resolve the occupancy to 0 when input_tokens is absent and
+  // fabricate a cliff for a frame that simply has no usable figure.
+  const cacheRead = finiteNonNegative(usage && typeof usage === 'object' ? usage.cache_read_input_tokens : null);
+  const cacheWrite = finiteNonNegative(usage && typeof usage === 'object' ? usage.cache_creation_input_tokens : null);
+  const hasCacheData = (cacheRead !== null && cacheRead > 0)
+    || (cacheWrite !== null && cacheWrite > 0);
   // Compare the same occupied-context figure the HUD renders (see
   // parser.resolveContextInputTokens): a warm-cache call usually arrives with
   // the served cache deducted, so the raw residual reads as a cliff and the

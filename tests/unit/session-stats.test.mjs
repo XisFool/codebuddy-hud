@@ -91,6 +91,18 @@ describe('getLogicalSessionCostData', () => {
     assert.deepEqual(delta, cost({ added: 50, removed: 0, totalMs: 10000, apiMs: 4000 }));
   });
 
+  it('keeps a frame without input_tokens and zero cache counters as unknown', () => {
+    // Zero-valued cache counters are not telemetry. Without input_tokens the
+    // occupancy must stay null, not become 0 (which would look like /clear).
+    sessionCost(payload({ totalInput: 100000, currentInput: 12000 }), cost());
+    const missing = payload({ totalInput: 112000, currentInput: 0 });
+    delete missing.context_window.current_usage.input_tokens;
+    missing.context_window.current_usage.cache_read_input_tokens = 0;
+    missing.context_window.current_usage.cache_creation_input_tokens = 0;
+    const delta = sessionCost(missing, cost({ added: 1750, removed: 161, totalMs: 10030000, apiMs: 4984000 }));
+    assert.deepEqual(delta, cost({ added: 50, removed: 0, totalMs: 10000, apiMs: 4000 }));
+  });
+
   it('does not reset when an un-deducted payload loses its cache figures', () => {
     // Some hosts report the full prompt in input_tokens and add cache
     // counters on top; arbitration keeps the raw input, so a cache TTL

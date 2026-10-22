@@ -130,6 +130,26 @@ describe('doctor diagnosis tool', () => {
     });
   });
 
+  test('accepts a quoted Windows path ending in a backslash', { skip: process.platform !== 'win32' }, () => {
+    withIsolatedSettings(({ tmpDir, writeSettings }) => {
+      // The closing quote after a trailing backslash ("C:\dir\") is ambiguous
+      // with an escaped quote; the legacy tokenizer is the fallback.
+      const binDir = path.join(tmpDir, 'hud-dir');
+      const hudScript = path.join(binDir, 'codebuddy-hud.js');
+      fs.mkdirSync(binDir, { recursive: true });
+      fs.writeFileSync(hudScript, '#!/usr/bin/env node\n');
+      const BS = String.fromCharCode(92);
+      writeSettings(JSON.stringify({
+        statusLine: { command: `"${binDir}${BS}" "${hudScript}"` },
+      }));
+      assert.equal(getStatusLineCheck(runDoctor({ cwd: process.cwd() })).status, 'ok');
+      // The fallback must only rescue the ambiguous trailing backslash, not
+      // hide a genuinely missing HUD entrypoint.
+      fs.rmSync(hudScript);
+      assert.equal(getStatusLineCheck(runDoctor({ cwd: process.cwd() })).status, 'warn');
+    });
+  });
+
   test('flags a Windows shim whose forwarded script is missing', () => {
     withIsolatedSettings(({ tmpDir, writeSettings }) => {
       const shim = path.join(tmpDir, 'bin', 'codebuddy-hud.cmd');

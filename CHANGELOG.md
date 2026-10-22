@@ -11,15 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed (缺陷修复)
-- **Δ/⏱ 被缓存命中误判为 `/clear` 而清零**：`runtime/session-stats.js` 的重置信号改为复用 `parser.resolveContextInputTokens` 的上下文占用仲裁（缓存已扣除形态还原、未扣除形态保持原值）；缓存预热/命中与缓存 TTL 过期不再触发断崖误判，`/compact` 行为保持不变；
+- **Δ/⏱ 被缓存命中误判为 `/clear` 而清零**：`runtime/session-stats.js` 的重置信号改为复用 `parser.resolveContextInputTokens` 的上下文占用仲裁（缓存已扣除形态还原、未扣除形态保持原值）；缓存预热/命中与缓存 TTL 过期不再触发断崖误判（依赖 `context_window_size`/`used_percentage`，缺失时退回原始输入，该形态仍可能触发断崖），`/compact` 行为保持不变；`input_tokens` 缺失且 cache 计数为 0 时保持 `null`，不再把未知帧当成占用 0；
 - **项目配置主题色可注入终端控制序列**：`runtime/config.js` 的 `resolveTheme` 对 theme 覆盖值执行白名单校验（调色板键 + 严格 SGR 序列或纯色名），阻断恶意仓库通过 `codebuddy-hud.config.json` 注入清屏、OSC 52 剪贴板写入等序列；非字符串值不再导致渲染抛错；
 - **DCS/APC/PM/SOS 控制串 payload 残留**：`runtime/sanitize.js` 按 ECMA-48 整串吞到 ST（或未终止串结尾），并补齐 C1 单字节形式（`0x9B/0x9D/0x90` 等）；控制载荷不再以可见文本泄漏到看板；
-- **`--doctor` 误报转义路径不存在**：statusLine 命令分词改为转义感知，并按「原样 → 反转义」双形态校验；含 `$`/引号/反斜杠的 POSIX 路径不再误报，Windows 未转义的 UNC 与 `$` 目录路径不受影响；
-- **`--theme` 文案未国际化**：列表标题、用法提示、选择器标题/快捷键提示与预览框标题接入 `lang.js`；预览框按显示宽度（CJK 双列）计算边线，英文标题不再溢出右边框；
+- **`--doctor` 误报转义路径不存在**：statusLine 命令分词改为转义感知，并按「原样 → 反转义」双形态校验；含 `$`/引号/反斜杠的 POSIX 路径不再误报，Windows 未转义的 UNC 与 `$` 目录路径不受影响；引号内以反斜杠结尾的 Windows 路径在转义感知分词失败时回退旧分词，避免把 `"...\"` 误读为转义引号；
+- **`--theme` 文案未国际化**：列表标题、用法提示、选择器标题/快捷键提示与预览框标题接入 `lang.js`；预览框按显示宽度（CJK 双列）计算边线，英文标题不再溢出右边框；未知主题参数与保存路径输出前经 `sanitizeTerminalText()`；
 - **`--uninstall` 覆盖用户后续修改的 statusLine**：仅当当前 `statusLine` 仍指向本 HUD 时才还原安装前备份；用户装后替换或删除的配置保持不变，备份仍被消费删除。
 
 ### Tests (测试)
-- 单测用例增至 444 个，新增缓存误判、未扣除载荷、主题注入、DCS/APC、doctor 转义、i18n 与卸载回滚等回归用例；`npm run verify` 与 `npm run verify:install` 各 10/10 通过。
+- 单测用例增至 447 个，新增缓存误判、零 cache 未知帧、未扣除载荷、主题注入、DCS/APC、doctor 转义与 Windows 尾反斜杠路径、theme 参数清洗、i18n 与卸载回滚等回归用例；`npm run verify` 与 `npm run verify:install` 各 10/10 通过。
 
 ---
 

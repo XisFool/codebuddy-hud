@@ -155,7 +155,7 @@ sequenceDiagram
 - **状态机**：
   1. 在 `~/.codebuddy/codebuddy-hud-session-state/<hash>.json` 记录会话基线。
   2. 触发判定（任一命中）：
-    - **Cliff Drop**：当前上下文占用（与 Line 2 同源的还原值，缓存命中/扣除不改变该值）相对降幅 ≥50%，且绝对降幅 ≥3000；
+    - **Cliff Drop**：当前上下文占用（与 Line 2 同源的还原值；有 `context_window_size`/`used_percentage` 时缓存命中/扣除不改变该值，缺失时退回原始 `input_tokens`）相对降幅 ≥50%，且绝对降幅 ≥3000；
     - **Return to Initial**：当前上下文占用 ≤4096，且此前 ≥6000（相对降幅 ≥35%）；
      - 累计 `total_input_tokens` 下降；
      - 同一 transcript 的 `session_id` 变化、transcript 文件物理截断（size 变小），或宿主显式 `clear_signal` / `is_clear`；

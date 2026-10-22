@@ -97,7 +97,7 @@ node runtime/bin/codebuddy-hud.js --theme list
     - 工具活动并入 Line 3 尾部展示；payload fixtures 中不应包含假造的 `agents`/`tasks` 字段。
 11. **/clear 换新 transcript 的会话语义（identity miss 即新会话）**：
     - 宿主 /clear 后会切换到全新 transcript 文件（实测换文件而非截断），per-identity 状态失联；identity miss（含新窗口首帧）直接把当前 payload 累计锚定为新基线，Δ/⏱ 归零重来，无需任何历史状态恢复；
-    - 同身份的断崖兜底（Cliff Drop / Return to Initial）以与 Line 2 同源的还原占用判定（`parser.resolveContextInputTokens`），缓存命中/扣除不改变该值，不会误判 /clear；
+    - 同身份的断崖兜底（Cliff Drop / Return to Initial）以与 Line 2 同源的还原占用判定（`parser.resolveContextInputTokens`）：有 `context_window_size`/`used_percentage` 时缓存命中/扣除不改变该值；两者缺失时退回原始 `input_tokens`，缓存残差形态仍可能触发断崖，需依赖 transcript identity 等硬信号；
     - 无按 cwd 共享的跨 identity 状态（旧 handoff 机制已整体退役：其共享水位在空闲 >5min TTL 拒收、多窗口覆写、单调防线拒收三种路径下均会漏显）；存量 `handoff-*.json` 由 uninstall 整目录 rmSync 兜底清理，`paths.js` 的 `getSessionStatsHandoffPath` 保留为存量清理接口（无运行时引用）。
 12. **/compact 后 context 显示旧值（宿主刷新时序）**：
     - 宿主 payload 的 `context_window.current_usage` 来自 `UsageUtils.getLatestUsage()`：取活跃链最近一条真实 API 调用的 usage，跳过 `agent === "compact"` 的条目；

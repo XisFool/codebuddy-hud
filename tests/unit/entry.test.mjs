@@ -176,6 +176,15 @@ test('--theme <invalid> prints error and exits 0', async () => {
   assert.match(r.err, /Unknown theme/);
 });
 
+test('--theme <invalid> sanitizes control sequences from the argument', async () => {
+  const evil = '\x1b]52;c;ZXZpbA==\x07\x1b[2J';
+  const r = await run({ args: ['--theme', evil] });
+  assert.equal(r.code, 0);
+  assert.match(r.err, /Unknown theme/);
+  assert.ok(!r.err.includes('\x1b]52'), 'OSC 52 must not reach stderr');
+  assert.ok(!r.err.includes('\x1b[2J'), 'clear-screen CSI must not reach stderr');
+});
+
 test('--theme rejects prototype-chain names and never persists them', async () => {
   for (const name of ['__proto__', 'constructor', 'toString']) {
     const r = await run({ args: ['--theme', name] });

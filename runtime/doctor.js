@@ -55,14 +55,19 @@ function shellTokenCandidates(token) {
   return unescaped === token ? [token] : [token, unescaped];
 }
 
-function findMissingStatusLineTargets(command) {
+function tokenizeStatusLineCommand(command, escapeAware) {
   const tokens = [];
-  const tokenRe = /"((?:\\.|[^"\\])*)"|(\S+)/g;
+  const tokenRe = escapeAware
+    ? /"((?:\\.|[^"\\])*)"|(\S+)/g
+    : /"([^"]+)"|(\S+)/g;
   let match;
   while ((match = tokenRe.exec(command)) !== null) {
     tokens.push(match[1] !== undefined ? match[1] : match[2]);
   }
+  return tokens;
+}
 
+function findMissingTokens(tokens) {
   const pathLike = tokens.filter(t => /[\\/]/.test(t));
   if (pathLike.length === 0) {
     const first = tokens[0];
@@ -80,6 +85,17 @@ function findMissingStatusLineTargets(command) {
     }
   }
   return missing;
+}
+
+function findMissingStatusLineTargets(command) {
+  const missing = findMissingTokens(tokenizeStatusLineCommand(command, true));
+  if (missing.length === 0) return missing;
+
+  // A Windows path ending in a backslash ("C:\dir\") is ambiguous with an
+  // escaped closing quote to the escape-aware tokenizer. Re-tokenize without
+  // escape awareness and accept it only when every path-like target exists.
+  const legacyMissing = findMissingTokens(tokenizeStatusLineCommand(command, false));
+  return legacyMissing.length === 0 ? [] : missing;
 }
 
 function checkCodeBuddyConfig(i18n) {

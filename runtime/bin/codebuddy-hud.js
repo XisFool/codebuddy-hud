@@ -6,6 +6,7 @@ const { parseCodeBuddyInput } = require('../parser');
 const { loadConfig } = require('../config');
 const { renderHUD } = require('../renderer');
 const { getErrorLogPath } = require('../paths');
+const { sanitizeTerminalText } = require('../sanitize');
 
 // Leave headroom for Node startup and the final stdout flush. Waiting the full
 // 1500ms for a host that never closes stdin would violate the end-to-end time
@@ -119,15 +120,15 @@ if (args.includes('--setup')) {
       } else if (themeArg) {
         if (isPresetName(themeArg)) {
           const savedPath = saveUserTheme(themeArg);
-          console.log(`\x1b[32m✔\x1b[0m ${t('themeSetSuccess')} '\x1b[1m${themeArg}\x1b[0m' (${t('themeSavedTo')} ${savedPath})`);
+          console.log(`\x1b[32m✔\x1b[0m ${t('themeSetSuccess')} '\x1b[1m${themeArg}\x1b[0m' (${t('themeSavedTo')} ${sanitizeTerminalText(savedPath, 512)})`);
         } else {
-          console.error(`${t('unknownTheme')}: "${themeArg}". ${t('availableThemes')}: ${Object.keys(THEME_PRESETS).join(', ')}`);
+          console.error(`${t('unknownTheme')}: "${sanitizeTerminalText(themeArg, 64)}". ${t('availableThemes')}: ${Object.keys(THEME_PRESETS).join(', ')}`);
         }
       } else if (process.stdin.isTTY && process.stdout.isTTY) {
         const selected = await selectThemeInteractive({ config });
         if (selected) {
           const savedPath = saveUserTheme(selected);
-          console.log(`\x1b[32m✔\x1b[0m ${t('themeSetSuccess')} '\x1b[1m${selected}\x1b[0m' (${t('themeSavedTo')} ${savedPath})\n`);
+          console.log(`\x1b[32m✔\x1b[0m ${t('themeSetSuccess')} '\x1b[1m${selected}\x1b[0m' (${t('themeSavedTo')} ${sanitizeTerminalText(savedPath, 512)})\n`);
         }
       } else {
         printThemesList(config);

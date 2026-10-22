@@ -153,7 +153,7 @@ sequenceDiagram
 - **State Machine**:
   1. Persists logical session baselines in `~/.codebuddy/codebuddy-hud-session-state/<hash>.json`.
   2. Detects a clear boundary when any of the following holds:
-    - **Cliff drop**: current context occupancy (the restored value shared with Line 2; cache hits/deductions do not move it) drops ≥50% relatively and ≥3000 absolutely;
+    - **Cliff drop**: current context occupancy (the restored value shared with Line 2; with `context_window_size`/`used_percentage` present, cache hits/deductions do not move it — without them the raw `input_tokens` is used) drops ≥50% relatively and ≥3000 absolutely;
     - **Return to initial**: current context occupancy $\le 4096$ with previous $\ge 6000$ (a ≥35% drop);
      - Cumulative `total_input_tokens` decreases;
      - A new `session_id` for the same transcript, a physically truncated transcript (file size shrinks), or an explicit host `clear_signal` / `is_clear`;
