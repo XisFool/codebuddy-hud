@@ -6,6 +6,7 @@ const readline = require('readline');
 const { THEME_PRESETS, resolveTheme, isPresetName } = require('./config');
 const { getUserConfigPath, getSettingsPath } = require('./paths');
 const { sanitizeTerminalText } = require('./sanitize');
+const { getI18n } = require('./lang');
 const { color, bold, dim, RESET, BOLD, DIM } = require('./renderer/format');
 
 const ANSI_CYAN = '\x1b[36m';
@@ -17,6 +18,17 @@ const THEMES = [
   { name: 'amber', label: '琥珀金 (Amber · 沉稳金黄)' },
   { name: 'monochrome', label: '黑白极简 (Monochrome · 经典终端灰白)' },
 ];
+
+// CJK/fullwidth characters occupy two terminal columns. The preview box must
+// measure the display width of the localized title, not its code-point count,
+// or the English title overflows the right border by its extra columns.
+function displayWidth(text) {
+  let width = 0;
+  for (const ch of String(text)) {
+    width += /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/.test(ch) ? 2 : 1;
+  }
+  return width;
+}
 
 function saveUserTheme(themeName) {
   if (!isPresetName(themeName)) {
@@ -115,6 +127,7 @@ function renderThemePreview(themeName, mode = 'dark') {
 
 function selectThemeInteractive(opts) {
   const options = opts || {};
+  const { t } = getI18n(options.config);
   const isTTY = process.stdin.isTTY && process.stdout.isTTY;
   const initialTheme = options.initialTheme || getActiveThemeName();
 
@@ -182,7 +195,7 @@ function selectThemeInteractive(opts) {
         process.stdout.write(`\x1b[${lastRenderedLines}A\x1b[0J`);
       }
 
-      outputLines.push(`${BOLD}${ANSI_CYAN}? ${RESET}${BOLD}请选择 HUD 主题 (Select HUD Theme):${RESET} ${DIM}[↑/↓ 移动 | 1-5 选择 | Enter 确认 | Esc 取消]${RESET}`);
+      outputLines.push(`${BOLD}${ANSI_CYAN}? ${RESET}${BOLD}${t('themeSelectTitle')}${RESET} ${DIM}${t('themeSelectHint')}${RESET}`);
       outputLines.push('');
 
       for (let i = 0; i < THEMES.length; i++) {
@@ -198,8 +211,10 @@ function selectThemeInteractive(opts) {
 
       outputLines.push('');
       const currentTheme = THEMES[selectedIndex].name;
-      const topDashes = Math.max(0, 72 - currentTheme.length);
-      outputLines.push(`${DIM}┌─ 实时效果预览 (${currentTheme}) ${'─'.repeat(topDashes)}┐${RESET}`);
+      const previewTitle = t('themePreviewTitle');
+      // Bottom border is 92 columns: └ + 90 dashes + ┘.
+      const topDashes = Math.max(0, 84 - displayWidth(previewTitle) - currentTheme.length);
+      outputLines.push(`${DIM}┌─ ${previewTitle} (${currentTheme}) ${'─'.repeat(topDashes)}┐${RESET}`);
 
       const previewLines = renderThemePreview(currentTheme);
       for (const pl of previewLines) {
@@ -266,16 +281,17 @@ function selectThemeInteractive(opts) {
   });
 }
 
-function printThemesList() {
+function printThemesList(config) {
+  const { t } = getI18n(config);
   const current = getActiveThemeName();
-  console.log(`\n${BOLD}Available HUD Themes:${RESET}\n`);
+  console.log(`\n${BOLD}${t('availableThemes')}:${RESET}\n`);
   for (let i = 0; i < THEMES.length; i++) {
     const item = THEMES[i];
     const isCurrent = item.name === current;
     const marker = isCurrent ? `${color('● [active]', 'green')}` : `${dim('○')}`;
     console.log(`  ${marker} ${bold(item.name.padEnd(12))} - ${item.label}`);
   }
-  console.log(`\nUsage: codebuddy-hud --theme <name> (e.g. codebuddy-hud --theme cyberpunk)\n`);
+  console.log(`\n${t('usageTheme')}\n`);
 }
 
 module.exports = {

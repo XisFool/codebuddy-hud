@@ -158,7 +158,7 @@ test('--update reports already up to date and exits 0', async () => {
 test('--theme list renders theme options and exits 0', async () => {
   const r = await run({ args: ['--theme', 'list'] });
   assert.equal(r.code, 0);
-  assert.match(r.out, /Available HUD Themes/);
+  assert.match(r.out, /Available themes/);
   assert.equal(r.err, '');
 });
 

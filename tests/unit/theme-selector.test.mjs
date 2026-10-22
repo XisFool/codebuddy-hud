@@ -91,4 +91,20 @@ describe('theme-selector', () => {
       printThemesList();
     });
   });
+
+  it('localizes the theme list headings via lang.js', () => {
+    const lines = [];
+    const originalLog = console.log;
+    console.log = (line) => lines.push(String(line));
+    try {
+      printThemesList({ language: 'zh' });
+      printThemesList({ language: 'en' });
+    } finally {
+      console.log = originalLog;
+    }
+    assert.ok(lines.some(l => l.includes('可用主题')), 'zh header must be localized');
+    assert.ok(lines.some(l => l.includes('Available themes')), 'en header must be localized');
+    assert.ok(lines.some(l => l.includes('用法: codebuddy-hud --theme')), 'zh usage hint must be localized');
+    assert.ok(!lines.some(l => l.includes('Available HUD Themes')), 'hardcoded header must be gone');
+  });
 });

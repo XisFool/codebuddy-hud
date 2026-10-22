@@ -94,7 +94,7 @@ if (args.includes('--setup')) {
         selectedTheme = args[themeIdx + 1];
       } else if (process.stdin.isTTY && process.stdout.isTTY) {
         const { selectThemeInteractive } = require('../theme-selector');
-        selectedTheme = await selectThemeInteractive();
+        selectedTheme = await selectThemeInteractive({ config: loadConfig() });
       }
       require('../statusline-installer').setup(selectedTheme ? { theme: selectedTheme } : undefined);
     } catch (err) {
@@ -107,27 +107,30 @@ if (args.includes('--setup')) {
   (async () => {
     try {
       const { THEME_PRESETS, isPresetName } = require('../config');
+      const { getI18n } = require('../lang');
       const { saveUserTheme, printThemesList, selectThemeInteractive } = require('../theme-selector');
+      const config = loadConfig(process.cwd());
+      const { t } = getI18n(config);
       const themeIdx = args.indexOf('--theme');
       const themeArg = (themeIdx !== -1 && args[themeIdx + 1] && !args[themeIdx + 1].startsWith('--')) ? args[themeIdx + 1] : null;
 
       if (themeArg === 'list' || themeArg === '--help' || themeArg === '-h') {
-        printThemesList();
+        printThemesList(config);
       } else if (themeArg) {
         if (isPresetName(themeArg)) {
           const savedPath = saveUserTheme(themeArg);
-          console.log(`\x1b[32m✔\x1b[0m HUD theme set to '\x1b[1m${themeArg}\x1b[0m' (saved to ${savedPath})`);
+          console.log(`\x1b[32m✔\x1b[0m ${t('themeSetSuccess')} '\x1b[1m${themeArg}\x1b[0m' (${t('themeSavedTo')} ${savedPath})`);
         } else {
-          console.error(`Unknown theme: "${themeArg}". Available themes: ${Object.keys(THEME_PRESETS).join(', ')}`);
+          console.error(`${t('unknownTheme')}: "${themeArg}". ${t('availableThemes')}: ${Object.keys(THEME_PRESETS).join(', ')}`);
         }
       } else if (process.stdin.isTTY && process.stdout.isTTY) {
-        const selected = await selectThemeInteractive();
+        const selected = await selectThemeInteractive({ config });
         if (selected) {
           const savedPath = saveUserTheme(selected);
-          console.log(`\x1b[32m✔\x1b[0m HUD theme set to '\x1b[1m${selected}\x1b[0m' (saved to ${savedPath})\n`);
+          console.log(`\x1b[32m✔\x1b[0m ${t('themeSetSuccess')} '\x1b[1m${selected}\x1b[0m' (${t('themeSavedTo')} ${savedPath})\n`);
         }
       } else {
-        printThemesList();
+        printThemesList(config);
       }
     } catch (err) {
       logError(err);
