@@ -132,7 +132,7 @@ function sumCachedTokens(details) {
 }
 
 // Three-state contract:
-//   null              — usage object missing entirely; renderer drops the badge
+//   null              — usage object missing entirely; renderer degrades to { available: false } and renders cache --
 //   {available:false} — usage present but required fields missing; renderer
 //                       shows `cache --` so the user can see "no telemetry"
 //                       instead of a misleading 0.0%

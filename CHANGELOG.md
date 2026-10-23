@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (新增特性)
+- **CLI 增补 `--version`/`-v` 与 `--help`/`-h` 选项**：`runtime/bin/codebuddy-hud.js` 为版本打印与简要帮助提供不读取 stdin 的快速分发，避免这两类查询等待 stdin；无参数运行仍按 statusLine 模式读取 stdin（800ms 保底超时）；`scripts/bootstrap.js` 补齐 `CODEBUDDY_HUD_REMOTE_PKG_URL` 历史环境变量兼容别名。
+
 ### Fixed (缺陷修复)
 - **Δ/⏱ 被缓存命中误判为 `/clear` 而清零**：`runtime/session-stats.js` 的重置信号改为复用 `parser.resolveContextInputTokens` 的上下文占用仲裁（缓存已扣除形态还原、未扣除形态保持原值）；缓存预热/命中与缓存 TTL 过期不再触发断崖误判（依赖 `context_window_size`/`used_percentage`，缺失时退回原始输入，该形态仍可能触发断崖），`/compact` 行为保持不变；`input_tokens` 缺失且 cache 计数为 0 时保持 `null`，不再把未知帧当成占用 0；
 - **项目配置主题色可注入终端控制序列**：`runtime/config.js` 的 `resolveTheme` 对 theme 覆盖值执行白名单校验（调色板键 + 严格 SGR 序列或纯色名），阻断恶意仓库通过 `codebuddy-hud.config.json` 注入清屏、OSC 52 剪贴板写入等序列；非字符串值不再导致渲染抛错；
@@ -17,9 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`--doctor` 误报转义路径不存在**：statusLine 命令分词改为转义感知，并按「原样 → 反转义」双形态校验；含 `$`/引号/反斜杠的 POSIX 路径不再误报，Windows 未转义的 UNC 与 `$` 目录路径不受影响；引号内以反斜杠结尾的 Windows 路径在转义感知分词失败时回退旧分词，避免把 `"...\"` 误读为转义引号；
 - **`--theme` 文案未国际化**：列表标题、用法提示、选择器标题/快捷键提示与预览框标题接入 `lang.js`；预览框按显示宽度（CJK 双列）计算边线，英文标题不再溢出右边框；未知主题参数与保存路径输出前经 `sanitizeTerminalText()`；
 - **`--uninstall` 覆盖用户后续修改的 statusLine**：仅当当前 `statusLine` 仍指向本 HUD 时才还原安装前备份；用户装后替换或删除的配置保持不变，备份仍被消费删除。
+- **一键安装 / `--uninstall` 破坏或误删用户 PATH 条目**：`scripts/install.ps1` 与 `runtime/uninstall.js` 改用注册表 API 读写 HKCU `Path`，保留 `%VAR%` 间接引用（`REG_EXPAND_SZ` 不再被压平为 `REG_SZ`）；卸载按归一化路径比较（忽略大小写、去除包裹引号与尾分隔符）并移除 runtime bin 目录，避免误删/漏删；
+- **effort 会话状态并发读到半截 JSON**：`runtime/model-info.js` 的状态写入改为临时文件 + rename 原子替换。
+
+### Performance & Hardening (性能与稳健性加固)
+- **Git 探测去除 shell 壳进程并懒加载 `child_process`**：`runtime/git.js` 的 `git status` / `rev-parse` 改用 `execFileSync`，Windows 真实 spawn 帧约省 33ms；`child_process` 仅在 Git 探测或 Windows 编码探测时加载，普通帧约省 2ms。
+
+### Documentation (文档对齐)
+- **宿主 v2.171.0 兼容性复核与全量文档漂移对齐**：复核 CodeBuddy Code v2.171.0 逆向确证（3 行截断、10240 个 UTF-16 字符、5s 超时与离散事件）；全面对齐双语 README、双语架构文档、模块参考与 AGENTS.md 中关于 Cache 命中率超窗滑窗、Git 探测规范、代码页 300ms 超时与 60s probeTtlMs 短缓存、TypeScript 接口签名及 CLI 选肤交互说明。
+- **文档漂移与冗余治理**：修正 README 错误列出的刷新事件（统一为 session / result / permission / settings / cost 五类）、镜像仅代理 raw 仍可安装的绝对化表述、卸载还原条件与环境变量清单；修正架构文档 Credits checkpoint 截断判据（`sourceSize`）、配置合并层级（4 次 deepMerge + 主题后处理）与依赖图缺边；修正模块参考中缓存徽章样式、`checkNodeVersion` 退出行为、`install.ps1` 下载源与新鲜度判定条件，并补齐三份状态文件 schema；AGENTS.md 收敛为硬约束与单一来源指针。
 
 ### Tests (测试)
-- 单测用例增至 447 个，新增缓存误判、零 cache 未知帧、未扣除载荷、主题注入、DCS/APC、doctor 转义与 Windows 尾反斜杠路径、theme 参数清洗、i18n 与卸载回滚等回归用例；`npm run verify` 与 `npm run verify:install` 各 10/10 通过。
+- 单测用例增至 458 个（456 pass / 2 skipped），新增 CLI `--version` 与 `--help` 快速分发，新增缓存误判、零 cache 未知帧、未扣除载荷、主题注入、DCS/APC、doctor 转义与 Windows 尾反斜杠路径、theme 参数清洗、i18n 与卸载回滚等回归用例；`npm run verify` 与 `npm run verify:install` 各 10/10 通过。
 
 ---
 
@@ -42,13 +54,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cache 徽章超窗滑动校准为「近期调用命中率」**：
   - `runtime/transcript.js` 中 `getTurnUsageMetrics()` 从 EOF 回扫超出 200 条记录 / 256KiB 扫描预算时，滑动窗口自然截止于最近调用；
   - 明确徽章数值口径为「近期调用命中率」（`sum(hitTokens) / sum(promptTokens)`，由 `turn-window-slide` 测试钉死），消除先前误标为“整轮平均”的语义歧义；三态契约保持不变。
-- **Context Token 比例主色统一与黑白极简主题对比度优化**：
-  - 统一 Context Token 比例数字在所有主题下均高亮为主色（primary color）；
+- **Context Token 比例分色与黑白极简主题对比度优化**：
+  - Context Token 比例数字按 `thresholds` 阈值分色（绿 / 黄 / 红），标签与 in/size 数值使用主题主色；
   - 优化黑白极简主题（`monochrome`）高对比度色彩表现，提升暗色终端辨识度与阅读体验。
 
 ### Documentation (宿主兼容性复核与文档对齐)
 - **全面对齐 CodeBuddy Code v2.167.0 逆向确证**：
-  - 深入逆向确证 CodeBuddy Code v2.167.0 模块 254030：输出前 3 行截断（`eT=3`）、10240 字节捕获上限（`eD=10240`）、5000ms 硬超时、5 类离散事件触发 300ms 去抖刷新、空闲与只读工具静默等运行机制；
+  - 深入逆向确证 CodeBuddy Code v2.167.0 模块 254030：输出前 3 行截断（`eT=3`）、10240 个 UTF-16 字符 stdout 捕获上限（`eD=10240`，先判长度再追加）、5000ms 硬超时、5 类离散事件触发 300ms 去抖刷新、空闲与只读工具静默等运行机制；
   - 双语 README、`docs/architecture.md`、`docs/architecture_zh.md`、`docs/module-reference.md` 与 `AGENTS.md` 全量校准对齐。
 
 ### Tests (测试与验证工程)
@@ -64,7 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **修复 `/clear` 后 Δ/⏱ 漏显并彻底退役 handoff 机制**：
   - 针对宿主在 `/clear` 后切换全新 transcript 导致的会话失联与 Δ/⏱ 漏显问题，退役旧的跨 identity 水位共享（handoff）机制，彻底根除其在空闲超时 >5min 拒收、同目录多窗口覆写串扰与单调防线拒收三条路径下的漏显缺陷；
   - 确立「identity miss 即新会话」语义，无论新开窗口还是 `/clear` 换新会话，首帧直接以当前 payload 累计为新基线，Δ/⏱ 归零重来并在次帧平滑累加；
-  - 状态持久化失败或异常时安全锚定为 Δ=0（消除旧版回退至宿主全量巨额累计的缺陷）；`paths.js` 将 `getSessionStatsHandoffPath` 降级为存量清理接口。
+  - 状态持久化失败或异常时安全锚定为 Δ=0（消除旧版回退至宿主全量巨额累计的缺陷）；`paths.js` 保留 `getSessionStatsHandoffPath` 作为存量路径定位接口（无运行时引用，uninstall 整目录清理）。
 
 ### Added (新增特性)
 - **支持 `hud-config` 技能自动挂载与卸载清理**：
@@ -98,7 +110,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **琥珀金主题视觉升级**：
   - 琥珀金（`amber`）：暗色与亮色模式主色（`primary`）、强调色（`accent`）、模型名与 Git 分支统一升级为耀眼金色（`gold`，`\x1b[93m`），提升整体质感与对比度；
   - 调色板引擎（`runtime/renderer/format.js`）：新增导出 `brightPurple`（标准 16 色高亮紫，`\x1b[95m`）；
-  - 排版视觉层级对齐：模型名与 Context Token 标题加粗（`bold`），状态文本与 Cache 命中率数值保持细体（slim），权限模式标识（`permission_mode`）统一使用 `brightPurple`，提高跨终端兼容性并消除暗色背景下的辨识度问题。
+  - 排版视觉层级对齐：模型名与 Context Token 标题加粗（`bold`），低命中率 Cache 数值保持细体（高命中率为纯绿 / 纯黄），权限模式标识（`permission_mode`）统一使用 `brightPurple`，提高跨终端兼容性并消除暗色背景下的辨识度问题。
 
 ### Fixed (缺陷修复)
 - **高缓存命中率下 Context Token 分子恒为 0 与进度条消失**：
@@ -119,7 +131,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 调色板引擎（`runtime/renderer/format.js`）：原生扩展支持 ANSI 256 色（`38;5;...`）及标准 Bright 高亮转义序列，增强转义码兼容性与色彩表现力。
 
 ### Fixed (缺陷修复)
-- **非仓库目录重复执行 git 探测**：目录中存在 `.git` 但不是可用仓库时（残留/半初始化、HEAD 缺失），失败结果此前不落缓存，导致每次刷新都重复 fork 一次注定失败的 `git status`（实测 50~90ms，占单次运行 25% 以上）且拿不到分支段。现记录 60s 失败负缓存，并以 `headMtime` 自失效（目录变为真实仓库即重新探测）；`CODEBUDDY_HUD_NO_GIT_CACHE=1` 仍可完全绕过缓存。
+- **非仓库目录重复执行 git 探测**：目录中存在 `.git` 但不是可用仓库时（残留/半初始化、HEAD 缺失），失败结果此前不落缓存，导致每次刷新都重复 fork 一次注定失败的 `git status`（实测 50~90ms，占单次运行 25% 以上）且拿不到分支段。现记录 60s 失败负缓存，并以 `headMtime` 自失效（目录变为真实仓库即重新探测）；`CODEBUDDY_HUD_NO_GIT_CACHE=1` 可绕过持久化缓存（进程内 5 秒非 git 目录负缓存仍生效）。
 - **payload 缺失时静默无输出**：stdin 超时、超 1MB、读取错误或内容非法 JSON 时，HUD 输出 0 字节，宿主只判断退出码与文本，会把状态栏整块收起且不留任何错误。现向 `codebuddy-hud-error.log` 写入一行带原因的诊断（stdout 行为不变，仍不输出任何伪造数据）。
 
 ### Removed (移除)

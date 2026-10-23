@@ -32,7 +32,8 @@
 23. [`scripts/run-tests.js` — 跨平台测试分发驱动脚本](#23-scriptsrun-testsjs--跨平台测试分发驱动)
 24. [`scripts/verify-display.js` — 看板端到端验证](#24-scriptsverify-displayjs--看板端到端验证)
 25. [`scripts/verify-install.js` — 隔离宿主生命周期验证](#25-scriptsverify-installjs--隔离宿主生命周期验证)
-26. [`skills/hud-config/SKILL.md` — HUD 配置技能](#26-skillshud-configskillmd--hud-配置技能)
+26. [`scripts/install.ps1` & `install.sh` — 一键在线安装脚本](#26-scriptsinstallps1--installsh--一键在线安装脚本)
+27. [`skills/hud-config/SKILL.md` — HUD 配置技能](#27-skillshud-configskillmd--hud-配置技能)
 
 ---
 
@@ -41,12 +42,14 @@
 **职责：** 状态栏执行入口，注册为 `statusLine.command`。负责命令行参数分发、stdin 管道超时竞争与异常诊断日志记录、顶层错误捕获与自然 Drain 退出。
 
 ### 命令行参数支持 (CLI Flags)
-- `--setup`: 执行安装，写入 `settings.json`、自动挂载 `hud-config` 技能至 `~/.codebuddy/skills/`、注册系统 PATH 并生成 Windows `.cmd` shim。
+- `--setup [--theme <name>]`: 执行安装，写入 `settings.json`、生成 Windows `.cmd` shim 并自动挂载 `hud-config` 技能至 `~/.codebuddy/skills/`（在 TTY 终端运行自动唤起交互主题选择器，也可带 `--theme <name>` 直接指定跳过交互；PATH 注册由一键安装脚本完成，`--setup` 不修改 PATH）。
 - `--uninstall`: 仅恢复备份中的 `statusLine`（备份记录的命令自身指向 codebuddy-hud 时改为移除该项），彻底清理已部署或挂载的技能目录、缓存、系统 PATH 注册及 shim，保留其他 settings 与用户主题配置。
 - `--theme [name]`: 交互式切换或指定设置主题（如 `--theme cyberpunk`、`--theme list`）。
 - `--doctor [--json]`, `-d`: 运行全面诊断体检报告（`-d` 为短参数别名，支持 `--json` 输出结构化数据）。
 - `--status`: 冒烟探测当前状态栏能否正常渲染（3 行输出与 exit 0）。
 - `--update`: 用户主动更新（检查 + 升级二合一）；解析最新 Release tag，落后时后台下载该 tag 的 bootstrap 完成自举升级，渲染路径零网络契约不受影响。
+- `--version, -v`: 输出当前 HUD 版本号并退出。
+- `--help, -h`: 输出命令行全部子命令与参数选项帮助信息并退出。
 
 ### 内部常数配置
 ```javascript
@@ -106,6 +109,11 @@ export function num(val: any): number;
 ```javascript
 // CodeBuddyPayload 基础形态
 {
+  cwd?: string,
+  workspace?: { current_dir?: string },
+  permission_mode?: string,
+  version?: string,
+  session_id?: string,
   model?: { id: string; display_name?: string },
   reasoning_effort?: string,
   transcript_path?: string,
@@ -136,7 +144,7 @@ export function num(val: any): number;
 
 ## 3. `runtime/config.js` — 多层配置合并与主题引擎
 
-**职责：** 读取并深度合并各层配置，解析明暗主题调色板。
+**职责：** 按「默认 → 随包 → 用户 → 项目」4 层执行 `deepMerge`，再经 `resolveTheme` 后处理。`loadConfig()` 返回前会把 `config.theme` 替换为调色板对象 `{ ...palette, name, mode }`，调用方不能再把它当作预设名字符串比较。
 
 ### 接口定义
 ```typescript
@@ -157,11 +165,7 @@ export const THEME_PRESETS: Record<string, ThemePreset>;
 - `monochrome`: 黑白极简经典终端 (dark: `white`/`gray`, light: `gray`/`gray`)
 
 ### 安全机制 (Why)
-`deepMerge()` 内部校验：
-```javascript
-if (key === '__proto__') continue;
-```
-严格阻断恶意配置文件通过伪造 `__proto__` 污染 V8 原型链。主题覆盖值另经白名单校验：仅保留调色板已有关键字，值必须是严格 SGR 序列或不含控制字符的纯色名；非字符串与越界值回退预设，阻断项目配置注入终端控制序列。
+`deepMerge()` 内部跳过 `__proto__` 键并将递归深度限制为 64，阻断恶意配置污染 V8 原型链与爆栈。主题覆盖值另经白名单校验：仅保留调色板已有关键字；值必须是严格 SGR 序列（`^\x1b\[[0-9;:]{0,48}m$`）或长度 ≤32 且不含 C0/C1 的字符串；非字符串值被丢弃。未知颜色名不会回退预设，而是由 `color()` 原样输出为无样式文本。该机制阻断项目配置注入清屏、OSC 52 等终端控制序列。
 
 ---
 
@@ -190,13 +194,20 @@ export function renderHUD(
 **职责：** 基础文本格式化、用量进度条与 Prompt Cache 徽标渲染。
 
 ### 核心函数列表
-- `formatTokens(num: number): string`: 格式化数字为 `1.2k`、`3.5M`。特别处理 `999.5` 边界防止四舍五入溢出为 `1000k`。
-- `formatDurationMs(ms: number): string`: 格式化毫秒数为 `12s`、`5m20s`、`2h15m`。
-- `createProgressBar(pct: number, width: number, thresholds: object, glyphs: object): string`: 生成自适应色阶进度条。
-- `calculateTurnCacheMetrics(usage: object | null): TurnCacheMetrics | { available: false } | null`: 从单条 usage 计算缓存命中指标，字段缺失或总 prompt 为 0 时返回 `{ available: false }`（渲染为 `cache --`），无 usage 时返回 `null`。
-- `metricsFromPromptCache(hitTokens: number, promptTokens: number): TurnCacheMetrics | null`: 从本轮聚合命中数与 prompt 数构建三态缓存指标（调用方在返回 `null` 时兜底归一为 `{ available: false }` 并渲染 `cache --`）。
-- `formatTurnCacheBadge(metrics, label, isCompact, thresholds): string`: 渲染缓存徽标：可用时 `cache 98.5%`（按 `thresholds` 分色，数值保持细体），无遥测时降级为 `cache --`。
-- 辅助导出与调色：`ANSI_COLORS`（含 `brightPurple: '\x1b[95m'` 等）、`RESET`、`BOLD`、`DIM` 样式常量；`color`、`bold`、`dim`、`themeColor`、`getThemeColor` 调色辅助函数；`normalizeTokenCount`、`sumCachedTokens` 聚合清洗函数。
+- `formatTokens(num: number): string`: 格式化数字为 `1.2k`、`3.5M`；`>= 999950` 直接进入 `M` 分支，`999.5` 边界处理防止四舍五入溢出为 `1000k`。
+- `formatDurationMs(ms: number): string`: 格式化毫秒数为 `12s`、`5m20s`、`2h15m`、`10h`、`1d5h`、`10d`。
+- `createProgressBar(pct: number, width: number, thresholds: object, glyphs: object): string`: 生成自适应色阶进度条（宽度限制 4–40）。
+- `calculateTurnCacheMetrics(usage: object | null): TurnCacheMetrics | { available: false } | null`: 从单条 usage 计算缓存命中指标，字段缺失或总 prompt 为 0 时返回 `{ available: false }`，无 usage 时返回 `null`。该函数仅用于测试/辅助路径，生产渲染使用 `metricsFromPromptCache` 聚合 transcript 遥测。
+- `metricsFromPromptCache(hitTokens: number, promptTokens: number): TurnCacheMetrics | null`: 从本轮聚合命中数与 prompt 数构建缓存指标（调用方在返回 `null` 时兜底为 `{ available: false }` 并渲染 `cache --`）。
+- `formatTurnCacheBadge(metrics, label, isCompact, thresholds): string`: 渲染缓存徽标。命中率 ≥ `excellent` 时为纯绿、≥ `partial` 时为纯黄；仅 `0 < rate < partial` 与 0% 时追加 `DIM`。`isCompact` 为保留形参，当前实现未使用。
+- 辅助导出与调色常量：`ANSI_COLORS`（含 `brightPurple: '\x1b[95m'` 等）、`RESET`、`BOLD`、`DIM` 样式常量，以及 `color` / `bold` / `dim` 三个样式辅助函数。
+- 调色与清洗接口：
+```typescript
+export function themeColor(config: ResolvedConfig, key: string, text: string, fallback?: string): string;
+export function getThemeColor(config: ResolvedConfig, key: string, fallback?: string): string;
+export function normalizeTokenCount(v: any): number | null;
+export function sumCachedTokens(details?: Array<{ cached_tokens?: number }>): number | null;
+```
 
 ---
 
@@ -215,14 +226,14 @@ export function renderDiffSegment(
   toolSegment?: string
 ): string;
 
-export function formatCreditSpend(creditSpend: number): string; // "82.04 credits"
+export function formatCreditSpend(creditSpend?: number | null): string; // 合法非负数（含 0）返回 "X.XX credits"，非法或缺失返回 ""
 ```
 
 ---
 
-## 7. `runtime/renderer/agents-render.js` — 工具活动聚合渲染
+## 7. `runtime/renderer/agents-render.js` — 工具活动格式化渲染
 
-**职责：** 装配 Line 3 尾部的当前工具活动与本轮已完成工具调用频次聚合。
+**职责：** 将 `transcript.js` 已聚合好的工具活动格式化为 Line 3 尾部片段（聚合本身不在本模块）。
 
 ### 接口定义
 ```typescript
@@ -230,7 +241,7 @@ export function renderToolActivity(activity: ToolActivity, glyphs: GlyphSet): st
 ```
 
 ### 工具聚合输出格式
-多个已完成工具每个独立带有 `doneIcon`（`✓`），以双空格分隔：
+多个已完成工具每个独立带有 `doneIcon`（`✓`），以双空格分隔；仅显示前 3 名，`×N` 仅在 `count > 1` 时出现：
 ```
 ◐ RunCommand: npm test  ✓ Edit ×3  ✓ View ×12
 ```
@@ -250,7 +261,7 @@ export function resetModelInfoCache(): void;
 
 ### 关键机制
 - **白名单归一化**：仅接受 `low` / `medium` / `high` / `xhigh` / `max` / `ultracode`（含 `med`、`extra-high`、`maximum`、`ultra` 等别名映射）；未知值视为不可信输入，沿解析链下探。
-- **effort 解析链**：`cbData.reasoning_effort` → `cbData.model.effort` → transcript 会话信号（按 transcript 哈希持久化于会话状态目录）→ `settings.json` 的 `reasoningEffort`（仅进程内缓存）→ 模型名推断 → `config.defaultEffortLevel`。
+- **effort 解析链**：`cbData.reasoning_effort` → `cbData.model.reasoning_effort` → `cbData.model.effort` → transcript 会话信号（按 transcript 哈希持久化于会话状态目录）→ `settings.json` 的 `reasoningEffort`（仅进程内缓存）→ 模型名推断 → `config.defaultEffortLevel`。
 - **Credits 回退**：仅提取 payload `cost.credits` 明示的实际消费；缺失返回 `null`，不基于模型费率元数据推算。
 
 ---
@@ -323,13 +334,13 @@ export function getTurnMetricsAndActivity(
 `getTurnMetricsAndActivity()` 共享本轮 usage 和工具活动的逆向扫描。会话 Credits 另用前向 checkpoint 扫描，分块循环预算 100ms。`complete: false` 表示预算耗尽、短读或尾行尚未完成；此时累计值与调用数为 `null`，内部 checkpoint 仍可续扫。渲染层隐藏 Credits 并禁止 payload 兜底。`contextStatus` 通过双向遥测匹配（同时兼容宿主扣减缓存后的输入还原与原始未扣减提示词）检测活跃上下文 usage 的新鲜度，在 `/compact` 产生压缩摘要而宿主尚未返回新 usage 时输出 `stale`。
 
 ### 核心状态机与双向遥测匹配机制（内部辅助实现，未在 module.exports 导出）
-- `createContextTracker(contextWindow)`（内部辅助函数，未在 module.exports 导出）：沿消息 `parentId` 逆向回溯历史链。检测到完成的 compact 压缩摘要即置 `stale`；检测到普通活跃 API usage 时，通过 `resolveReportedInputs(usage)` 进行双向遥测比对（`matchesInput = reportedInput === input || rawReportedInput === input`），匹配当前 payload 即置 `fresh`。
+- `createContextTracker(contextWindow)`（内部辅助函数，未在 module.exports 导出）：沿消息 `parentId` 逆向回溯历史链。检测到完成的 compact 压缩摘要即置 `stale`；检测到普通活跃 API usage 时，通过 `resolveReportedInputs(usage)` 进行双向遥测比对（`matchesInput = reportedInput === input || rawReportedInput === input`），并且只有同时满足 `!sawUsage`、输入/输出均为有限非负数、`reportedOutput === output` 时才置 `fresh`；一旦本链已发现更早的普通 usage，则不再用旧 payload 反证。
 - `getCompactContextStatus(transcriptPath, contextWindow, opts)`（内部辅助函数，未在 module.exports 导出）：当宿主未在边界完整保留 parent 关联时的尾窗位置回退比对状态机。
 - `resolveReportedInputs(usage)`（内部辅助函数，未在 module.exports 导出）：提取 `{ combined, raw }`，统一还原基准（`combined = input_tokens + cache_read_input_tokens + cache_creation_input_tokens`）。
 
 ### 辅助导出与常数
-- 辅助扫描函数：`getRecentToolActivity(path, opts)`、`getRecentUsageMetrics(path, opts)`、`extractUsageMetrics(line)`。
-- 滑窗预算常数：`DEFAULT_TAIL_BYTES` (16KB)、`MAX_TOTAL_BYTES` (256KB)、`MAX_SCAN_LINES` (40)、`MAX_TURN_SCAN_LINES` (200)。
+- 辅助扫描函数：`getRecentToolActivity(transcriptPath, opts)` 返回 `{ status: 'active' | 'done', tool, detail } | null`（renderer 在无 `turnActivity` 时兜底调用）；`getRecentUsageMetrics(path, opts)`、`extractUsageMetrics(entry: object)`。
+- 滑窗预算常数：`DEFAULT_TAIL_BYTES` (16384)、`MAX_TOTAL_BYTES` (262144)、`MAX_SCAN_LINES` (40)、`MAX_TURN_SCAN_LINES` (200)；`MIN_TAIL_BYTES` 为 64，小于该值的 `display.toolActivityTailBytes` 会被 `normalizeTailBytes` 重置为 16384。
 
 ---
 
@@ -357,7 +368,7 @@ export function getResetSignal(cbData: CodeBuddyPayload): {
 export const SESSION_STATS_VERSION: number;
 ```
 
-`cwd` 用于相对 `transcript_path` 的解析（identity 派生）；identity miss 即视为新会话，直接以当前 payload 累计为新基线。`getResetSignal` 的 `currentInputTokens` 取 `parser.resolveContextInputTokens` 的还原占用（与 Line 2 同源）：有 `context_window_size`/`used_percentage` 时缓存命中/扣除不改变该值；两者缺失时退回原始 `input_tokens`（缓存残差形态仍可能触发断崖）；`input_tokens` 缺失且 cache 计数为 0 时为 `null`，不参与断崖比较。
+`cwd` 用于相对 `transcript_path` 的解析（identity 派生）；identity miss 即视为新会话，直接以当前 payload 累计为新基线。`getSessionIdentity()` 有 transcript 时返回 `transcript:<normalizePlatformPath(path)>`，否则返回 `session:<session_id>`，该字符串作为状态文件哈希键。`getResetSignal` 的 `currentInputTokens` 取 `parser.resolveContextInputTokens` 的还原占用（与 Line 2 同源）：有 `context_window_size`/`used_percentage` 时缓存命中/扣除不改变该值；两者缺失时退回原始 `input_tokens`（缓存残差形态仍可能触发断崖）；`input_tokens` 缺失且 cache 计数为 0 时为 `null`，不参与断崖比较。
 
 ---
 
@@ -376,10 +387,10 @@ export function getGitStatus(
 } | null;
 export function findGitInfo(cwd?: string): { gitDir: string; workTree: string } | null;
 export function readDirectBranch(gitDir: string): string | null;
-export function parseGitStatusOutput(output: string): { branch: string; dirty: boolean | null } | null;
+export function parseGitStatusOutput(output: string): { branch: string; dirty: boolean };
 ```
 
-正常缓存 TTL 为 10 秒，HEAD/index mtime 变化可提前失效；未暂存的工作树编辑可能延迟显示。非可用仓库（含 `.git` 但无 HEAD 或非可用仓库）的失败结果记录 60 秒负缓存（`GIT_FAILURE_TTL_MS`），并以 `headMtime` 变化自失效（目录变为真实仓库即重新探测）；可设置 `CODEBUDDY_HUD_NO_GIT_CACHE=1` 彻底绕过缓存。`null` 表示 Git 超时后的未知脏状态。
+正常结果缓存 10 秒，HEAD/index mtime 变化可提前失效；未暂存的工作树编辑可能延迟显示。`git status` 失败但 HEAD 可读时写入 10 秒正缓存 `{ branch, dirty: null }`；只有无 HEAD 可回退时才写 60 秒失败负缓存（`GIT_FAILURE_TTL_MS`），并以 `headMtime` 变化自失效。非 git 目录不会派生 `git` 进程，仅有 5 秒进程内 `_nonGitDirs` 负缓存（一次性进程跨帧无效）。`CODEBUDDY_HUD_NO_GIT_CACHE=1` 绕过持久化缓存，但不影响该进程内 5 秒负缓存。返回 `null` 表示无仓库/无 HEAD；`dirty: null` 表示探测失败但分支可读。
 
 ---
 
@@ -394,6 +405,8 @@ export function detectUnicodeSupport(platform: string, env: Record<string, strin
 export function selectGlyphs(useNerdFonts: boolean, unicodeSupported: boolean): GlyphSet;
 export function resetCache(): void;
 ```
+
+Windows 下通过直连 `spawnSync('chcp.com')` 免壳探测（硬超时 300ms）；代码页探测结果缓存于 `~/.codebuddy/codebuddy-hud-cache-state.json` 保持 1 小时，探测超时或派生失败当帧安全降级 ASCII 且仅缓存 60 秒（`probeTtlMs: 60000`）防抖，避免因系统偶发尖刺锁死 1 小时；`CODEBUDDY_HUD_FORCE_ASCII` / `CODEBUDDY_HUD_FORCE_UNICODE` 优先于缓存。
 
 ---
 
@@ -418,8 +431,8 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 - `getUserConfigPath(): string`: 返回 `codebuddy-hud.config.json` 路径。
 - `getErrorLogPath(): string`: 返回 `codebuddy-hud-error.log` 路径。
 - `getCacheStatePath(): string`: 返回 `codebuddy-hud-cache-state.json` 路径。
-- `getCreditStatePath(): string`: 返回 `codebuddy-hud-credit-state.json` 路径。
-- `getUpdateStatusPath(): string`: 返回 `codebuddy-hud-update-status.json` 路径。
+- `getCreditStatePath(): string`: 存量清理接口——返回旧版 `codebuddy-hud-credit-state.json` 路径。Credits 遥测已整体迁移至 usage checkpoint，仅供 uninstall 清理历史文件。
+- `getUpdateStatusPath(): string`: 存量清理接口——返回旧版 `codebuddy-hud-update-status.json` 路径。遵循渲染路径零网络契约已整体退役，仅供 uninstall 清理历史文件。
 - `getGitCachePath(): string`: 返回 `codebuddy-hud-git-cache.json` 路径。
 - `getTranscriptUsageStateDir(): string`: 返回 `codebuddy-hud-usage-state/` 目录。
 - `getTranscriptUsageStatePath(transcriptPath: string): string`: 按 transcript 绝对路径 SHA-256 哈希隔离的增量遥测 checkpoint 路径。
@@ -431,6 +444,62 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 - `getUserSkillsDir(): string`: 返回用户级技能根目录（`~/.codebuddy/skills/`）。
 - `getHudSkillTargetDir(): string`: 返回 `hud-config` 技能部署目标目录（`~/.codebuddy/skills/hud-config/`）。
 - `normalizePlatformPath(p: string): string`: 平台感知路径归一化——Windows 下 resolve 后整体小写（消除盘符 `d:`/`D:` 哈希分裂），POSIX 保留大小写语义。
+
+### 状态文件落盘格式与持久化契约
+
+- `session-state/<identity-sha256>.json` (会话基线与 /clear 重置信号状态):
+```json
+{
+  "version": 1,
+  "identityHash": "string (sha256)",
+  "sessionIdHash": "string | null (sha256)",
+  "baseline": {
+    "linesAdded": 0,
+    "linesRemoved": 0,
+    "totalDurationMs": 0,
+    "apiDurationMs": 0
+  },
+  "signal": {
+    "totalInputTokens": null,
+    "currentInputTokens": null
+  },
+  "transcriptSize": 12345,
+  "updatedAt": 1729670000000
+}
+```
+
+- `session-state/effort-<transcript-sha256>.json` (会话推理深度 Effort 状态):
+```json
+{
+  "version": 1,
+  "effort": "max",
+  "updatedAt": 1729670000000
+}
+```
+
+- `codebuddy-hud-usage-state/<transcript-sha256>.json` (transcript Credits checkpoint, version 5):
+```json
+{
+  "version": 5,
+  "path": "absolute transcript path",
+  "identity": { "dev": 0, "ino": 0, "birthtimeMs": 0 },
+  "headHash": "sha256",
+  "offset": 0,
+  "credits": 0,
+  "creditCallCount": 0,
+  "checkpointHash": "sha256",
+  "sourceSize": 0,
+  "sourceMtimeNs": "0",
+  "sourceCtimeNs": "0",
+  "sourceContentHash": "sha256 | null",
+  "updatedAt": 1729670000000
+}
+```
+失效条件：`size < sourceSize`（截断/轮转）、`size === sourceSize` 但 mtime/ctime 变化或 `sourceContentHash` 变化（原地覆写）、identity 变化、checkpoint/head 哈希不匹配。
+
+- `codebuddy-hud-cache-state.json` (终端编码缓存): `{ unicodeSupported: boolean, savedAt: number, probeTtlMs?: number }`；成功结果默认保留 1 小时，失败结果写 `probeTtlMs: 60000`。
+
+- `codebuddy-hud-git-cache.json` (Git 探测缓存): 以 workTree 为键，每项 `{ branch, dirty, headMtime, indexMtime, failed?, timestamp }`；`failed: true` 为 60 秒负缓存。
 
 ---
 
@@ -448,7 +517,7 @@ export function writePrivateFileIfAbsent(filePath: string, content: string): boo
 ```
 
 ### 核心安全契约
-- **严格保护字符串内容**：`stripJsonComments()` 仅剔除双引号字符串外的单行 `//` 与块级 `/* */` 注释，保留换行符与空格以确保 JSON 语法报错行号对齐；绝不误改字符串内部的路径或 URL。
+- **严格保护字符串内容**：`stripJsonComments()` 仅剔除双引号字符串外的单行 `//` 与块级 `/* */` 注释，保留换行符与空格以确保 JSON 语法报错行号对齐；绝不误改字符串内部的路径或 URL。`parseSettingsJson()` 还会剥离 UTF-8 BOM、清除字符串外的尾随逗号；空内容返回 `{}`。
 - **符号链接解析跟随**：`resolveWriteTarget()` 循环解引用符号链接（上限 40 层防环），确保写操作直接作用于最终真实目标文件。
 - **原子替换与硬链接保护**：通过临时文件（`.tmp-<pid>-<time>`）写入后执行 `fs.renameSync()` 原子替换；检测到硬链接数 `nlink > 1` 时主动拒绝原子替换，防止意外破坏硬链接。
 - **POSIX 权限保全**：继承目标文件原有的 mode/uid/gid；新创建的配置文件与首次备份默认赋予严格的 `0600` 私有权限。
@@ -486,6 +555,7 @@ export function isSettingsObject(val: unknown): val is Record<string, unknown>;
 - **技能自动挂载**：`setup()` 时通过 `deploySkill()` 将 `skills/hud-config/` 挂载至 `~/.codebuddy/skills/hud-config/`（Windows 优先 Junction，POSIX 优先目录软链接，跨卷或失败时降级递归复制；带源目录存在性与自环防呆校验）。
 - **Windows Shim 路径固化与转义**：将安装时刻的 `process.execPath` 烘焙入 `.cmd` 启动器，路径中的 `%` 统一转义为 `%%` 阻断变量展开；在包含非 ASCII 字符时前置 `@chcp 65001 >nul`。
 - **宿主引号容灾**：针对 Windows 平台宿主启动器可能二次转义字面引号的兼容问题，纯 ASCII 安全命令路径直接省略外层引号；含空格路径保留引号。
+- **settings.statusLine 形状**：写入 `{ type: 'command', command, padding: 0 }`；Windows `.cmd` shim 以 `"%~dp0codebuddy-hud.js"` 转发同目录入口，`doctor` 按该转发约定校验健康度。
 - **无损配置恢复保障**：首次安装前将原始 `settings.json` 备份为 `settings.json.bak.codebuddy-hud`（仅备份一次，永不覆盖老备份）。安装成功后通过 `settings-file.js` 以原子写入写回标准格式。
 
 ---
@@ -502,10 +572,12 @@ export function printDoctorReport(report: DoctorReport, isJson?: boolean, option
 
 ### 诊断项分类 (Checks Categories)
 1. `node`: Node.js 版本（$\ge 18$）、架构与可执行文件路径。
-2. `codebuddy`: `CODEBUDDY_HOME`、`settings.json` 与 `statusLine.command` 指向的目标物理文件存在性校验；宿主事件驱动刷新架构契约说明（长任务期间宿主不派发更新属正常现象）。
-3. `terminal`: Windows 代码页（`chcp 65001`）、Unicode 支持、明暗色调与 Windows 路径大小写规范化状态。
-4. `git`: Git PATH 可达性、当前仓库分支与探测延迟。
-5. `transcript`: 遥测状态目录创建与可写性校验，并回显错误日志路径。
+2. `codebuddy`: `CODEBUDDY_HOME`、`settings.json` 与 `statusLine.command` 指向的目标物理文件存在性校验（含 shim 转发路径）。
+3. `codebuddy / hostRefreshProtocol`: 宿主事件驱动刷新架构契约说明（长任务期间宿主不派发更新属正常现象）。
+4. `terminal`: Windows 代码页（`chcp 65001`）、Unicode 支持与明暗色调。
+5. `terminal / windowsPathNormalization`: Windows 路径大小写规范化检查。
+6. `git`: Git PATH 可达性、当前仓库分支与探测延迟。
+7. `transcript`: 遥测状态目录创建与可写性校验，并回显错误日志路径。
 
 ---
 
@@ -534,7 +606,9 @@ export const THEMES: Array<{ name: string; label: string }>;
 ### 接口定义
 ```typescript
 export function uninstall(options?: object): void;
+export function stripBinDirFromUserPath(rawPath: string, binDir: string): { changed: boolean; value: string };
 ```
+`stripBinDirFromUserPath()` 从原始 HKCU `Path` 值中移除 runtime bin 目录：比较前不展开 `%VAR%`，并按平台归一化（Windows 忽略大小写，去除包裹引号与路径尾分隔符），避免误删或漏删；写回时沿用原注册表值类型（保留 `REG_EXPAND_SZ`）。
 
 ---
 
@@ -559,7 +633,7 @@ export async function runUpdate(options?: object): Promise<{ ok: boolean, messag
 - **getLocalVersion**：读 runtime 上级 `package.json`；不可读返回 `null`（不伪造版本），此时 `runUpdate` 提示重跑安装脚本。
 - **tag 解析三级策略（resolveLatestTag）**：显式 `CODEBUDDY_HUD_LATEST_RELEASE_URL`（兼容旧名 `CODEBUDDY_HUD_REMOTE_PKG_URL`）→ `github.com/releases/latest` 302 Location（免 API 限流）→ `api.github.com` REST 兜底（仅直连 host 附带 `GITHUB_TOKEN/GH_TOKEN`，镜像不带）；超时 8s。
 - **白名单校验（rawBaseForTag）**：tag 必须匹配 `^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$` 才允许拼入下载 URL，拒绝路径注入。
-- **环境变量**：`CODEBUDDY_HUD_MIRROR`（镜像前缀，语义与 bootstrap.js 一致：镜像候选优先、直连兜底）、`CODEBUDDY_HUD_BOOTSTRAP_URL`（覆盖 bootstrap 下载源）、`CODEBUDDY_HUD_VERSION`（派生子进程时钉住 tag，bootstrap 免二次解析）。
+- **环境变量**：`CODEBUDDY_HUD_MIRROR`（镜像前缀，语义与 bootstrap.js 一致：镜像候选优先、直连兜底）、`CODEBUDDY_HUD_BOOTSTRAP_URL`（覆盖 bootstrap 下载源）、`CODEBUDDY_HUD_VERSION`（派生子进程时钉住 tag，bootstrap 免二次解析）、`CODEBUDDY_HUD_LATEST_RELEASE_URL`（兼容旧名 `CODEBUDDY_HUD_REMOTE_PKG_URL`，覆盖 Latest Release 查询 URL）。
 - **自举升级流程（runUpdate）**：解析原始 ref 并预校验 tag 形态（畸形即失败，不落入假 "up to date"）→ 落后判定（`compareVersions > 0`，自兼容 `v` 前缀）→ 下载该原始 ref 的 `scripts/bootstrap.js` 至 `os.tmpdir()` → detached 派生 `node <tmp> --delay-start`（`stdio: 'inherit'`，`windowsHide`，`CODEBUDDY_HUD_VERSION` 钉原始 ref）；bootstrap 延迟 1s 等父进程完全退出后再原子重装 runtime，规避 Windows 文件锁。`--update` 分支恒 `exit 0`，失败信息走 stderr。
 
 ---
@@ -571,7 +645,7 @@ export async function runUpdate(options?: object): Promise<{ ok: boolean, messag
 ### 核心导出与内部函数
 - `install(): Promise<void>`: 核心安装入口，支持本地复制与远端下载，通过临时目录 + 原子重命名完成安装。
 - `getTargetDir(): string`: 返回运行时目标安装目录路径（受 `CODEBUDDY_HUD_DIR` 环境变量影响）。
-- `checkNodeVersion(): void`: 校验当前 Node.js 版本 ≥18，不满足时抛出错误。
+- `checkNodeVersion(): void`: 校验当前 Node.js 版本 ≥18；不满足时向 stderr 打印错误并 `process.exit(1)`（不抛异常，调用方无法 catch）。
 - `rawBaseForTag(tag: string): string`: 返回指定 Release tag 的 GitHub Raw 基础地址。
 - `resolveRemoteRawBase(options?: object): Promise<string>`: 解析 `CODEBUDDY_HUD_RAW_BASE`、`CODEBUDDY_HUD_VERSION` 或 Latest Release 后的下载源（含 `CODEBUDDY_HUD_MIRROR` 前缀）。
 - `fetchLatestTagVia302(url?: string): Promise<string>`: 从 `releases/latest` 的 302 `Location` 解析不可变 tag；省略 `url` 时使用镜像前缀后的默认地址。
@@ -583,7 +657,7 @@ export async function runUpdate(options?: object): Promise<{ ok: boolean, messag
 
 ## 23. `scripts/run-tests.js` — 跨平台测试分发驱动
 
-**职责：** `npm test` 底层执行驱动。遍历 `tests/unit/` 目录下全部 `*.test.mjs` 单元测试文件的绝对路径，直接向 `node --test` 喂入全量文件参数，彻底规避 Node 18/20 glob 在 Windows 路径反斜杠下的跨平台匹配陷阱与 `MODULE_NOT_FOUND` 假阳性。
+**职责：** `npm test` 底层执行驱动。遍历 `tests/unit/` 目录下全部 `*.test.mjs` 单元测试文件的绝对路径，直接向 `node --test` 喂入全量文件参数，彻底规避 Node 18/20 glob 在 Windows 路径反斜杠下的跨平台匹配陷阱与 `MODULE_NOT_FOUND` 假阳性。额外 CLI 参数会原样转发给 `node --test`（例如 `npm test -- --test-name-pattern=...`）。
 
 ---
 
@@ -599,6 +673,14 @@ export async function runUpdate(options?: object): Promise<{ ok: boolean, messag
 
 ---
 
-## 26. `skills/hud-config/SKILL.md` — HUD 配置技能
+## 26. `scripts/install.ps1` & `install.sh` — 一键在线安装脚本
+
+**职责：** 面向终端用户的零配置一键安装管道。
+- `scripts/install.ps1` (PowerShell)：支持 `CODEBUDDY_HUD_MIRROR` 代理；通过注册表 API 读写 HKCU `Path` 追加 runtime bin 目录（保留 `%VAR%` 间接引用，不破坏 `REG_EXPAND_SZ`）；从 master 下载 `bootstrap.js` 执行部署（runtime 版本由 bootstrap 后续解析并固定到 Release tag）。支持 `CODEBUDDY_HUD_NO_PATH=1` 跳过 PATH 修改。
+- `scripts/install.sh` (POSIX Shell)：支持 macOS 与 Linux；当用户 PATH 包含 `~/.local/bin` 时自动创建指向 runtime bin 的软链接；支持 `CODEBUDDY_HUD_MIRROR` 镜像前缀下载与部署，支持 `CODEBUDDY_HUD_NO_PATH=1` 跳过 PATH 修改。
+
+---
+
+## 27. `skills/hud-config/SKILL.md` — HUD 配置技能
 
 **职责：** 为 AI Agent 提供主题、图标与显示项配置的交互式引导，并将选择写入项目或全局 `codebuddy-hud.config.json`。

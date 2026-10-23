@@ -8,17 +8,17 @@
 
 ## 1. 架构总览与核心设计哲学
 
-`codebuddy-hud` 是专为 **CodeBuddy Code** AI 结对编程终端助手量身打造的高性能状态栏看板插件。它能够在终端交互与代码流式生成过程中，以极低的系统开销实时渲染紧凑、高信息密度的 ANSI 彩色状态看板。
+`codebuddy-hud` 是专为 **CodeBuddy Code** AI 结对编程终端助手量身打造的高性能状态栏看板插件。它在宿主触发会话事件时以极低的系统开销渲染紧凑、高信息密度的 ANSI 彩色状态看板；空闲、只读工具执行与流式生成期间不刷新。
 
 ### 核心架构不变量（不可动摇的设计红线）：
 1. **绝对零外部依赖 (Zero npm dependencies)**：
-   - 纯基于 Node.js 原生标准库（`fs`, `path`, `os`, `crypto`, `child_process`, `readline`, `https` 等）构建，无需执行 `npm install`，分发体积保持在百 KB 级别。
+   - 纯基于 Node.js 原生标准库（`fs`, `path`, `os`, `crypto`, `child_process`, `readline`, `https`, `http` 等）构建，无需执行 `npm install`，分发体积保持在百 KB 级别。
 2. **状态栏宿主契约 (Statusline Contract)**：
    - **执行预算**：整体单次执行预算 $\le 1500\text{ms}$，内部 Stdin 超时保底 $800\text{ms}$。定时器不能抢占同步文件调用或 JSON 解析。
    - **恒零退出码保证**：进程必须**恒定以 `process.exitCode = 0` 退出**。任何未捕获的运行时异常均重定向记录至 `~/.codebuddy/codebuddy-hud-error.log`（权限 `0o600`，上限 1MB 自动覆盖轮转），严禁抛出非零 Exit Code 破坏终端主会话。
    - **渲染输出行数约束**：终端渲染输出严格限制在 $\le 3$ 行，与宿主 stdout 前 3 行截断上限对齐，无数据行自动向上裁剪合并。
 3. **真实遥测契约 (Truthful Telemetry)**：
-   - Prompt Cache 命中率与累计 Credits 消费必须从真实的会话 `transcript.jsonl` 中逆向提取，缺失时优雅降级（如 `cache --`），**绝对严禁硬编码或伪造假数据**。
+   - Prompt Cache 命中率严格取自真实 `transcript.jsonl`（无 payload 兜底，缺失即 `cache --`）；Credits 优先取 transcript checkpoint，仅在完全无 transcript 遥测时回退 payload 明示值，扫描未完成时隐藏。**绝对严禁硬编码或伪造假数据**。
 
 ---
 
@@ -33,9 +33,10 @@
 └────────────────────────────────────┬─────────────────────────────────────┘
                                      │  bootstrap.js 执行原子安装与覆盖
 ┌────────────────────────────────────▼─────────────────────────────────────┐
-│  运行时执行层 (RUNTIME LAYER)  codebuddy-hud-runtime/ 或本地源码检出     │
+│  运行时执行层 (RUNTIME LAYER)  ~/.codebuddy/codebuddy-hud-runtime/ 或本地源码检出 │
 │   runtime/bin/codebuddy-hud.js    ← 注册到 settings.json 的 statusLine   │
 │   runtime/bin/codebuddy-hud.cmd   ← Windows 平台绝对路径 Shim 启动脚本   │
+│   codebuddy-hud.config.json (内置默认配置模板；主题预设在 config.js)     │
 │   parser.js · config.js · paths.js · encoding.js · git.js · sanitize.js  │
 │   lang.js · model-info.js · settings-file.js · statusline-installer.js   │
 │   theme-selector.js · doctor.js · session-stats.js                       │
@@ -52,14 +53,12 @@
 
 ## 3. 模块依赖拓扑图 (Module Dependency Graph)
 
-> **注**：本图展示核心执行主链路与关键子系统流转；完整模块间 require 依赖详见 [docs/module-reference.md](module-reference.md)。
+> **注**：本图展示核心执行主链路与关键子系统流转；模块签名、常量与持久化契约详见 [docs/module-reference.md](module-reference.md)。
 
 ```mermaid
 graph TD
     Entry["runtime/bin/codebuddy-hud.js"] --> Parser["runtime/parser.js"]
     Entry --> Config["runtime/config.js"]
-    Renderer --> Transcript["runtime/transcript.js"]
-    Renderer --> SessionStats["runtime/session-stats.js"]
     Entry --> Renderer["runtime/renderer.js"]
     Entry --> Doctor["runtime/doctor.js"]
     Entry --> ThemeSelector["runtime/theme-selector.js"]
@@ -67,34 +66,58 @@ graph TD
     Entry --> Uninstall["runtime/uninstall.js"]
     Entry --> UpdateChecker["runtime/update-checker.js (--update)"]
     Entry --> Paths["runtime/paths.js"]
+    Entry --> Sanitize["runtime/sanitize.js"]
+    Entry --> Lang["runtime/lang.js"]
 
+    Config --> SettingsFile["runtime/settings-file.js"]
+    Config --> Paths
+    SessionStats["runtime/session-stats.js"] --> Parser
+    SessionStats --> Paths
+    ModelInfo["runtime/model-info.js"] --> Paths
+    ModelInfo --> SettingsFile
+    Git --> Paths
+    Encoding --> Paths
+
+    Renderer --> Transcript["runtime/transcript.js"]
+    Renderer --> SessionStats
     Renderer --> Format["runtime/renderer/format.js"]
     Renderer --> DiffRender["runtime/renderer/diff-render.js"]
     Renderer --> AgentsRender["runtime/renderer/agents-render.js"]
     Renderer --> Encoding["runtime/encoding.js"]
     Renderer --> Git["runtime/git.js"]
-    Renderer --> Sanitize["runtime/sanitize.js"]
+    Renderer --> Sanitize
     Renderer --> Parser
     Renderer --> ModelInfo["runtime/model-info.js"]
-    Renderer --> Lang["runtime/lang.js"]
+    Renderer --> Lang
 
     Transcript --> Sanitize
     Transcript --> Paths
-    Doctor --> Lang["runtime/lang.js"]
+    Doctor --> Lang
     Doctor --> Paths
     Doctor --> Encoding
     Doctor --> Git
+    Doctor --> Config
+    Doctor --> Sanitize
+    Doctor --> SettingsFile
+    ThemeSelector --> Config
+    ThemeSelector --> Paths
+    ThemeSelector --> Sanitize
+    ThemeSelector --> Lang
+    ThemeSelector --> Format
     Installer --> Paths
+    Installer --> SettingsFile
+    Installer --> Sanitize
+    Installer -.->|lazy| ThemeSelector
     Uninstall --> Paths
-    Installer --> SettingsFile["runtime/settings-file.js"]
     Uninstall --> SettingsFile
+    Uninstall --> Sanitize
 ```
 
 ---
 
 ## 4. 单次交互执行流与生命周期时序 (Execution Flow)
 
-宿主（实测至最新 v2.171.0）在会话、结果、配置等 5 大离散事件后约 300ms 去抖触发 HUD。空闲与只读工具执行时不周期刷新；命令失败会清空 HUD，且不会自动定时重试。
+宿主（实测至最新 v2.171.0）在 **session / result / permission / settings / cost** 五类离散事件后约 **300ms** 去抖触发 HUD。单次执行有 **5000ms wall-clock 硬超时**；stdout 捕获上限为 **10240 个 UTF-16 字符**（先判长度再追加），最终只取前 3 行。空闲与只读工具执行时不周期刷新；命令失败会清空 HUD，且不会自动定时重试。
 
 ```mermaid
 sequenceDiagram
@@ -113,16 +136,18 @@ sequenceDiagram
         Entry->>Stdin: 累加接收 stdin 数据块 (上限 1MB)
     end
 
-    alt Stdin 正常结束 或 800ms 定时器触发
-        Entry->>Stdin: process.stdin.destroy() (释放 libuv 句柄)
+    alt Stdin 正常结束 (EOF)
         Entry->>Engine: parseCodeBuddyInput(rawStdin) 解析基础 Payload
-        Entry->>Engine: loadConfig(cwd) 合并配置
-        Entry->>Renderer: renderHUD(cbData, config)
-        Renderer->>Engine: getGitStatus() & getLogicalSessionCostData()
-        Renderer->>Engine: getSessionUsageMetrics() & getTurnMetricsAndActivity()
-        Renderer-->>Entry: 装配输出 ≤3 行 ANSI 看板字符串
-        Entry->>Host: stdout.write(renderedOutput) (EPIPE 由 stdout.on('error') 静默捕获)
+    else 800ms 超时 / 超过 1MB / 读取错误
+        Entry->>Stdin: process.stdin.destroy() (释放 libuv 句柄)
+        Entry->>Engine: parseCodeBuddyInput(已收数据或空串)
     end
+    Entry->>Engine: loadConfig(cwd) 合并配置
+    Entry->>Renderer: renderHUD(cbData, config)
+    Renderer->>Engine: getGitStatus() & getLogicalSessionCostData()
+    Renderer->>Engine: getSessionUsageMetrics() & getTurnMetricsAndActivity()
+    Renderer-->>Entry: 装配输出 ≤3 行 ANSI 看板字符串
+    Entry->>Host: stdout.write(renderedOutput) (EPIPE 由 stdout.on('error') 静默捕获)
 
     Entry->>Host: process.exitCode = 0 (libuv 事件循环自然排空退出)
     deactivate Entry
@@ -137,7 +162,7 @@ sequenceDiagram
 - **算法细节**：
   1. **尾部逆向读取**：`getTurnMetricsAndActivity()` 用一次回扫聚合本轮 usage 和工具活动；默认滑窗 16KB，全扫描上限 256KB（兼具行数硬预算：常规回扫上限 40 行，单轮聚合上限 200 行）。会话 Credits 另用前向增量扫描。
   2. **跨块断行拼装 (Straddle Reconstruction)**：当滑窗边界切断了单行 JSONL 时，将未完成的前半段暂存并在读取前一块时完成拼装。
-  3. **Turn 轮次边界截断**：从后向前逆向回扫 API usage 记录，直到遇到 `role: 'user'` 时停止，确保指标展示的是**当前这一轮交互的聚合命中率**。
+  3. **Turn 轮次边界截断**：从后向前逆向回扫 API usage 记录，直到遇到 `role: 'user'` 时停止，确保在预算内展示的是**当前这一轮交互的聚合命中率**；当单轮交互超窗（超出 200 行 / 256KiB 扫描预算）未触碰用户边界时，滑窗自然截止于最近调用，指标口径自适应为**近期调用命中率**（`sum(hitTokens) / sum(promptTokens)`）。
   4. **字段优先级判定**：
      ```
      rawUsage.prompt_tokens 有效时：
@@ -147,10 +172,16 @@ sequenceDiagram
      ```
   5. **上下文新鲜度与双向遥测匹配 (`contextStatus`)**：
      - **父链逆向回溯 (`createContextTracker`)**：沿消息 `parentId` 链逆向追踪，遇到已完成的 compact 压缩摘要（`isCompacted: true` 且 `isSummary: true` 或 `isCompactInternal: true`）直接置为 `stale`；
-     - **双向遥测匹配 (`resolveReportedInputs`)**：针对 DeepSeek 等服务商将 miss 记为 creation 导致输入被宿主扣减为 0 的场景，比对同时接受还原总占用（`input + cacheRead + cacheCreation`）与未扣减的原始 `input_tokens`（`matchesInput = reportedInput === input || rawReportedInput === input`），匹配当前 payload 即置 `fresh`；
+     - **双向遥测匹配 (`resolveReportedInputs`)**：针对 DeepSeek 等服务商将 miss 记为 creation 导致输入被宿主扣减为 0 的场景，比对同时接受还原总占用（`input + cacheRead + cacheCreation`）与未扣减的原始 `input_tokens`（`matchesInput = reportedInput === input || rawReportedInput === input`）；只有同时满足 `!sawUsage`、输入/输出均为有限非负数、`reportedOutput === output` 时才置 `fresh`；
      - **保守尾窗回退 (`getCompactContextStatus`)**：宿主未在边界保留 parent 关联时，在尾窗内比对 compact 摘要与普通 usage 的位置顺序，若压缩摘要位于最新 usage 之后则标记 `stale`。
 
-### 5.2 会话基线捕获与 `/clear` 判定机制 (`session-stats.js`)
+### 5.2 Git 分支与状态非阻塞探测 (`git.js`)
+- **Direct HEAD 零派生**：优先以同步 `fs.readFileSync` 读取 `.git/HEAD` 直接解析当前分支名或 7 位游离态 commit（历史实测 <0.1ms），免除任何子进程派生。
+- **免 Shell 直连探测**：需要脏状态探测时，直连 `execFileSync('git', ['status', '--porcelain', '-b'], ...)`，不经 cmd.exe/sh 壳进程（Windows 历史实测每帧约省 33ms），硬超时 200ms 并附带 `windowsHide: true` 与 `GIT_OPTIONAL_LOCKS: '0'`。
+- **分级缓存与负缓存**：正缓存 10 秒；HEAD 可读但 `git status` 失败时返回 `dirty: null`；仅无 HEAD 回退时记录 60 秒失败负缓存；非 git 目录仅 5 秒进程内负缓存。精确判据与 `CODEBUDDY_HUD_NO_GIT_CACHE` 语义见 [module-reference.md §12](module-reference.md#12-runtimegitjs--git-分支与状态探测器)。
+- **懒加载防御**：`child_process` 仅在缓存未命中且确需派生 git 探测时才动态加载，普通静态帧节省模块解析开销。
+
+### 5.3 会话基线捕获与 `/clear` 判定机制 (`session-stats.js`)
 - **痛点**：用户在宿主输入 `/clear` 时，上下文窗口被清空，但宿主累积的总 token 或行数可能出现负增量或残留历史数据。
 - **状态机**：
   1. 在 `~/.codebuddy/codebuddy-hud-session-state/<hash>.json` 记录会话基线。
@@ -163,15 +194,15 @@ sequenceDiagram
   3. 识别到重置后自动建立新基线，使看板显示的耗时与变更严格反映当前会话增量。
   4. **identity miss 即新会话**：`/clear` 切换新 transcript（或新窗口首帧）导致 identity 未命中时，直接以当前 payload 累计为新基线，Δ/⏱ 归零重来，不依赖任何跨 identity 共享状态（旧 handoff 机制已退役；存量 `handoff-*.json` 由 uninstall 整目录清理兜底）。
 
-### 5.3 增量 SHA-256 Credits Checkpoint 机制 (`transcript.js`)
+### 5.4 增量 SHA-256 Credits Checkpoint 机制 (`transcript.js`)
 - **痛点**：每次事件刷新全量遍历长 JSONL 会重复解析已有消费记录。
 - **增量 Checkpoint 状态机**：
   1. 基于 transcript 绝对路径 SHA-256 哈希隔离状态文件：`~/.codebuddy/codebuddy-hud-usage-state/<sha256>.json`。
-  2. 状态文件为 version 5：`{ version, path, identity: { dev, ino, birthtimeMs }, headHash, offset, credits, creditCallCount, checkpointHash, sourceSize, sourceMtimeNs, sourceCtimeNs, sourceContentHash, updatedAt }`。
+  2. 状态文件为 version 5，完整字段与失效条件见 [module-reference.md §15](module-reference.md#15-runtimepathsjs--跨平台路径解析与目录管理)。
   3. 后续从 `offset` 增量解析，并保留少量身份与 checkpoint 校验读取。分块循环预算为 100ms；未完成时保存进度并返回 `complete: false`，不暴露累计 Credits。渲染层隐藏该值，也不回退到 payload Credits。未写完的 JSONL 尾行等待下一次续读。
-  4. **覆写与截断容灾**：若检测到 `file.size < state.offset`，自动重置 `offset = 0` 并重建 Checkpoint。
+  4. **覆写与截断容灾**：以 `sourceSize` 为文件长度基线。若 `file.size < sourceSize`（截断/轮转），重置 `offset = 0` 并重建 Checkpoint；若 `size === sourceSize` 但 mtime/ctime 变化或 `sourceContentHash` 变化，同样判定为原地覆写并重建。
 
-### 5.4 多层级配置合并与主题调色板引擎 (`config.js`)
+### 5.5 多层级配置合并与主题调色板引擎 (`config.js`)
 - **配置覆盖优先级**：
   ```
   内置默认配置 (DEFAULT_CONFIG)
@@ -180,6 +211,7 @@ sequenceDiagram
         → 项目局部配置 (./codebuddy-hud.config.json)
           → 主题解析 (resolveTheme)
   ```
+  前 4 层由 `deepMerge` 合并，第 5 步 `resolveTheme` 是后处理而非合并层。
 - `--theme <name>` 将主题保存到用户配置，不是运行时覆盖层。
 - **5 套内置主题预设规范**：
   - `ocean`（默认）：深海青蓝科技风（暗色：`cyan`/`gray`，亮色：`blue`/`gray`）；
@@ -187,11 +219,11 @@ sequenceDiagram
   - `cyberpunk`：赛博朋克霓虹（暗色：浅马卡龙粉紫 `219` + 荧光青，亮色：`magenta`/`blue`）；
   - `amber`：琥珀金耀眼质感（双模式主色与强调色统一升级为标准 16 色高亮金色 `gold`，`\x1b[93m`，搭配 `gray`）；
   - `monochrome`：黑白极简经典终端（暗色：白字灰辅 `white`/`gray`，亮色：`gray`/`gray`）。
-- **安全性防护**：`deepMerge()` 跳过 `__proto__`，递归深度上限 64；主题覆盖值仅接受调色板键 + 严格 SGR 序列或纯色名，非字符串/控制字符一律回退预设（阻断项目配置终端注入）。配置文件每次直接读取；settings effort 仅保留进程内缓存，transcript effort 信号则按 transcript 哈希持久化到会话状态目录（`effort-<sha256>.json`），支持长任务的尾部扫描裁决、缓存继承与冷启动头扫兜底。
+- **安全性防护**：`deepMerge()` 跳过 `__proto__`，递归深度上限 64；主题覆盖值仅作用于调色板键，值必须是严格 SGR 序列或长度 ≤32 且不含 C0/C1 的字符串，非字符串值被丢弃；未知颜色名输出为无样式文本（阻断项目配置终端注入）。配置文件每次直接读取；settings effort 仅保留进程内缓存，transcript effort 信号则按 transcript 哈希持久化到会话状态目录（`effort-<sha256>.json`），支持长任务的尾部扫描裁决、缓存继承与冷启动头扫兜底。
 
-### 5.5 3 行自适应布局与自裁剪规则 (`renderer.js`)
-- **Line 1 (标识与状态)**：模型名称（`bold` 加粗）· 推理深度 (effort) · Git 分支与 Dirty 状态 (`*`) · 工作区目录 · 权限模式（标准 16 色高亮紫 `brightPurple`，细体 slim）。
-- **Line 2 (Tokens 与上下文)**：当前上下文输入占用/窗口容量（标题 `bold` 加粗；高缓存扣减至 0 场景自动还原活跃上下文总占用并引入残差仲裁防翻倍）· 进度条与百分比 · 输出 Token · 近期 Cache 命中率（细体 slim）；支持 `fresh`（完整展示进度条与 out）、`stale`（压缩后待刷新，分子显示 `--` 且隐藏进度条与 out）、`unknown`（显示分子、隐藏进度条、提示上次上报）三态渲染。
+### 5.6 3 行自适应布局与自裁剪规则 (`renderer.js`)
+- **Line 1 (标识与状态)**：模型名称（`bold` 加粗）· 推理深度 (effort) · Git 分支与 Dirty 状态 (`*`) · 工作区目录 · 权限模式（标准 16 色高亮紫 `brightPurple`）。
+- **Line 2 (Tokens 与上下文)**：当前上下文输入占用/窗口容量（标题 `bold` 加粗；高缓存扣减至 0 场景自动还原活跃上下文总占用并引入残差仲裁防翻倍）· 进度条与百分比 · 输出 Token · 近期 Cache 命中率（≥`excellent` 纯绿、≥`partial` 纯黄，低命中率与 0% 追加细体）；支持 `fresh`（完整展示进度条与 out）、`stale`（压缩后待刷新，分子显示 `--` 且隐藏进度条与 out）、`unknown`（显示分子、隐藏进度条、提示上次上报）三态渲染。
 - **Line 3 (变更、消费、耗时与工具活动)**：`Δ +增加 -删除` · 实际 Credits · 总耗时 · 当前工具活动与本轮完成频次聚合（`◐ Edit: parser.js`、`✓ Edit ×3`）。（无数据自动隐藏整行）。
 
 宿主（源码复核至最新 v2.171.0 仍为常量）仅保留 stdout 前 3 行。HUD 的 3 行输出契约与该截断上限严格对齐；工具活动并入 Line 3，确保所有关键信息在截断限制下完整可见。
@@ -205,7 +237,7 @@ sequenceDiagram
 | 攻击威胁 | 载荷示例 | 防御过滤实现 (`runtime/sanitize.js`) |
 | :--- | :--- | :--- |
 | **ANSI CSI 注入** | `\x1b[2J\x1b[H` (清屏覆盖攻击) | 正则剔除 `/\x1b\[[0-?]*[ -/]*[@-~]/g` |
-| **OSC 剪贴板/标题劫持** | `\x1b]52;c;...\x07` (剪贴板注入) | 正则剔除 OSC（含 C1 `0x9D` 形式）至 BEL / ST(`\x1b\\`、`0x9C`) / 行尾 |
+| **OSC 剪贴板/标题劫持** | `\x1b]52;c;...\x07` (剪贴板注入) | 正则剔除 OSC（含 C1 `0x9D` 形式）至 BEL / ST(`\x1b\\`、`0x9C`) / 输入结尾 |
 | **DCS/APC/PM/SOS 串式注入** | `\x1bP+q544e\x1b\\`、`\x1b_G...\x1b\\` | 整串吞至 ST 或未终止串结尾（含 C1 `0x90/0x98/0x9E/0x9F` 形式），payload 不残留 |
 | **Unicode Bidi 伪装** | `\u202E` (从右向左覆盖伪装) | 剔除 `U+200B` ~ `U+200F`、`U+202A` ~ `U+202E`、`U+2028/U+2029`、`U+2060`、`U+2066` ~ `U+206F`、`U+061C` 等格式控制符 |
 | **C0/C1 控制符污染** | `\x00-\x1F`, `\x7F-\x9F` | 剔除全部 C0/C1 控制符（含 NUL 与单字节 `0x9B` CSI / `0x9D` OSC 等，串式序列按上表整串处理） |
@@ -217,13 +249,13 @@ sequenceDiagram
 
 | 故障场景 | 诱发原因 | 系统降级表现 | Exit Code |
 | :--- | :--- | :--- | :---: |
-| **空 Stdin / 异常数据** | 宿主启动时序抖动 / 管道溢出 / 非法 JSON | 不输出任何行（0 字节）并安全退出；向错误日志写入一行带原因诊断，不伪造遥测 | `0` |
+| **空 Stdin / 异常数据** | 宿主提前触发（payload 未就绪）/ 超过 1MB / 非法 JSON | 不输出任何行（0 字节）并安全退出；向错误日志写入一行带原因诊断，不伪造遥测 | `0` |
 | **Stdin 管道悬挂** | 宿主未按时发送 EOF 结束管道 | $800\text{ms}$ 定时器触发，强行切断 Stdin 并按已收数据渲染 | `0` |
 | **EPIPE 错误** | 宿主提前关闭 Stdout 接收管道 | `process.stdout.on('error')` 静默捕获，安全退出 | `0` |
 | **Transcript 缺失** | 首轮会话 / 远程无盘环境 | 隐藏工具活动，Token 回退使用 payload；Credits 仅使用 payload 明示的实际值 | `0` |
 | **状态文件截断损坏** | 异常断电 / 进程被强杀 | 自动丢弃损坏 JSON，重置偏移量为 0 全量重建 | `0` |
 | **只读文件系统** | 权限受限的容器环境 | 状态写入静默失败；未完成的 Credits 隐藏，后续调用可能从头重建 | `0` |
-| **Git 超时 / 探测失败** | 庞大 Mono-repo / 非可用仓库目录 | 若能直接读出分支则保留分支并返回 `dirty: null`，否则隐藏；非可用仓库记录 60s 负缓存防重复派生 | `0` |
+| **Git 超时 / 探测失败** | 庞大 Mono-repo / 非可用仓库目录 | 若能直接读出分支则保留分支并返回 `dirty: null`；仅无 HEAD 可回退时记录 60s 负缓存防重复派生 | `0` |
 
 ---
 
@@ -236,7 +268,7 @@ sequenceDiagram
    - shim 为 UTF-8，必要时先 `chcp 65001`；实测 cmd.exe 不支持 UTF-16LE 批处理文件。
    - 针对 Windows 宿主启动器可能二次转义字面引号的兼容限制，安全 ASCII shim 路径省略引号；需要引号的路径保留引号，仍受宿主兼容限制。
 2. **终端编码自动探测与缓存**：
-   - Windows 下通过 `chcp.com` 探测代码页并缓存于 `codebuddy-hud-cache-state.json`（`65001`）。
+   - Windows 下直连 `spawnSync('chcp.com')` 免壳探测代码页（硬超时 300ms）。探测成功缓存于 `codebuddy-hud-cache-state.json` 保持 1 小时；探测超时或派生失败当帧安全降级 ASCII，但仅缓存 60 秒（`probeTtlMs: 60000`）防抖，避免因偶发尖刺锁死 1 小时；`CODEBUDDY_HUD_FORCE_ASCII`/`UNICODE` 优先于缓存。
    - 在不支持 UTF-8 的终端自动无缝回退至纯 ASCII 字符集（`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`, `[t]`, `[T]`）。
 3. **事件循环自然排空退出 (Natural Drain)**：
    - 渲染完成后主动释放 Stdin 句柄与定时器，依靠 Node.js 事件循环自然排空退出，杜绝 `process.exit()` 引起的异步 Stdout 缓冲区截断。

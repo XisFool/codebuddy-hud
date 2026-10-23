@@ -28,9 +28,9 @@ description: 当用户想要配置、美化或自定义 codebuddy-hud 状态栏�
      - `showCurrentDir`（当前工作区目录名，默认 true）
      - `showVersion`（Line 1 客户端版本号，默认 false）
      - `showPermissionMode`（权限模式指示器，默认 true）
-     - `maxLines`（看板最大输出行数，默认 3）
-     - `progressBarWidth`（进度条字符宽度，默认 10）
-     - `toolActivityTailBytes`（工具活动尾扫字节数，默认 16384）
+     - `maxLines`（看板最大输出行数，默认 3；宿主只取 stdout 前 3 行，设为 >3 不会增加可见行数，建议保持默认）
+     - `progressBarWidth`（进度条字符宽度，默认 10，范围 4–40）
+     - `toolActivityTailBytes`（工具活动尾扫字节数，默认 16384；低于 64 会被重置为默认值）
    - **图标字体**（同样置于 `display` 对象内）：
      - Nerd Fonts 精美图标：`"useNerdFonts": true, "unicode": "auto"`
      - 标准 Unicode 符号（默认）：`"useNerdFonts": false, "unicode": "auto"`

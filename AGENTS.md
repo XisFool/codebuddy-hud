@@ -1,135 +1,63 @@
 # CodeBuddy HUD (codebuddy-hud) — AGENTS.md
 
-CodeBuddy Code 的 statusLine HUD：宿主在 session / result / permission / settings / cost 五类离散事件后约 300ms 去抖，再把会话 JSON 从 stdin 喂入；空闲与只读工具运行中完全不刷新。
-HUD 同步输出 ≤3 行 ANSI 看板并退出。CommonJS，Node >=18。
+CodeBuddy Code 的 statusLine HUD：宿主在 **session / result / permission / settings / cost** 五类离散事件后约 300ms 去抖，将 JSON 从 stdin 喂入；HUD 同步输出 ≤3 行 ANSI 看板后退出。CommonJS，Node >=18。
 
-## 硬约束（开发不可动摇规则）
+## 硬约束
 
-1. **零 npm 依赖**：仅使用 Node.js 内置模块（`fs`, `path`, `readline`, `crypto`, `os`, `child_process`, `https`, `http`）。
-2. **极速响应与恒 `exit(0)`**：
-   - 单次预算 <1500ms（实际 p50 ~200ms；入口 `TIMEOUT_MS` 设 800ms 管道保底超时）。
-   - 任何内部异常静默降级，入口监听 `process.stdout/stderr.on('error')` 防 EPIPE 崩溃；
-   - 入口采用 `process.exitCode = 0` + 事件循环自然排空，防 stdout 异步管道截断。
-3. **输出严格 ≤3 行**（`runtime/config.js` 中 `display.maxLines: 3`）：结构上限 3 行，完全对齐宿主 CodeBuddy Code 实测截断（v2.171.0 复核：模块 254030 常量 `eT=3`，stdout 去空行后取前 3 行；捕获上限 `eD=10240` 个 UTF-16 字符，追加前判定），无数据行自动隐藏。
-4. **终端安全防御**：所有外部文本必须经 `sanitizeTerminalText()`，剔除 ANSI CSI、OSC、DCS/APC/PM/SOS 串式序列、C0/C1（`U+0080-U+009F`）及 Bidi 字符（`U+202E` 等）；`effort` 走白名单校验，主题色值走 `resolveTheme` 的 SGR 白名单。
-5. **数据真实性契约**：Cache 与 Credits 取自 transcript 真实遥测，绝不伪造或硬编码，无数据时优雅降级（如 `cache --`）。
+1. **零 npm 依赖**：仅用 Node 内置模块（`fs`/`path`/`readline`/`crypto`/`os`/`child_process`/`https`/`http`）。
+2. **恒 `exit(0)` 且极速**：预算 <1500ms（p50 ~200ms），stdin 保底 800ms；内部异常静默降级，监听 stdout/stderr error 防 EPIPE；用 `process.exitCode = 0` + 自然排空，禁用 `process.exit()`。
+3. **严格 ≤3 行**：宿主 v2.171.0 取 stdout 前 3 行、捕获上限 10240 个 UTF-16 字符（先判长度再追加）；`display.maxLines` 结构上限 3；无数据行隐藏，字段缺失用 `--`。
+4. **终端安全**：所有外部文本经 `sanitizeTerminalText()`（ANSI/OSC/DCS/APC/PM/SOS、C0/C1、Bidi）；`effort` 白名单；主题值经 `resolveTheme` 的 SGR 白名单。
+5. **数据真实**：Cache 严格取自 transcript（无 payload 兜底，缺失 `cache --`）；Credits 优先 transcript 增量，仅完全无 transcript 遥测时回退 payload `cost.credits`；扫描未完成时隐藏。绝不伪造。
 
-## 架构（入口 → 数据流）
+## 架构
 
 ```
-runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--doctor/-d/--update
-  ├ parser.js                  从 payload 提取 token/diff/cost
-  ├ config.js                  内置 THEME_PRESETS、Dark/Light 模式解析与 deepMerge
-  ├ codebuddy-hud.config.json  默认内置配置模板与阈值预设
-  ├ theme-selector.js          TTY 实时所见即所得交互主题选择器
-  ├ renderer.js                3 行组装
-  │ ├ renderer/format.js       调色板 / 进度条 / cache 命中率
-  │ ├ renderer/diff-render.js  Line 3 diff / credits / 耗时 / 工具活动段组装
-  │ └ renderer/agents-render.js 工具活动与频次聚合格式化（供 Line 3 复用）
-  ├ transcript.js              尾读 transcript（本轮工具与 usage 聚合 + 上下文新鲜度判定）
-  ├ session-stats.js           /clear 会话重置识别与 Diff/耗时逻辑基线管理
-  ├ doctor.js                  --doctor 环境诊断（Node/配置/编码/Git/transcript）
-  ├ git.js                     Git 状态探测与 direct HEAD 读取缓存
-  ├ model-info.js              推理深度 effort 解析与 credits 提取
-  ├ encoding.js                代码页探测与 Unicode/ASCII 字形回退
-  ├ sanitize.js                终端安全防御（过滤 ANSI/OSC/DCS/APC/Bidi 注入）
-  ├ paths.js                   ~/.codebuddy 状态文件路径解析
-  ├ lang.js                    多语言 i18n 字典（zh/en）
-  ├ statusline-installer.js    --setup 写 settings.json、挂载技能并生成 Windows shim
-  ├ settings-file.js           JSONC 解析、配置权限与符号链接保护
-  ├ uninstall.js               --uninstall 清理配置、shim、技能、缓存与状态
-  └ update-checker.js          --update 版本解析、比较与 bootstrap 自举更新
-tests/fixtures/*.json          3 个 payload fixture
-tests/unit/*.test.mjs          23 个核心单元测试文件
-scripts/install.ps1            Windows PowerShell 一键在线安装脚本
-scripts/install.sh             POSIX Shell 一键在线安装脚本
-scripts/bootstrap.js           Release 远程在线安装与自举更新器
-scripts/run-tests.js           跨平台测试驱动（全量路径参数转发）
-scripts/verify-display.js      E2E 看板与 CLI 命令形态契约验证
-scripts/verify-install.js      隔离宿主安装/卸载生命周期契约验证
-.codebuddy-plugin/plugin.json  插件元数据清单
-skills/hud-config/SKILL.md     HUD 交互式配置 Agent 技能指南
+runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--doctor|-d [--json]/--update/--version|-v/--help|-h
+  ├ parser.js / config.js / model-info.js          payload 解析、配置/主题合并、effort/credits
+  ├ renderer.js + renderer/{format,diff-render,agents-render}.js  3 行组装与分段渲染
+  ├ transcript.js / session-stats.js               transcript 遥测、/clear 基线与 /compact 新鲜度
+  ├ git.js / encoding.js / sanitize.js             环境探测与终端安全
+  ├ paths.js / lang.js                             状态路径与 i18n
+  ├ statusline-installer.js / settings-file.js     settings.json 原子写入、shim、技能挂载
+  ├ uninstall.js / update-checker.js               卸载清理、主动更新
+  ├ doctor.js / theme-selector.js                  诊断、交互换肤
+  └ codebuddy-hud.config.json                      内置默认配置（theme/display/thresholds）
+tests/fixtures/*.json      3 个 payload fixture
+tests/unit/*.test.mjs      25 个单元测试文件
+scripts/                   install.ps1/.sh、bootstrap.js、run-tests.js、verify-*.js
+.codebuddy-plugin/plugin.json · skills/hud-config/SKILL.md   插件元数据与伴生技能
 ```
 
-> **深度参考指针（按需查阅，避免全量预载）**：
-> - **模块契约与状态机**（修改接口签名、状态落盘格式、会话基线逻辑）：查阅 [docs/module-reference.md](docs/module-reference.md)。
-> - **系统架构与数据流**（理解物理双层隔离、宿主时序、逆向滑窗遥测与故障降级）：查阅 [docs/architecture_zh.md](docs/architecture_zh.md)。
+> **单一来源**：宿主时序/上限/降级 → [architecture_zh.md](docs/architecture_zh.md)（英文 [architecture.md](docs/architecture.md)）；模块签名/常量/状态 schema/环境变量 → [module-reference.md](docs/module-reference.md)；用户安装/升级/卸载 → [README.md](README.md) / [README_en.md](README_en.md)。本文件只保留硬约束、高频陷阱与指针。
 
-## 测试与验证命令
+## 测试与验证
 
 ```bash
-# 单元测试（scripts/run-tests.js 自动向 node --test 传参，兼容 Node 18~24+ 全平台）
-npm test
-npm run verify                               # 10 个 E2E 场景（payload + CLI + 边界）
-npm run verify:install                       # 隔离宿主真实安装与卸载验证
-node runtime/bin/codebuddy-hud.js --status   # CLI 冒烟探测
-node runtime/bin/codebuddy-hud.js --theme list
+npm test                     # 全量单测（run-tests.js 自动喂全量路径，兼容 Node 18~24+）
+npm run verify               # 10 个 E2E 场景
+npm run verify:install       # 隔离宿主安装/卸载
+node runtime/bin/codebuddy-hud.js --status
 ```
 
-## 关键技术细节与避坑指南
+## 关键陷阱
 
-1. **测试驱动规范**：运行 `npm test`，底层脚本自动向 `node --test` 喂入全量文件路径，彻底规避 Node 18/20 对 glob 不支持及 Windows 目录反斜杠引发假阳性 `MODULE_NOT_FOUND` 的问题；改动后必须保持全量单测与 2 个 verify 脚本 100% 通过。
-2. **Windows `.cmd` Shim**：烘焙安装时的 `process.execPath` 绝对路径（`statusline-installer.js`），不依赖系统 PATH；路径中 `%` 批量转义为 `%%`；含非 ASCII 字符时自动解析 Windows 8.3 短路径并前置 `@chcp 65001 >nul`。
-   - 针对 Windows 宿主启动器的字面引号转义限制，安装器对安全 ASCII 路径省略引号；含空格或 shell 特殊字符的路径保留引号。
-   - `.cmd` 使用 UTF-8，必要时先 `chcp 65001`。不要改成 UTF-16LE；已实测 cmd.exe 无法正常执行该格式。
-3. **终端编码探测缓存与预算**：
-   - Windows 下直连 `spawnSync('chcp.com', ...)` 免除 cmd.exe 壳进程（实测 p50 由 ~38ms 降至 ~23ms），探测超时收紧至 300ms（对健康 p50 留充足余量，防系统尖刺触碰宿主 5s 判死线）；
-   - 拆分缓存 TTL 语义：明确代码页结果缓存在 `~/.codebuddy/codebuddy-hud-cache-state.json` 保持 1 小时；超时/进程失败视为暂无数据，当帧 ASCII 降级但仅缓存 60 秒（`probeTtlMs`），过期自动重探，杜绝单次抖动导致字形降级 1 小时；
-   - `CODEBUDDY_HUD_FORCE_ASCII/UNICODE` 优先于缓存。
-4. **错误日志轮转**：`~/.codebuddy/codebuddy-hud-error.log` 超过 1MB 自动重置，防高频刷新写满磁盘。
-5. **Cache 命中率口径**：
-   - 遥测仅存在于 transcript 的 `providerData.rawUsage`（避开 `cache_read_input_tokens: 0` 陷阱字段）；
-   - `rawUsage.prompt_tokens` 有效时依次取 `prompt_cache_hit_tokens`、`prompt_tokens_details.cached_tokens`、`cached_tokens`，缺失则为 0；否则以 `usage.inputTokens` 和 `inputTokensDetails[].cached_tokens` 聚合兜底；
-   - 聚合范围：`getTurnUsageMetrics()` 从 EOF 回扫，预算为至多 200 条记录 / 256KiB；扫至 `role: 'user'` 边界或文件头即为完整本轮；超窗未达边界时窗口自然滑动至最近调用，徽章口径为「近期调用命中率」而非整轮平均（`sum(hitTokens) / sum(promptTokens)`，测试 `turn-window-slide` 钉死该语义），非单次调用瞬时值；
-   - 三态契约：`null`（渲染层兜底为 `{available:false}`，显示 `cache --`）、`{available:false}`（`cache --`）、`{available:true, X%}`（正常数值）。
-6. **Token、变更与 Credits 口径**：
-   - Token 资源块（Line 2）显示当前上下文输入占用与容量（`Context Token in/size`），进度条分子严格使用 `inTokens`（与 `used_percentage` 同基底）；高缓存命中率或服务商将 miss 视作 creation（如 DeepSeek）时，宿主将 `current_usage.input_tokens` 扣减为 0，HUD 自动按 `combined = rawInput + cacheRead + cacheCreation` 还原活跃上下文占用；未扣减提示词与缓存并存时，结合 `used_percentage` 倒推残差仲裁防翻倍；`outTokens` 独立展示，compact 压缩后宿主尚未提供新 usage 时显示 `--` 与显式等待提示（上下文新鲜度支持双向遥测匹配）；
-   - 变更摘要（Line 3）以 Unicode `Δ` 开头，ASCII fallback 为 `[D]`；
-   - Credits（Line 3）为当前 transcript 会话的增量累计实际消费，按 transcript 独立缓存状态；扫描预算耗尽且尚未完成时隐藏累计值，不能把已扫描前缀或 payload 兜底显示为总额。
-7. **配置防御与降级**：
-   - 项目配置里的 `__proto__` 键被 `deepMerge` 跳过；合并深度上限 64 防爆栈；
-   - transcript 回扫上限 256KB，遇到超长单行优雅降级回退到 payload 兜底。
-8. **安装卸载测试隔离**：同时隔离 `CODEBUDDY_HOME`、`CODEBUDDY_SETTINGS_PATH` 和 runtime。仅指定临时 settings 不能隔离 shim 删除；CLI 测试必须调用临时 runtime 副本。
-9. **配置写入**：JSONC 处理不能改动字符串内容；原子替换须保留现有 POSIX 权限和符号链接，失败时保留原配置与备份。新配置及首次备份默认私有权限。
-10. **Payload 无 agents/tasks 与工具活动来源**：
-    - 宿主 statusLine payload 并不存在 `agents` 或 `tasks` 字段（源码逆向确认宿主未构造此二键）；
-    - 真实工具活动取自 transcript 真实遥测（`type: 'function_call'` 和 `type: 'function_call_result'`），由 `runtime/transcript.js` 解析；
-    - 工具活动并入 Line 3 尾部展示；payload fixtures 中不应包含假造的 `agents`/`tasks` 字段。
-11. **/clear 换新 transcript 的会话语义（identity miss 即新会话）**：
-    - 宿主 /clear 后会切换到全新 transcript 文件（实测换文件而非截断），per-identity 状态失联；identity miss（含新窗口首帧）直接把当前 payload 累计锚定为新基线，Δ/⏱ 归零重来，无需任何历史状态恢复；
-    - 同身份的断崖兜底（Cliff Drop / Return to Initial）以与 Line 2 同源的还原占用判定（`parser.resolveContextInputTokens`）：有 `context_window_size`/`used_percentage` 时缓存命中/扣除不改变该值；两者缺失时退回原始 `input_tokens`，缓存残差形态仍可能触发断崖，需依赖 transcript identity 等硬信号；
-    - 无按 cwd 共享的跨 identity 状态（旧 handoff 机制已整体退役：其共享水位在空闲 >5min TTL 拒收、多窗口覆写、单调防线拒收三种路径下均会漏显）；存量 `handoff-*.json` 由 uninstall 整目录 rmSync 兜底清理，`paths.js` 的 `getSessionStatsHandoffPath` 保留为存量清理接口（无运行时引用）。
-12. **/compact 后 context 显示旧值（宿主刷新时序）**：
-    - 宿主 payload 的 `context_window.current_usage` 来自 `UsageUtils.getLatestUsage()`：取活跃链最近一条真实 API 调用的 usage，跳过 `agent === "compact"` 的条目；
-    - 故 /compact 完成后、下一次真实 API 响应落盘前，payload 携带压缩前旧值（实测可达十余分钟）；
-    - HUD 为一次性进程（无进程内缓存）；此滞后属宿主刷新时序，定位宿主侧即可。
-    - HUD 现会读取 transcript 的成功 compact 摘要；在 payload 仍对应压缩前 usage 时显示 `--` 与等待提示，不把旧值伪装为当前值。
-13. **宿主 statusLine 5s 判定会误伤已完成的 HUD（新终端启动后状态栏不出现）**：
-    - 宿主 `statusService.executeStatusLine` 用 `spawn(command, [], {shell:true, stdio:["pipe","pipe","pipe"], windowsHide:true})` 执行命令，`stdin.write(JSON.stringify(payload,null,2))` 后立即 `stdin.end()`（故 HUD 的 800ms 管道保底超时不会命中）；
-    - 判定成功的条件是 **exitCode === 0 且未触发那枚 5s wall-clock 定时器**；定时器到点即 `kill()` 并无条件按超时结算（`kill()` 失败时错误串为 `Command execution timeout and failed to terminate the process`），随后 `setStatusLine({success:false,text:""})`，React 侧 `isEnabled = success && text.length > 0` 为假 → **状态栏整块消失**，直到下一次刷新事件（发消息触发的 result / permissionMode）才恢复；
-    - 若宿主自身事件循环被占住 ≥5s（实测会话启动期 `bash -l` shell snapshot 8~10s、插件市场加载 5.4s、云端配置 2.4s、`rebuildAgents` / `readDynamic` 各 10s 上限），恢复后 **timers 阶段先于已排队的 `close` 回调**，于是一个 0.2s 就跑完的 HUD 也会被判超时（此时 `kill()` 因直接子进程已退出而返回 false，故错误串带 "and failed to terminate"）；
-    - 该误判与 HUD 耗时无关，HUD 侧无法阻止（实测 HUD 仅 0.1~0.3s：直连 node ~0.1s，经 `.cmd` shim ~0.15~0.32s）；
-    - 排查入口：`~/.codebuddy/logs/<date>/<project>__*.log` 搜 `Status line command failed`；本地复现只需让宿主父进程阻塞 ≥5s（如执行 `sleep 6`）即可得到逐字相同的错误串。
-    - 最新 v2.171.0 逆向确证（模块 254030；headless 与 lite-wb 构建同构）：`executeStatusLine` 依然保持 10240 个 UTF-16 字符的 stdout 捕获上限（先判长度再追加，stderr 无上限）、前 3 行截断和 5000ms 硬超时；`StatusManager` 依然仅由 5 个离散事件（session / result / permission / settings / cost）触发 300ms 防抖，空闲与只读工具运行中完全静默，无周期心跳定时器；`current_usage` 统计口径虽与 `/context` 对齐，但仍为单次请求后的静态快照。
-14. **伴生技能生命周期管理（hud-config 挂载与清理契约）**：
-    - `--setup` 安装时将内置 `skills/hud-config` 挂载至 `~/.codebuddy/skills/hud-config`；
-    - 挂载机制支持三级容灾：Windows 平台优先使用免管理员权限的 NTFS Junction，POSIX 平台优先使用目录软链（`'dir'`），权限受限环境自动降级为递归目录拷贝（`fs.cpSync`）；
-    - 防御守卫：前置校验源目录 `SKILL.md` 存在性（防止缺失文件报错）、校验源目录与目标目录路径规范化防自环循环，且全程外层 try-catch 包裹，挂载异常绝不阻断 statusLine 主配置写入；
-    - 对称卸载：`--uninstall` 彻底清理已部署或挂载的技能目录（符号链接优先使用 `fs.unlinkSync` 解除挂载，避免误删源文件）；测试必须同时隔离 `CODEBUDDY_HOME` 环境变量以保证沙箱安全性。
-15. **`--update` 网络边界（渲染路径零网络契约）**：
-    - 更新感知完全由用户主动触发（`--update`），渲染路径不发起任何网络请求、无后台巡逻、无状态栏提示元素；
-    - tag 解析三级策略（`runtime/update-checker.js`）：显式 `CODEBUDDY_HUD_LATEST_RELEASE_URL`（兼容旧名 `CODEBUDDY_HUD_REMOTE_PKG_URL`）→ `github.com/releases/latest` 302 Location（免 API 限流）→ `api.github.com` REST 兜底（仅直连 host 携带 `GITHUB_TOKEN/GH_TOKEN`，镜像不带）；`CODEBUDDY_HUD_MIRROR` 语义与 bootstrap.js 一致（镜像候选优先、直连兜底）；
-    - 落后时下载该 tag 的 `scripts/bootstrap.js` 至临时文件并以 `--delay-start` detached 派生（`CODEBUDDY_HUD_VERSION` 钉住 tag），bootstrap 延迟 1s 等父进程退出后再原子重装 runtime，规避 Windows 文件锁；
-    - tag 单一形态契约：解析、下载寻址、子进程 `CODEBUDDY_HUD_VERSION` 钉版、比较与消息全程原样使用 GitHub 原始 ref（`compareVersions` 自兼容 `v` 前缀），不存在第二种归一化形态，从结构上杜绝两形态混用导致的 raw 404 与双前缀；`rawBaseForTag` 白名单校验 tag 形态，拒绝路径注入。
+1. **测试隔离**：改动后必须 `npm test` + 2 个 verify 全绿；测试同时隔离 `CODEBUDDY_HOME`、`CODEBUDDY_SETTINGS_PATH` 与 runtime 副本。
+2. **Windows `.cmd`**：烘焙 `process.execPath`；`%`→`%%`；非 ASCII 路径用 8.3 短路径并前置 `@chcp 65001 >nul`；安全 ASCII 路径省略引号、含空格保留；UTF-8，严禁 UTF-16LE。
+3. **编码探测**：`spawnSync('chcp.com')` 免 shell、超时 300ms；成功缓存 1h，失败当帧 ASCII 且仅缓存 60s（`probeTtlMs`）；`FORCE_ASCII/UNICODE` 优先。
+4. **错误日志**：`~/.codebuddy/codebuddy-hud-error.log` 超 1MB 自动重置。
+5. **Cache 口径**：仅 transcript `providerData.rawUsage`（避开 `cache_read_input_tokens: 0` 陷阱）；从 EOF 回扫至多 200 条/256KiB，超窗滑至最近调用，口径为「近期调用命中率」`sum(hit)/sum(prompt)`，非整轮平均；三态 `null` / `{available:false}` / `{available:true}`。
+6. **Token/Credits**：进度条分子用还原后的 `inTokens`（与 `used_percentage` 同基底）；`input_tokens` 被扣为 0 时按 `combined = rawInput + cacheRead + cacheCreation` 还原，未扣减时按 `used_percentage` 残差仲裁防翻倍；`out` 独立；`/compact` 后旧 usage 显示 `--`；Credits 未扫完隐藏。
+7. **配置与写入**：`deepMerge` 跳过 `__proto__`、深度上限 64；JSONC 不改字符串内容，原子替换保留 POSIX 权限与软链，新配置/首次备份 `0600`。
+8. **Payload 与工具**：payload 无 `agents`/`tasks`；工具活动取自 transcript 的 `function_call`/`function_call_result`，并入 Line 3。
+9. **/clear**：宿主切换新 transcript；identity miss 即新会话，当前 payload 直接锚定新基线，Δ/⏱ 归零；无跨 identity handoff（旧机制已退役，存量由 uninstall 清理）。
+10. **/compact**：payload `current_usage` 取最近真实 API usage（跳过 compact），压缩后下一次响应前仍是旧值；HUD 读 transcript compact 摘要，旧 usage 时显示 `--` 等待。
+11. **宿主 5s 误杀**：宿主事件循环阻塞 ≥5s 时 timers 先于 close，已完成的 HUD 也会被判超时并清空状态栏；HUD 侧无法阻止。日志搜 `Status line command failed`；完整结论见 architecture §4。
+12. **技能与更新**：`--setup` 挂载 `skills/hud-config`（Junction/软链/复制三级降级），`--uninstall` 对称清理；`--update` 仅用户主动触发、渲染路径零网络，细节见 module-reference §21。
+13. **Git**：Direct HEAD 零派生；`execFileSync` 免 shell（200ms）；10s 正缓存、无 HEAD 的 60s 失败负缓存、非 git 不派生；`child_process` 懒加载。细节见 module-reference §12。
 
-## 提交与工作流契约
+## 提交与发布
 
-- **验证闭环**：提交前必须在终端全量运行并通过 `npm test`、`npm run verify` 及 `npm run verify:install`；用例数量以当次实际输出为准，严禁带错提交。
-- **Git 提交信息**：Commit message 必须使用中文。
-
-## 发布流程（低频发布操作）
-
-1. 更新 `package.json` 版本与 `CHANGELOG.md`，并完成全部验证命令。
-2. 在发布提交上创建带注释的 `vX.Y.Z` tag，推送 `master` 与 tag。
-3. 以该 tag 创建正式 GitHub Release；默认安装以 Latest Release 的 `tag_name` 为准。
-4. 从公开 Release 下载 Bootstrap，在隔离 `CODEBUDDY_HOME` 中执行真实远程安装，确认 `--status` 退出码为 0。
+- 提交前必须通过 `npm test`、`npm run verify`、`npm run verify:install`；用例数以当次实际输出为准，严禁带错提交。
+- Commit message 使用中文。
+- 发布：更新 `package.json` 与 `CHANGELOG.md` → 全量验证 → 创建注释 tag `vX.Y.Z` → 推送 master 与 tag → 创建 GitHub Release → 在隔离 `CODEBUDDY_HOME` 中真实远程安装并确认 `--status` 退出码 0。
