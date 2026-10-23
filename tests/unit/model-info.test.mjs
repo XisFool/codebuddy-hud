@@ -298,6 +298,19 @@ describe('resolveEffortLevel transcript signal', () => {
     assert.equal(resolveEffortLevel(dataWithTranscript(transcriptPath)), 'ultracode');
   });
 
+  it('writes the session effort state atomically', () => {
+    const transcriptPath = writeTranscript([usageLine, effortCommand('ultracode'), usageLine]);
+    assert.equal(resolveEffortLevel(dataWithTranscript(transcriptPath)), 'ultracode');
+
+    const stateDir = path.join(process.env.CODEBUDDY_HOME, 'codebuddy-hud-session-state');
+    const files = fs.readdirSync(stateDir);
+    assert.equal(files.some((name) => name.includes('.tmp-')), false);
+    const stateFiles = files.filter((name) => name.endsWith('.json'));
+    assert.equal(stateFiles.length, 1);
+    const state = JSON.parse(fs.readFileSync(path.join(stateDir, stateFiles[0]), 'utf8'));
+    assert.equal(state.effort, 'ultracode');
+  });
+
   it('detects ultracode from the enter stdout record alone', () => {
     useSettings('max');
     const transcriptPath = writeTranscript([stdoutRecord('enter'), usageLine]);

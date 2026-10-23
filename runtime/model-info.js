@@ -139,16 +139,22 @@ function readSessionEffortState(transcriptPath) {
 
 function writeSessionEffortState(transcriptPath, effort) {
   if (!transcriptPath) return;
+  let tmpPath = null;
   try {
     const statePath = getSessionEffortStatePath(transcriptPath);
     const dir = path.dirname(statePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(statePath, JSON.stringify({
+    tmpPath = `${statePath}.tmp-${process.pid}-${Date.now()}`;
+    fs.writeFileSync(tmpPath, JSON.stringify({
       version: 1,
       effort: effort || null,
       updatedAt: Date.now(),
     }), 'utf8');
+    fs.renameSync(tmpPath, statePath);
   } catch {
+    if (tmpPath) {
+      try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+    }
     // 静默降级，绝不阻塞渲染
   }
 }

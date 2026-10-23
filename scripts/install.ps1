@@ -67,16 +67,28 @@ if ($env:CODEBUDDY_HUD_NO_PATH -ne '1') {
             $env:PATH = "$BinDir;$env:PATH"
         }
 
-        # Persist to user-level registry (no admin required)
+        # Persist to user-level registry (no admin required). Use the registry
+        # directly so REG_EXPAND_SZ stays intact: SetEnvironmentVariable writes
+        # REG_SZ and permanently flattens entries such as %JAVA_HOME%\bin.
         try {
-            $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-            if (-not $UserPath) { $UserPath = '' }
-            $PathEntries = $UserPath -split ';' | Where-Object { $_.Trim() -ne '' }
-            if (-not ($PathEntries | Where-Object { $_ -eq $BinDir })) {
-                $NewUserPath = (@($BinDir) + $PathEntries) -join ';'
-                [Environment]::SetEnvironmentVariable('Path', $NewUserPath, 'User')
-                Write-Success "Added to PATH: $BinDir"
-                Write-Info "The 'codebuddy-hud' command is available in this and all future terminals."
+            $EnvKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+            if (-not $EnvKey) { throw 'HKCU\Environment is unavailable' }
+            try {
+                $PathKind = [Microsoft.Win32.RegistryValueKind]::ExpandString
+                $UserPath = ''
+                if ($EnvKey.GetValueNames() -contains 'Path') {
+                    $PathKind = $EnvKey.GetValueKind('Path')
+                    $UserPath = [string]$EnvKey.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+                }
+                $PathEntries = $UserPath -split ';' | Where-Object { $_.Trim() -ne '' }
+                if (-not ($PathEntries | Where-Object { $_ -eq $BinDir })) {
+                    $NewUserPath = (@($BinDir) + $PathEntries) -join ';'
+                    $EnvKey.SetValue('Path', $NewUserPath, $PathKind)
+                    Write-Success "Added to PATH: $BinDir"
+                    Write-Info "The 'codebuddy-hud' command is available in this and all future terminals."
+                }
+            } finally {
+                $EnvKey.Close()
             }
         } catch {
             Write-Info "Could not persist PATH (non-fatal): $_"

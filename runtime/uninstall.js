@@ -27,6 +27,28 @@ function isHudStatusLine(statusLine) {
     && statusLine.command.includes('codebuddy-hud'));
 }
 
+function pathEntryKey(entry) {
+  let value = String(entry).trim();
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+    value = value.slice(1, -1);
+  }
+  try {
+    const resolved = path.resolve(value);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  } catch {
+    return value;
+  }
+}
+
+// The raw registry value must be compared without expanding %VAR% entries;
+// otherwise uninstall would rewrite unrelated PATH entries.
+function stripBinDirFromUserPath(rawPath, binDir) {
+  const entries = String(rawPath || '').split(';').filter((entry) => entry.trim() !== '');
+  const target = pathEntryKey(binDir);
+  const filtered = entries.filter((entry) => pathEntryKey(entry) !== target);
+  return { changed: filtered.length < entries.length, value: filtered.join(';') };
+}
+
 function uninstall(options) {
   const opts = options || {};
   const settingsPath = opts.settingsPath || getSettingsPath();
@@ -257,22 +279,30 @@ function uninstall(options) {
   if (!isSandbox) {
     const binDir = path.dirname(hudBin);
     if (platform === 'win32') {
-      // Remove binDir from user-level registry PATH
+      // Read the raw value and its registry kind, then write it back with the
+      // same kind. [Environment]::SetEnvironmentVariable would store REG_SZ and
+      // permanently flatten REG_EXPAND_SZ entries such as %JAVA_HOME%\bin.
       try {
-        const rawUserPath = execFileSync('powershell.exe', [
+        const rawRegistryPath = execFileSync('powershell.exe', [
           '-NoProfile', '-NonInteractive', '-Command',
-          "[Environment]::GetEnvironmentVariable('Path','User')",
-        ], { encoding: 'utf8', timeout: 5000 }).trim();
-        if (rawUserPath) {
-          const entries = rawUserPath.split(';').filter((e) => e.trim() !== '');
-          const normalBinDir = path.resolve(binDir);
-          const filtered = entries.filter((e) => path.resolve(e) !== normalBinDir);
-          if (filtered.length < entries.length) {
-            const newPath = filtered.join(';');
+          "$ErrorActionPreference = 'Stop'; $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment'); if ($key) { $kind = $key.GetValueKind('Path'); $raw = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames); $key.Close(); [pscustomobject]@{ kind = $kind.ToString(); value = $raw } | ConvertTo-Json -Compress }",
+        ], { encoding: 'utf8', timeout: 5000, windowsHide: true }).trim();
+        if (rawRegistryPath) {
+          const userPath = JSON.parse(rawRegistryPath);
+          const filtered = stripBinDirFromUserPath(userPath.value, binDir);
+          if (filtered.changed) {
             execFileSync('powershell.exe', [
               '-NoProfile', '-NonInteractive', '-Command',
-              `[Environment]::SetEnvironmentVariable('Path','${newPath.replace(/'/g, "''")}','User')`,
-            ], { timeout: 5000 });
+              "$ErrorActionPreference = 'Stop'; $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true); if ($key) { $key.SetValue('Path', $env:CODEBUDDY_HUD_USER_PATH, [Microsoft.Win32.RegistryValueKind]$env:CODEBUDDY_HUD_USER_PATH_KIND); $key.Close() }",
+            ], {
+              timeout: 5000,
+              windowsHide: true,
+              env: {
+                ...process.env,
+                CODEBUDDY_HUD_USER_PATH: filtered.value,
+                CODEBUDDY_HUD_USER_PATH_KIND: userPath.kind,
+              },
+            });
             cleaned.push(`Removed from user PATH: ${sanitizeTerminalText(binDir, 512)}`);
           }
         }
@@ -307,4 +337,4 @@ function uninstall(options) {
   }
 }
 
-module.exports = { uninstall };
+module.exports = { uninstall, stripBinDirFromUserPath };
