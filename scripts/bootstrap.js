@@ -158,7 +158,7 @@ async function fetchLatestRelease(options = {}) {
   // Strategy 2: GitHub REST API (with optional token for higher rate limit).
   // An explicit CODEBUDDY_HUD_LATEST_RELEASE_URL wins outright and is used
   // verbatim; otherwise the API URL is mirrored like every other GitHub URL.
-  const explicitApiUrl = process.env.CODEBUDDY_HUD_LATEST_RELEASE_URL;
+  const explicitApiUrl = process.env.CODEBUDDY_HUD_LATEST_RELEASE_URL || process.env.CODEBUDDY_HUD_REMOTE_PKG_URL;
   const apiCandidates = options.apiCandidates || (explicitApiUrl ? [explicitApiUrl] : urlCandidates(LATEST_RELEASE_API_URL));
   const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
   let lastErr;
