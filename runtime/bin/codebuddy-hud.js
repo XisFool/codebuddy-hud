@@ -161,16 +161,46 @@ if (args.includes('--setup')) {
 } else if (args.includes('--status')) {
   let statusCwd = '';
   try { statusCwd = process.cwd(); } catch { statusCwd = ''; }
+  let demoVersion = '';
+  try { demoVersion = require('../update-checker').getLocalVersion() || ''; } catch { demoVersion = ''; }
   const samplePayload = JSON.stringify({
     model: { id: 'deepseek-v4.1-flash', display_name: 'Deepseek-V4.1-Flash' },
     reasoning_effort: 'max',
     permission_mode: 'default',
     cwd: statusCwd,
-    version: '0.1.0',
+    ...(demoVersion ? { version: demoVersion } : {}),
     cost: { credits: 82.04, total_cost_usd: 0, total_duration_ms: 10020000, total_api_duration_ms: 4980000, total_lines_added: 1700, total_lines_removed: 161 },
     context_window: { total_input_tokens: 249000, total_output_tokens: 1100, context_window_size: 1000000, used_percentage: 25, current_usage: { input_tokens: 249000, output_tokens: 1100, cache_read_input_tokens: 241032, cache_creation_input_tokens: 0 } },
   });
   handleRender(samplePayload);
+} else if (args.includes('--version') || args.includes('-v')) {
+  try {
+    const { getLocalVersion } = require('../update-checker');
+    console.log(`codebuddy-hud v${getLocalVersion() || '0.0.0'}`);
+  } catch (err) {
+    logError(err);
+    console.log('codebuddy-hud');
+  }
+  process.exitCode = 0;
+} else if (args.includes('--help') || args.includes('-h')) {
+  try {
+    const { getLocalVersion } = require('../update-checker');
+    const ver = getLocalVersion() || '0.0.0';
+    console.log(`codebuddy-hud v${ver} — Compact 3-line ANSI statusLine HUD for CodeBuddy Code\n\n` +
+      `Usage:\n` +
+      `  codebuddy-hud                           Run as statusLine renderer (reads JSON from stdin)\n` +
+      `  codebuddy-hud --status                  Render HUD once from sample data and exit\n` +
+      `  codebuddy-hud --theme [name|list]       Interactive theme selector or direct preset switch\n` +
+      `  codebuddy-hud --setup [--theme <name>]  Configure statusLine in settings.json and install skill\n` +
+      `  codebuddy-hud --uninstall              Restore statusLine, clean up skills, cache, shim and PATH\n` +
+      `  codebuddy-hud --doctor, -d [--json]     Run full environment and configuration diagnostics\n` +
+      `  codebuddy-hud --update                  Check for updates and bootstrap self-upgrade\n` +
+      `  codebuddy-hud --version, -v             Print version and exit\n` +
+      `  codebuddy-hud --help, -h                Print this help message and exit`);
+  } catch (err) {
+    logError(err);
+  }
+  process.exitCode = 0;
 } else if (args.includes('--update')) {
   (async () => {
     try {

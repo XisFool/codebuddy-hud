@@ -242,6 +242,32 @@ test('timeout path correctly reconstructs multi-byte UTF-8 split across chunks w
   });
 });
 
+test('prints version with --version and -v and exits 0', async () => {
+  const r1 = await run({ args: ['--version'] });
+  assert.equal(r1.code, 0);
+  assert.match(r1.out, /^codebuddy-hud v\d+\.\d+\.\d+/);
+  assert.equal(r1.err, '');
+
+  const r2 = await run({ args: ['-v'] });
+  assert.equal(r2.code, 0);
+  assert.match(r2.out, /^codebuddy-hud v\d+\.\d+\.\d+/);
+  assert.equal(r2.err, '');
+});
+
+test('prints help with --help and -h and exits 0', async () => {
+  const r1 = await run({ args: ['--help'] });
+  assert.equal(r1.code, 0);
+  assert.match(r1.out, /Usage:/);
+  assert.match(r1.out, /--version, -v/);
+  assert.equal(r1.err, '');
+
+  const r2 = await run({ args: ['-h'] });
+  assert.equal(r2.code, 0);
+  assert.match(r2.out, /Usage:/);
+  assert.match(r2.out, /--help, -h/);
+  assert.equal(r2.err, '');
+});
+
 
 after(() => {
   fs.rmSync(TEST_HOME, { recursive: true, force: true });
