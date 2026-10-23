@@ -2,7 +2,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 const { getGitCachePath } = require('./paths');
 
 // Pure parser for `git status --porcelain -b` output. Exported for tests.
@@ -222,9 +221,11 @@ function getGitStatus(cwd, timeoutMs = 200) {
       env: Object.assign({}, process.env, { GIT_OPTIONAL_LOCKS: '0' }),
     };
 
+    // Loaded only when a real spawn is needed (cache misses / mtime changes).
+    const { execFileSync } = require('child_process');
     let out;
     try {
-      out = execSync('git status --porcelain -b', execOpts);
+      out = execFileSync('git', ['status', '--porcelain', '-b'], execOpts);
     } catch {
       if (directBranch) {
         if (!noCache) {
@@ -270,7 +271,7 @@ function getGitStatus(cwd, timeoutMs = 200) {
         branch = directBranch;
       } else {
         try {
-          branch = execSync('git rev-parse --short HEAD', execOpts).trim();
+          branch = execFileSync('git', ['rev-parse', '--short', 'HEAD'], execOpts).trim();
         } catch {
           branch = 'detached';
         }

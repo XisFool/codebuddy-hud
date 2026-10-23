@@ -1,6 +1,5 @@
 'use strict';
 
-const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { getCacheStatePath } = require('./paths');
@@ -113,6 +112,7 @@ function supportsUnicode() {
       // while leaving ~8x headroom over the healthy p50.
       let probed = null;
       try {
+        const { spawnSync } = require('child_process');
         const res = spawnSync('chcp.com', [], {
           encoding: 'utf8',
           timeout: 300,
