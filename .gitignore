@@ -14,6 +14,9 @@ pnpm-debug.log*
 coverage/
 release_tmp/
 
+# Local agent analysis reports
+.agent_reports/
+
 # Local CodeBuddy state when CODEBUDDY_HOME or CODEBUDDY_SETTINGS_PATH targets this checkout
 /codebuddy-hud-error.log
 /codebuddy-hud-cache-state.json
