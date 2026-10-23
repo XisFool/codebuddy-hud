@@ -330,7 +330,7 @@ function uninstall(options) {
   if (cleaned.length === 0) {
     console.log('Nothing to uninstall.');
   } else {
-    console.log('codebuddy-cli-hud uninstalled:');
+    console.log('codebuddy-hud uninstalled:');
     for (const msg of cleaned) {
       console.log(`  - ${msg}`);
     }

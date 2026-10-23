@@ -40,8 +40,8 @@ const DICTIONARY = {
     doctorTranscriptMissing: '未检测到 transcript 日志目录或暂无写入',
 
     // Uninstall & Setup
-    setupComplete: 'codebuddy-cli-hud setup complete.',
-    uninstalledTitle: 'codebuddy-cli-hud uninstalled:',
+    setupComplete: 'codebuddy-hud setup complete.',
+    uninstalledTitle: 'codebuddy-hud uninstalled:',
     nothingToUninstall: 'Nothing to uninstall.',
     restoredBackup: 'Restored settings from backup',
     removedStatusLine: 'Removed statusLine from settings.json',
@@ -91,8 +91,8 @@ const DICTIONARY = {
     doctorTranscriptMissing: 'Transcript directory not found or empty',
 
     // Uninstall & Setup
-    setupComplete: 'codebuddy-cli-hud setup complete.',
-    uninstalledTitle: 'codebuddy-cli-hud uninstalled:',
+    setupComplete: 'codebuddy-hud setup complete.',
+    uninstalledTitle: 'codebuddy-hud uninstalled:',
     nothingToUninstall: 'Nothing to uninstall.',
     restoredBackup: 'Restored settings from backup',
     removedStatusLine: 'Removed statusLine from settings.json',

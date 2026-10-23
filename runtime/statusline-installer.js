@@ -208,7 +208,7 @@ function setup(options) {
   console.log(`\nStatusLine configured in: ${sanitizeTerminalText(settingsPath, 512)}`);
   console.log(`Command: ${sanitizeTerminalText(command, 1024)}`);
   deploySkill(opts, hudBin, platform);
-  console.log('\ncodebuddy-cli-hud setup complete.');
+  console.log('\ncodebuddy-hud setup complete.');
 }
 
 module.exports = { setup, deploySkill, buildStatusLineCommand, buildCmdShimContent, parseSettingsJson, isSettingsObject };

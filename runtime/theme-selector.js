@@ -98,7 +98,7 @@ function renderThemePreview(themeName, mode = 'dark') {
   // Line 1: Identity & Environment
   const modelPart = `${bold(color('Deepseek-V4.1-Flash', m))} ${color('● max', 'red')}`;
   const branchPart = `${color('main', b)}${color('*', 'yellow')}`;
-  const projectPart = color('codebuddy-cli-hud', a);
+  const projectPart = color('codebuddy-hud', a);
   const permPart = color('default', 'brightPurple');
   const line1 = `${modelPart}${sep}${branchPart}${sep}${projectPart}${sep}${permPart}`;
 

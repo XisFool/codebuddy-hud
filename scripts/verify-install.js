@@ -64,7 +64,7 @@ function runShellCommand(commandStr, stdinData = null, env = process.env) {
 }
 
 async function main() {
-  console.log('=== codebuddy-cli-hud Isolated Installation Verification ===\n');
+  console.log('=== codebuddy-hud Isolated Installation Verification ===\n');
 
   const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-verify-install-'));
   const installDir = path.join(tmpHome, 'codebuddy-hud-runtime');

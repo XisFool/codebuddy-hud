@@ -62,7 +62,7 @@ function checkInvariants(result, label) {
 }
 
 async function main() {
-  console.log('=== codebuddy-cli-hud E2E Verification ===\n');
+  console.log('=== codebuddy-hud E2E Verification ===\n');
 
   for (const fixture of fixtures) {
     const fixturePath = path.join(FIXTURES_DIR, fixture);

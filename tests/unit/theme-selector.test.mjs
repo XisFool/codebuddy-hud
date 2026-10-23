@@ -60,7 +60,7 @@ describe('theme-selector', () => {
     // primary is white (\x1b[37m), accent is gray (\x1b[90m)
     assert.ok(line1.includes('\x1b[97mDeepseek-V4.1-Flash\x1b[0m'), 'model must use brightWhite');
     assert.ok(line1.includes('\x1b[37mmain\x1b[0m'), 'branch must use white');
-    assert.ok(line1.includes('\x1b[90mcodebuddy-cli-hud\x1b[0m'), 'project name must use gray accent');
+    assert.ok(line1.includes('\x1b[90mcodebuddy-hud\x1b[0m'), 'project name must use gray accent');
     assert.ok(line2.includes('\x1b[37m249k\x1b[0m'), '249k must use white');
     assert.ok(line2.includes('\x1b[37m1M\x1b[0m'), '1M must use white');
   });
