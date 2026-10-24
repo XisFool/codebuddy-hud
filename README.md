@@ -42,9 +42,9 @@ Context Token 249k/1M [###-------] 25%  |  out 1.1k  |  cache 96.8%
 
 - **Line 1（身份）**：模型名称、推理强度（如 `● max`）、Git 分支（`*` 表示有未提交改动）、工作区目录名、当前权限模式。
 - **Line 2（资源）**：当前上下文输入占用、窗口进度条与百分比（分子口径与宿主 `used_percentage` 一致）、输出 Token 与近期 Prompt Cache 命中率（滑动窗口聚合）；压缩后宿主尚未提供新 usage 时显示 `--` 和等待提示。
-- **Line 3（会话活动）**：代码变更行数 `Δ +N -M`（ASCII 终端降级为 `[D]`）、会话实际消费（credits；不可得时回退 `$USD`）、会话耗时、AI 当前动作、本轮已完成工具调用频次（最多 3 项）。其中 Δ / credits / ⏱ 为会话基线累计（仅 `/clear` 重置），工具计数按当前轮 transcript 扫描。
+- **Line 3（会话活动）**：代码变更行数 `Δ +N -M`（ASCII 终端降级为 `[D]`）、会话实际消费（credits；不可得时回退 `$USD`）、会话耗时、AI 当前动作、本轮已完成工具调用频次（最多 3 项）。Δ / credits / ⏱ 为会话基线累计（仅 `/clear` 重置），工具计数按当前轮 transcript 扫描。
 
-3 行为硬上限，对齐宿主 CodeBuddy Code（实测至最新 v2.171.0+ 均按 stdout 前 3 行截断）；无数据的行整体隐藏，不会输出多余空行；单个字段无数据时按契约显示 `--` 占位（如 `cache --`）。
+3 行为硬上限，对齐宿主 CodeBuddy Code（实测至 v2.171.0+ 均按 stdout 前 3 行截断）；无数据的行整体隐藏，单个字段无数据时显示 `--` 占位（如 `cache --`）。
 
 ---
 
@@ -70,77 +70,23 @@ powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.c
 curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.sh | bash
 ```
 
-> **为什么不是一条 插件安装 命令？** 插件清单（`.codebuddy-plugin/plugin.json`）只声明元数据，不会下载运行时，也不会写入 `settings.json` 的 `statusLine`（宿主清单 schema 无 statusLine 字段）。安装脚本负责这三件事：把 runtime 落到 `~/.codebuddy/codebuddy-hud-runtime/`（核心代码位于 `runtime/` 子目录），写入 `statusLine.command`，并自动挂载 `hud-config` 技能至 `~/.codebuddy/skills/hud-config/`。
+> **为什么不是一条插件安装命令？** 插件清单（`.codebuddy-plugin/plugin.json`）只声明元数据，不会下载运行时，也不会写入 `settings.json` 的 `statusLine`（宿主清单 schema 无该字段），这些由安装脚本完成。
 
-安装器行为：
+安装器会：
 
-1. 通过 302 重定向（无 API 限流）或 REST API（支持 `GITHUB_TOKEN` 认证）查询最新 Release 的 `tag_name`，将 runtime 固定到该 release（安装脚本自身仍从 master 拉取 `bootstrap.js`；runtime 不使用可变分支）。runtime 文件下载失败最多尝试 3 次（按 1s、2s 指数退避）。
-2. 下载 runtime 至 `~/.codebuddy/codebuddy-hud-runtime/`。
-3. 备份并写入 `~/.codebuddy/settings.json` 的 `statusLine.command`；Windows 同时生成 `.cmd` shim，烘焙 Node 绝对路径，不依赖系统 PATH。
-4. 自动注册 PATH：Windows 自动向用户级注册表 PATH 追加 runtime bin 目录并刷新当前会话；macOS / Linux 若 PATH 包含 `~/.local/bin` 则自动创建软链接（可通过设置 `CODEBUDDY_HUD_NO_PATH=1` 跳过自动注册）。
-5. 自动挂载技能：将内置的 `hud-config` 技能挂载至 `~/.codebuddy/skills/hud-config`（Windows 优先 Junction，POSIX 优先软链接，支持目录降级复制），无需手动配置即可在 CodeBuddy 会话内通过自然语言交互换肤与定制看板。
+1. 查询最新 Release 的 `tag_name` 并将 runtime 固定到该 release（下载失败最多重试 3 次，按 1s、2s 退避；`bootstrap.js` 自身仍取自 master）。
+2. 部署 runtime 至 `~/.codebuddy/codebuddy-hud-runtime/`（核心代码在 `runtime/` 子目录）。
+3. 备份并写入 `~/.codebuddy/settings.json` 的 `statusLine.command`；Windows 另生成烘焙 Node 绝对路径的 `.cmd` shim，不依赖系统 PATH。
+4. 注册 PATH：Windows 追加到用户级注册表 PATH；macOS / Linux 在 PATH 含 `~/.local/bin` 时创建软链接。`CODEBUDDY_HUD_NO_PATH=1` 可跳过。
+5. 挂载 `hud-config` 技能至 `~/.codebuddy/skills/hud-config/`（Windows 优先 Junction，POSIX 优先软链接，失败降级为复制），之后可在会话内用自然语言换肤与定制。
 
 **幂等**：重复运行同一条命令即可修复、升级或清理旧版本残留。
 
-**更新**：已安装后可用 `codebuddy-hud --update` 一键检查并升级到最新 Release（也可重跑安装命令）。更新感知完全由用户主动触发，渲染路径不发起任何网络请求、不做后台检查、不显示状态栏提示。
+**更新**：`codebuddy-hud --update` 一键检查并升级到最新 Release（也可重跑安装命令）。更新完全由用户主动触发，渲染路径不发起任何网络请求。
 
-**触发方式**：安装后重启 CodeBuddy Code，并发送任意一条消息。宿主在会话事件后约 300ms 去抖触发刷新；空闲会话不绘制状态栏，因此刚进入会话时底部为空属正常现象。
+**触发方式**：安装后重启 CodeBuddy Code 并发送任意一条消息。宿主在会话事件后约 300ms 去抖刷新，空闲会话不绘制状态栏，刚进入会话时底部为空属正常现象。
 
-### 国内镜像加速安装
-
-如果直连 GitHub 超时或网络不稳定，把镜像域名设为 `CODEBUDDY_HUD_MIRROR`。安装脚本、`bootstrap.js` 与 `--update` 会用该前缀拼出它们请求的所有 GitHub URL：`raw.githubusercontent.com`（runtime 文件）、`github.com/releases/latest`（release tag 查询）与 `api.github.com`（查询兜底），格式为 `https://镜像域名/原始GitHub URL`。
-
-**Windows（PowerShell）**
-
-```powershell
-$env:CODEBUDDY_HUD_MIRROR='https://your-mirror'
-irm "$env:CODEBUDDY_HUD_MIRROR/https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.ps1" | iex
-```
-
-**macOS / Linux（Bash）**
-
-```bash
-export CODEBUDDY_HUD_MIRROR=https://your-mirror
-curl -fsSL "$CODEBUDDY_HUD_MIRROR/https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.sh" | bash
-```
-
-> 命令里镜像前缀出现两次：第一次由你的 shell 直接请求（安装脚本本身还不存在，无法自动加前缀），此后 runtime 下载与 release tag 查询由脚本自动加前缀。release tag 查询与 API 兜底在镜像未覆盖时自动回退直连；runtime 文件始终经镜像下载。因此只代理 `raw.githubusercontent.com` 的镜像需配合 `CODEBUDDY_HUD_VERSION`（或 `CODEBUDDY_HUD_RAW_BASE`）固定下载源才能装完；否则 tag 解析仍需能访问 github.com / api.github.com。本仓库不背书任何具体公共代理，请自行选择可信镜像。
-
-### Git Clone 本地安装（零网络风险）
-
-```bash
-git clone https://github.com/XisFool/codebuddy-hud.git   # 或经镜像：git clone https://your-mirror/https://github.com/XisFool/codebuddy-hud.git
-cd codebuddy-hud
-node scripts/bootstrap.js
-```
-
-本地安装模式直接从仓库复制文件，全程无远程 HTTP 请求。直接执行 `node scripts/bootstrap.js` 仅部署 runtime 并配置宿主，不修改系统 PATH；如需全局命令，可执行 `npm link` 或通过绝对路径运行，亦可使用上方的一键安装脚本。
-
-### Fork / 镜像安装（高级）
-
-**macOS / Linux**：
-
-```bash
-export CODEBUDDY_HUD_BOOTSTRAP_URL=https://your-mirror/scripts/bootstrap.js
-export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/vX.Y.Z
-curl -fsSL https://your-mirror/scripts/install.sh | bash
-```
-
-**Windows（PowerShell）**：
-
-```powershell
-$env:CODEBUDDY_HUD_BOOTSTRAP_URL = 'https://your-mirror/scripts/bootstrap.js'
-$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/vX.Y.Z'
-irm https://your-mirror/scripts/install.ps1 | iex
-```
-
-说明：
-
-- `CODEBUDDY_HUD_MIRROR` — 只需给镜像域名（如 `https://your-mirror`），安装脚本与 bootstrap.js 会用它拼出所有自己请求的 GitHub URL（runtime 下载、release tag 查询、API 兜底），release tag 查询与 API 兜底在镜像未覆盖时自动回退直连，runtime 文件始终经镜像下载；首跳（下载安装脚本本身）由你的 shell 直接请求，所以命令里仍需写出前缀；
-- `CODEBUDDY_HUD_BOOTSTRAP_URL` — 供安装脚本下载 bootstrap.js 使用，必须指向镜像上的 `scripts/bootstrap.js` 本体，不是镜像根目录；
-- `CODEBUDDY_HUD_RAW_BASE` — 供 bootstrap.js 拉取 runtime 文件使用；**一旦设置会跳过 GitHub Latest Release 查询**，示例锁定 tag 路径（`vX.Y.Z`），确保 runtime 安装到不可变 release；安装脚本自身仍从 master 拉取 bootstrap.js；
-- `GITHUB_TOKEN` / `GH_TOKEN` — 可选，仅随直连 `api.github.com` 的请求携带认证（不随镜像转发），rate limit 从 60/h 提升至 5000/h；
-- bash 下环境变量必须导出（作用于 `bash` 进程），不能只前缀给 `curl`。
+**网络受限、离线或自建发行源**：镜像加速、Git Clone 本地安装、Fork 安装见 [docs/install-advanced_zh.md](docs/install-advanced_zh.md)。
 
 ---
 
@@ -161,7 +107,7 @@ Get-Content "$env:USERPROFILE\.codebuddy\settings.json"
 & "$env:USERPROFILE\.codebuddy\codebuddy-hud-runtime\runtime\bin\codebuddy-hud.cmd" --status
 ```
 
-> 下文以 `codebuddy-hud` 简记入口：一键安装已自动注册 PATH（Windows 写入用户注册表，macOS/Linux 链接至 `~/.local/bin`；若未生效请确认 `~/.local/bin` 在 PATH 中或使用完整路径），亦可设 `CODEBUDDY_HUD_NO_PATH=1` 跳过自动注册。
+> 下文以 `codebuddy-hud` 简记入口：一键安装已自动注册 PATH；若未生效，请确认 `~/.local/bin` 在 PATH 中或使用上面的完整路径。
 
 以下现象属正常降级，不是安装失败：
 
@@ -176,13 +122,11 @@ Get-Content "$env:USERPROFILE\.codebuddy\settings.json"
 codebuddy-hud --doctor   # 体检 Node 环境、settings.json 与 statusLine 指向、终端编码、Git、transcript 访问
 ```
 
-常见问题与处理：
-
 | 现象 | 处理 |
 | :--- | :--- |
 | 底部始终无 HUD | 先发送任意消息触发刷新；仍无则运行 `--doctor` 检查配置指向 |
-| ⏱ 耗时或工具状态不会实时走字跳动 | 正常现象。宿主无周期心跳，仅在 session / result / permission / settings / cost 五类事件后约 300ms 去抖刷新（详见「宿主刷新机制与局限说明」） |
-| 乱码 / 方块符号 | 运行 `chcp 65001` 切换 UTF-8；仍不兼容时设 `CODEBUDDY_HUD_FORCE_ASCII=1` 使用纯 ASCII 符号，或设 `CODEBUDDY_HUD_FORCE_UNICODE=1` 强制 Unicode |
+| ⏱ 耗时或工具状态不会实时走字跳动 | 正常现象，见「宿主刷新机制与局限说明」 |
+| 乱码 / 方块符号 | 运行 `chcp 65001` 切换 UTF-8；仍不兼容时设 `CODEBUDDY_HUD_FORCE_ASCII=1`，或设 `CODEBUDDY_HUD_FORCE_UNICODE=1` 强制 Unicode |
 | `cache --` / 无消费数据 | 遥测字段不可得时的正常降级，见「安装验证」 |
 | `/clear` 后 Δ / 耗时表现 | 宿主会切换新 transcript，HUD 自动重建基线并重置 Δ / 耗时，发送下一条消息后生效 |
 | 需要排查底层错误 | 查看 `~/.codebuddy/codebuddy-hud-error.log`（超过 1MB 自动轮转） |
@@ -197,13 +141,11 @@ codebuddy-hud --uninstall
 
 卸载程序会：
 
-1. 仅当当前 `statusLine` 仍指向本 HUD 时，从安装时保留的原始备份还原其中的 `statusLine`；若备份记录的命令本身指向 codebuddy-hud（例如更早的安装副本），则直接移除 `statusLine` 项。安装后用户自行替换或删除的 `statusLine` 保持不变。
-2. 删除 Windows `.cmd` shim。
-3. 清理 HUD 自身的缓存与状态文件（编码缓存、Git 缓存、使用量 checkpoint、会话统计、credit 状态、更新状态）。
-4. 清理已部署或挂载的 `~/.codebuddy/skills/hud-config/` 技能目录与软链接。
-5. 清理 PATH 注册与软链接：从 Windows 用户级注册表 PATH 中移除 runtime bin 目录；在 macOS / Linux 上删除 `~/.local/bin/codebuddy-hud` 软链接（设置 `CODEBUDDY_HOME` 时自动跳过）。
+- 仅当当前 `statusLine` 仍指向本 HUD 时，从安装时的备份还原；若备份里的命令本身也指向 codebuddy-hud，则直接移除 `statusLine` 项。安装后你自行替换或删除的 `statusLine` 保持不变。
+- 删除 Windows `.cmd` shim，清理 HUD 自身的缓存与状态文件，清理挂载的 `hud-config` 技能目录与软链接。
+- 清理 PATH 注册：移除 Windows 用户级注册表 PATH 中的 runtime bin 目录；macOS / Linux 上删除 `~/.local/bin/codebuddy-hud` 软链接（设置了 `CODEBUDDY_HOME` 时自动跳过）。
 
-用户主题配置（`codebuddy-hud.config.json`）与已安装的 `~/.codebuddy/codebuddy-hud-runtime/` 运行时目录会被保留（可按需手动删除）；除 `statusLine` 外，不会改动 `settings.json` 中的任何其他配置项。
+用户主题配置（`codebuddy-hud.config.json`）与 `~/.codebuddy/codebuddy-hud-runtime/` 运行时目录会被保留（可手动删除）；除 `statusLine` 外不会改动 `settings.json` 的其他配置项。
 
 ---
 
@@ -225,7 +167,7 @@ codebuddy-hud --theme cyberpunk # 直接指定
 codebuddy-hud --theme list      # 仅列出全部主题
 ```
 
-也可以直接在 CodeBuddy Code 会话中描述需求（内置 `hud-config` Skill 可在会话中被触发并写入配置），例如：“把 HUD 主题换成 cyberpunk”。
+也可以在 CodeBuddy Code 会话中直接描述需求（内置 `hud-config` Skill 会写入配置），例如：“把 HUD 主题换成 cyberpunk”。
 
 `themeMode` 默认 `auto`，结合终端背景信号（如 `COLORFGBG`）自动切换深 / 浅配色，也可强制 `dark` 或 `light`。
 
@@ -233,7 +175,7 @@ codebuddy-hud --theme list      # 仅列出全部主题
 
 ## 配置
 
-可选的。在项目根目录创建 `codebuddy-hud.config.json` 仅对当前项目生效；在 `~/.codebuddy/` 创建同名文件对所有项目生效。优先级：项目 > 用户 > 内置默认。
+可选。在项目根目录创建 `codebuddy-hud.config.json` 仅对当前项目生效；在 `~/.codebuddy/` 创建同名文件对所有项目生效。优先级：项目 > 用户 > 内置默认。下面是完整字段与默认值：
 
 ```json
 {
@@ -269,15 +211,10 @@ codebuddy-hud --theme list      # 仅列出全部主题
 }
 ```
 
-字段说明：
-
-- `theme` / `themeMode`：主题与深浅色模式，见「主题」。
-- `language`：界面语言 `zh` / `en`（默认 `en`；设为其他值时按系统 locale 自动判定）。
-- `defaultEffortLevel`：未捕获到推理强度时的回退档位（默认 `medium`；可选 `low`、`medium`、`high`、`xhigh`、`max`、`ultracode`）。
-- `display.*`：各行片段开关与显示参数，除 `showVersion`（默认 `false`）、`useNerdFonts`（默认 `false`）外各开关均默认 `true`；`maxLines` 控制最大输出行数（默认 `3`）；`progressBarWidth` 控制进度条宽度（默认 `10`）；`toolActivityTailBytes` 控制工具活动尾读字节数（默认 `16384`）；`unicode` 取值 `auto` / `true` / `false`（默认 `auto`，按终端能力探测）。
-- `thresholds`：上下文进度条的警告 / 危险阈值（默认 `0.7` / `0.9`）。
-- `cacheHitThresholds`：缓存命中率的配色分级阈值（默认 `80` / `50`）。
-- `display.maxLines`：结构上限为宿主硬截断的 3 行；设为大于 3 的值不会增加可见行数，建议保持默认。
+- `language`：界面语言 `zh` / `en`（内置默认 `en`；设为其他值时按系统 locale 判定）。
+- `defaultEffortLevel`：未捕获到推理强度时的回退档位，可选 `low`、`medium`、`high`、`xhigh`、`max`、`ultracode`。
+- `thresholds`：上下文进度条的警告 / 危险阈值；`cacheHitThresholds`：缓存命中率配色分级阈值。
+- `display.*`：各片段开关与显示参数。`maxLines` 超过宿主硬截断的 3 行不会多显示，建议保持默认；`toolActivityTailBytes` 是工具活动的尾读字节数；`unicode` 取值 `auto` / `true` / `false`。
 
 ### 环境变量
 
@@ -295,78 +232,42 @@ codebuddy-hud --theme list      # 仅列出全部主题
 | `CODEBUDDY_HUD_FORCE_ASCII` / `CODEBUDDY_HUD_FORCE_UNICODE` | 强制 ASCII / Unicode 字形 |
 | `CODEBUDDY_HUD_NO_GIT_CACHE` | 设为 `1` 绕过 Git 持久化缓存 |
 
+镜像与 Fork 相关变量的用法见 [docs/install-advanced_zh.md](docs/install-advanced_zh.md)。
+
 ---
 
 ## 命令行参考
 
 | 命令 | 说明 |
 | :--- | :--- |
-| `--setup [--theme <name>]` | 将 `statusLine` 写入 `settings.json`、生成 Windows `.cmd` shim 并挂载 `hud-config` 技能（TTY 终端自动唤起交互主题选择器，也可带 `--theme <name>` 直接指定；源码本地安装使用；PATH 注册由一键安装脚本完成） |
+| `--setup [--theme <name>]` | 将 `statusLine` 写入 `settings.json`、生成 Windows `.cmd` shim 并挂载 `hud-config` 技能（TTY 下自动唤起交互主题选择器，也可带 `--theme <name>` 直接指定；供源码本地安装使用，PATH 注册由一键安装脚本完成） |
 | `--status` | 以演示数据渲染一次看板并退出 |
 | `--theme [name\|list]` | 交互式主题选择器；`list` 列出主题；带名称时直接切换 |
-| `--doctor` / `-d` `[--json]` | 输出环境诊断报告（支持 `--json` 输出结构化数据） |
-| `--update` | 检查最新 Release 并在落后时后台下载 bootstrap 完成自举升级（不自动触发，需用户主动调用） |
-| `--uninstall` | 卸载并在当前 `statusLine` 仍指向本 HUD 时从备份还原配置，彻底清理已挂载技能与 PATH 注册 |
+| `--doctor` / `-d` `[--json]` | 输出环境诊断报告（`--json` 输出结构化数据） |
+| `--update` | 检查最新 Release 并在落后时下载 bootstrap 完成自举升级（仅用户主动调用） |
+| `--uninstall` | 卸载并在当前 `statusLine` 仍指向本 HUD 时从备份还原配置，清理已挂载技能与 PATH 注册 |
 | `--version` / `-v` | 输出当前版本号并退出 |
 | `--help` / `-h` | 输出命令行选项帮助信息并退出 |
 
 ---
 
-## 文件结构
-
-```text
-codebuddy-hud/
-├── runtime/
-│   ├── bin/codebuddy-hud.js      # 入口：stdin payload → ANSI 看板；承载全部 CLI 子命令
-│   ├── renderer.js / renderer/   # 3 行布局组装与分段渲染（format / diff-render / agents-render）
-│   ├── parser.js                 # payload 解析（token / diff / cost）
-│   ├── transcript.js             # 尾读 transcript：本轮工具频次与 usage 聚合
-│   ├── session-stats.js          # /clear 会话重置识别与增量基线
-│   ├── config.js                 # 主题预设、深浅色解析与 deepMerge
-│   ├── theme-selector.js / lang.js          # 交互式换肤与 i18n 字典
-│   ├── doctor.js / statusline-installer.js  # 环境诊断 / 写入宿主配置
-│   ├── uninstall.js / settings-file.js      # 卸载清理 / JSONC 安全写入
-│   ├── update-checker.js                    # --update 版本解析与自举升级
-│   ├── encoding.js / git.js / model-info.js / paths.js / sanitize.js
-│   └── codebuddy-hud.config.json # 内置默认配置模板（主题预设在 config.js）
-├── scripts/                      # install.sh / install.ps1 / bootstrap.js / verify-*.js / run-tests.js
-├── tests/                        # node --test 单元测试与 payload fixtures
-├── docs/                         # 架构与模块深度参考
-└── skills/hud-config/            # CodeBuddy 配置 Skill（会话内触发）
-```
-
----
-
 ## 跨平台说明
 
-- **Windows**：安装时生成 `codebuddy-hud.cmd` shim，烘焙 Node 绝对路径；检测到非 ASCII 路径时自动注入 `@chcp 65001`。终端编码探测结果会被缓存，`CODEBUDDY_HUD_FORCE_ASCII` / `CODEBUDDY_HUD_FORCE_UNICODE` 始终优先于缓存。
-- **Windows 路径限制**：为确保各版本兼容并规避命令行转义限制，建议避免将仓库或运行时安装在含空格或引号等特殊字符的路径中。
-- **ASCII 降级**：终端不支持 Unicode 时自动切换为纯 ASCII 符号（边框、进度条、图标），功能不受影响。
+- **Windows**：`.cmd` shim 烘焙 Node 绝对路径，检测到非 ASCII 路径时自动注入 `@chcp 65001`；建议避免把仓库或运行时放在含空格或引号的路径中。
+- **ASCII 降级**：终端不支持 Unicode 时自动切换为纯 ASCII 符号，功能不受影响。
 - **macOS / Linux**：直接以 `node` 调用入口，无需 shim。
 
 ---
 
 ## 宿主刷新机制与局限说明
 
-许多用户关心：**为什么 ⏱ 耗时不能像秒表一样连续走字？为什么执行长时间工具（如运行脚本、文件检索）时工具活动不实时跳动？**
+**为什么 ⏱ 耗时不能像秒表一样走字？为什么长时间工具执行期间工具活动不实时跳动？** 这是 CodeBuddy Code 宿主的架构契约，并非 HUD 缺陷：
 
-这是由 **CodeBuddy Code 宿主的架构契约** 决定的，并非 HUD 的项目缺陷：
+- 宿主为每次刷新派生一次性子进程，经 stdin 喂入 JSON 并读取 stdout，单次执行有 **5000ms 硬超时**，超时即 kill 并清空状态栏。
+- 宿主没有周期性定时器，仅在 session / result / permission / settings / cost 五类离散事件后以 **300ms 防抖**触发；stdout 捕获上限 10240 个 UTF-16 字符，只取前 3 行。
+- 长时间工具执行、模型流式生成与终端空闲期间，宿主不会触发 statusLine 命令。
 
-1. **短命子进程模型（Spawn & Exit）**：宿主为每次刷新派生一次性子进程，经 stdin 喂入 JSON 并读取 stdout；单次执行设有 **5000ms wall-clock 硬超时**，超时即 kill 并清空状态栏。宿主未采用常驻 Daemon 或 IPC 连接。
-2. **纯被动离散事件驱动**：宿主内部**没有任何周期性定时器（无 `setInterval` 心跳）**，仅在 **session / result / permission / settings / cost** 五类离散事件后以 **300ms 防抖** 触发；stdout 捕获上限为 **10240 个 UTF-16 字符**（先判长度再追加），最终只取前 3 行。
-3. **工具执行与空闲期静默**：在长时间执行只读命令（如 `bash`、`grep`）、模型流式思考/生成中、以及终端空闲等待输入期间，宿主**完全不会触发** statusLine 命令。
-
-> **版本实测**：实测至 CodeBuddy Code **v2.171.0**（2026-10-21 复核）该机制不变。HUD 单次渲染 p50 约 200ms（经 `.cmd` shim 约 0.15–0.32s），并已按上述边界优化。完整宿主契约与故障矩阵见 [docs/architecture_zh.md](docs/architecture_zh.md) §4 与 §7。
-
----
-
-## CI 验证
-
-push 到 master/main、pull request 与每日定时任务会运行 3 OS × Node 18/20/22 矩阵（见顶部 CI 徽章）：
-
-- `npm test` —— 单元测试：解析、渲染、会话状态、配置与安装等全量模块。
-- `npm run verify` —— E2E：payload 渲染、CLI 命令形态与边界场景。
-- `npm run verify:install` —— 隔离宿主下的真实安装 / 卸载流程（CI 直接调用 `node scripts/verify-install.js`）。
+实测至 CodeBuddy Code **v2.171.0**（2026-10-21 复核）该机制不变。HUD 单次渲染 p50 约 200ms（经 `.cmd` shim 约 0.15–0.32s）。完整宿主契约与故障矩阵见 [docs/architecture_zh.md](docs/architecture_zh.md) §4 与 §7。
 
 ---
 
@@ -382,11 +283,14 @@ npm link                                    # 可选：全局 codebuddy-hud 命�
 npm test && npm run verify && npm run verify:install   # 全量验证
 ```
 
+CI 会在 push 到 master/main、PR 与每日定时任务时运行 3 OS × Node 18/20/22 矩阵：`npm test`（单元测试）、`npm run verify`（E2E：payload 渲染、CLI 形态与边界场景）、`npm run verify:install`（隔离宿主下的真实安装 / 卸载，CI 直接调用 `node scripts/verify-install.js`）。
+
 参考文档：
 
-- [AGENTS.md](AGENTS.md) — 开发硬约束、避坑指南与提交验证闭环。
+- [AGENTS.md](AGENTS.md) — 开发硬约束、避坑指南与提交验证闭环（含源码目录结构）。
 - [docs/architecture_zh.md](docs/architecture_zh.md) — 系统架构与数据流（英文版：[architecture.md](docs/architecture.md)）。
 - [docs/module-reference.md](docs/module-reference.md) — 模块接口与落盘状态参考。
+- [docs/install-advanced_zh.md](docs/install-advanced_zh.md) — 镜像、本地与 Fork 安装。
 - [CHANGELOG.md](CHANGELOG.md) — 版本变更记录。
 
 ---

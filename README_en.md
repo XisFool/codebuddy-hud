@@ -36,7 +36,7 @@ Context Token 249k/1M [###-------] 25%  |  out 1.1k  |  cache 96.8%
 [D] +1.7k -161  |  82.04 credits  |  [t] 2h47m  |  [A] Edit: parser.js  [T] Read ×3  [T] Grep ×2
 ```
 
-> Force either form with `CODEBUDDY_HUD_FORCE_ASCII=1` / `CODEBUDDY_HUD_FORCE_UNICODE=1`; see "Diagnostics" for garbled-output troubleshooting.
+> Force either form with `CODEBUDDY_HUD_FORCE_ASCII=1` / `CODEBUDDY_HUD_FORCE_UNICODE=1`; see "Diagnose" for garbled-output troubleshooting.
 
 ### Layout breakdown
 
@@ -44,7 +44,7 @@ Context Token 249k/1M [###-------] 25%  |  out 1.1k  |  cache 96.8%
 - **Line 2 (resources)**: current context input usage, context window bar and percentage (numerator aligned with the host's `used_percentage`), output tokens and recent prompt cache hit rate (sliding window aggregation); after compact, stale host data is marked as waiting for a fresh usage report.
 - **Line 3 (session activity)**: diff stats `Δ +N -M` (falls back to `[D]` on ASCII terminals), actual session spend (credits, falling back to `$USD` when unavailable), session duration, current AI action, and completed tool-call counts (up to 3). Δ / credits / ⏱ are session-baseline totals (reset only by `/clear`), while tool counts are scanned from the current turn's transcript.
 
-3 lines is a hard cap, aligned with CodeBuddy Code host limits (verified up to latest v2.171.0+ to truncate stdout at the first three lines); data-less lines are omitted entirely, while an empty individual field shows a `--` placeholder per contract (e.g. `cache --`).
+3 lines is a hard cap, aligned with CodeBuddy Code host limits (verified up to v2.171.0+ to truncate stdout at the first three lines); data-less lines are omitted entirely, while an empty individual field shows a `--` placeholder (e.g. `cache --`).
 
 ---
 
@@ -70,77 +70,23 @@ powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.c
 curl -fsSL https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.sh | bash
 ```
 
-> **Why not a single plugin install command?** The plugin manifest (`.codebuddy-plugin/plugin.json`) only declares metadata — it does not download runtime files, nor does it write `statusLine` into `settings.json` (the host plugin manifest schema has no statusLine field). The installer script handles three things: placing the runtime at `~/.codebuddy/codebuddy-hud-runtime/` (core code in the `runtime/` subdirectory), configuring `statusLine.command`, and auto-mounting the `hud-config` skill to `~/.codebuddy/skills/hud-config/`.
+> **Why not a single plugin install command?** The plugin manifest (`.codebuddy-plugin/plugin.json`) only declares metadata — it does not download runtime files, nor does it write `statusLine` into `settings.json` (the host manifest schema has no such field). The installer script does both.
 
 The installer:
 
-1. Resolves the latest release `tag_name` via 302 redirect (no API rate limit) or REST API (supports `GITHUB_TOKEN` auth), pinning the runtime to that release (the installer script itself still fetches `bootstrap.js` from master; the runtime never uses a moving branch). Runtime file downloads attempt up to 3 times with exponential backoff (1s, 2s).
-2. Downloads the runtime to `~/.codebuddy/codebuddy-hud-runtime/`.
+1. Resolves the latest release `tag_name` and pins the runtime to that release (downloads retry up to 3 times with 1s, 2s backoff; `bootstrap.js` itself is still fetched from master).
+2. Deploys the runtime to `~/.codebuddy/codebuddy-hud-runtime/` (core code in the `runtime/` subdirectory).
 3. Backs up and writes `statusLine.command` into `~/.codebuddy/settings.json`; on Windows, also generates a `.cmd` shim with the Node absolute path baked in (PATH-independent).
-4. Automatically registers PATH: on Windows, appends the runtime bin directory to user-level registry PATH and refreshes the current session; on macOS/Linux, symlinks into `~/.local/bin` if it is present in PATH (skip via `CODEBUDDY_HUD_NO_PATH=1`).
-5. Automatically mounts skills: mounts the built-in `hud-config` skill into `~/.codebuddy/skills/hud-config` (Junction on Windows, symlink on POSIX, directory copy fallback), enabling in-session natural language theme switching and display customization without manual setup.
+4. Registers PATH: on Windows, appends to the user-level registry PATH; on macOS/Linux, symlinks into `~/.local/bin` if it is in PATH. Skip with `CODEBUDDY_HUD_NO_PATH=1`.
+5. Mounts the `hud-config` skill at `~/.codebuddy/skills/hud-config/` (Junction on Windows, symlink on POSIX, falling back to a copy), so you can switch themes and customize the display in natural language inside a session.
 
 **Idempotent** — re-run the same command anytime to repair drift, upgrade, or clean stale files left by older versions.
 
-**Updating** — after installation, `codebuddy-hud --update` checks the latest release and upgrades in one step (re-running the install command also works). Update awareness is strictly user-initiated: the render path never touches the network, runs no background checks, and shows no status bar hints.
+**Updating** — `codebuddy-hud --update` checks the latest release and upgrades in one step (re-running the install command also works). Updates are strictly user-initiated; the render path never touches the network.
 
-**Trigger**: restart CodeBuddy Code after installation and send any message. The host debounces ~300ms after session events before refreshing; idle sessions render nothing, so an empty bottom line right after opening a session is expected.
+**Trigger**: restart CodeBuddy Code after installation and send any message. The host debounces ~300ms after session events before refreshing, and idle sessions render nothing, so an empty bottom line right after opening a session is expected.
 
-### China Mirror Accelerated Install
-
-If direct GitHub connections are slow or unreliable, point `CODEBUDDY_HUD_MIRROR` at a mirror domain. Install scripts, `bootstrap.js` and `--update` all prefix every GitHub URL they request with it: `raw.githubusercontent.com` (runtime files), `github.com/releases/latest` (release-tag lookup) and `api.github.com` (lookup fallback). The format is `https://mirror-domain/original-GitHub-URL`.
-
-**Windows (PowerShell)**
-
-```powershell
-$env:CODEBUDDY_HUD_MIRROR='https://your-mirror'
-irm "$env:CODEBUDDY_HUD_MIRROR/https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.ps1" | iex
-```
-
-**macOS / Linux (Bash)**
-
-```bash
-export CODEBUDDY_HUD_MIRROR=https://your-mirror
-curl -fsSL "$CODEBUDDY_HUD_MIRROR/https://raw.githubusercontent.com/XisFool/codebuddy-hud/master/scripts/install.sh" | bash
-```
-
-> The mirror prefix appears twice: the first one is requested by your own shell (the install script does not exist yet, so nothing can prefix it for you); everything after that — runtime downloads and the release-tag lookup — is prefixed by the script itself. Release-tag lookup and API fallback fall back to direct requests if unmirrored; runtime files are always downloaded via the mirror. Therefore, a mirror that only proxies `raw.githubusercontent.com` must also pin the download source via `CODEBUDDY_HUD_VERSION` (or `CODEBUDDY_HUD_RAW_BASE`) to complete; otherwise tag resolution still needs github.com / api.github.com. This repository does not endorse any particular public proxy; pick one you trust.
-
-### Git Clone Local Install (Zero Network Risk)
-
-```bash
-git clone https://github.com/XisFool/codebuddy-hud.git   # or via a mirror: git clone https://your-mirror/https://github.com/XisFool/codebuddy-hud.git
-cd codebuddy-hud
-node scripts/bootstrap.js
-```
-
-Local install mode copies files directly from the repository — zero remote HTTP requests during installation. Note: running `node scripts/bootstrap.js` directly only configures the CodeBuddy host and does not modify the system PATH. For global CLI access, run `npm link`, invoke via the absolute path, or use the one-command installer above.
-
-### Fork / Mirror Install (Advanced)
-
-**macOS / Linux**:
-
-```bash
-export CODEBUDDY_HUD_BOOTSTRAP_URL=https://your-mirror/scripts/bootstrap.js
-export CODEBUDDY_HUD_RAW_BASE=https://your-mirror/codebuddy-hud/vX.Y.Z
-curl -fsSL https://your-mirror/scripts/install.sh | bash
-```
-
-**Windows (PowerShell)**:
-
-```powershell
-$env:CODEBUDDY_HUD_BOOTSTRAP_URL = 'https://your-mirror/scripts/bootstrap.js'
-$env:CODEBUDDY_HUD_RAW_BASE = 'https://your-mirror/codebuddy-hud/vX.Y.Z'
-irm https://your-mirror/scripts/install.ps1 | iex
-```
-
-Notes:
-
-- `CODEBUDDY_HUD_MIRROR` — just the mirror domain (e.g., `https://your-mirror`); both install scripts and bootstrap.js use it to prefix every GitHub URL they request (runtime downloads, release-tag lookup, and API fallback). Release-tag lookup and API fallback fall back to direct requests if unmirrored; runtime files are always downloaded via the mirror. The first hop (downloading the install script itself) is requested by your own shell, so the command must still spell the prefix out.
-- `CODEBUDDY_HUD_BOOTSTRAP_URL` — used by the install script to download `bootstrap.js`; must point directly to `scripts/bootstrap.js` on your mirror, not the mirror root.
-- `CODEBUDDY_HUD_RAW_BASE` — used by `bootstrap.js` to fetch runtime files. **Setting this skips the GitHub Latest Release lookup**, so the example pins a tag path (`vX.Y.Z`) to keep the runtime on an immutable release; the installer script itself still fetches bootstrap.js from master.
-- `GITHUB_TOKEN` / `GH_TOKEN` — optional; passes authentication only to direct `api.github.com` requests (never forwarded to mirrors), raising the rate limit from 60/h to 5000/h.
-- Under Bash, environment variables must be exported (so child `bash` processes inherit them), not just prepended to `curl`.
+**Restricted network, offline, or self-hosted release source**: see [docs/install-advanced.md](docs/install-advanced.md) for mirror acceleration, git-clone local install, and fork installs.
 
 ---
 
@@ -161,7 +107,7 @@ Get-Content "$env:USERPROFILE\.codebuddy\settings.json"
 & "$env:USERPROFILE\.codebuddy\codebuddy-hud-runtime\runtime\bin\codebuddy-hud.cmd" --status
 ```
 
-> Below, `codebuddy-hud` is shorthand for the entry point: one-command installs now automatically register PATH (Windows user registry, macOS/Linux symlinked to `~/.local/bin`; if it doesn't take effect ensure `~/.local/bin` is in PATH or use the full paths above), or set `CODEBUDDY_HUD_NO_PATH=1` to skip auto-registration.
+> Below, `codebuddy-hud` is shorthand for the entry point: the one-command install registers PATH automatically; if that did not take effect, make sure `~/.local/bin` is in PATH or use the full paths above.
 
 The following are normal degradations, not install failures:
 
@@ -176,13 +122,11 @@ The following are normal degradations, not install failures:
 codebuddy-hud --doctor   # checks Node, settings.json and statusLine target, terminal encoding, Git, transcript access
 ```
 
-Common issues and fixes:
-
 | Symptom | Fix |
 | :--- | :--- |
 | No HUD at the bottom | Send any message to trigger a refresh; if it still fails, run `--doctor` to check the configured target |
-| ⏱ Duration or tool activity doesn't tick in real time | Normal behavior. The host has no periodic heartbeat and only triggers ~300ms after sessions / results / permission / settings / cost events (see "Host Refresh Mechanism & Constraints") |
-| Garbled or box characters | Run `chcp 65001` to switch to UTF-8; if still incompatible set `CODEBUDDY_HUD_FORCE_ASCII=1` for plain ASCII symbols, or `CODEBUDDY_HUD_FORCE_UNICODE=1` to force Unicode |
+| ⏱ Duration or tool activity doesn't tick in real time | Normal behavior — see "Host Refresh Mechanism & Constraints" |
+| Garbled or box characters | Run `chcp 65001` to switch to UTF-8; if still incompatible set `CODEBUDDY_HUD_FORCE_ASCII=1`, or `CODEBUDDY_HUD_FORCE_UNICODE=1` to force Unicode |
 | `cache --` / no spend data | Normal degradation when telemetry fields are unavailable — see "Verify" |
 | Δ / duration behavior after `/clear` | The host switches to a new transcript; the HUD rebuilds its baseline and resets Δ / duration, taking effect on the next message |
 | Inspecting low-level errors | Check `~/.codebuddy/codebuddy-hud-error.log` (auto-rotates past 1MB) |
@@ -197,11 +141,9 @@ codebuddy-hud --uninstall
 
 The uninstaller:
 
-1. Restores the `statusLine` from the original backup taken at install time only while the current `statusLine` still points at this HUD; if the command recorded in the backup itself points to codebuddy-hud (e.g. an earlier install copy), the `statusLine` entry is removed instead. Replacements or removals made by the user after installation are preserved.
-2. Removes the Windows `.cmd` shim.
-3. Cleans HUD-owned cache and state files (encoding cache, Git cache, usage checkpoints, session stats, credit state, update status).
-4. Cleans up deployed or mounted `~/.codebuddy/skills/hud-config/` skill directories and symlinks.
-5. Cleans up PATH registration and symlinks: removes the runtime bin directory from the Windows user registry PATH, and unlinks `~/.local/bin/codebuddy-hud` on macOS/Linux (automatically skipped when `CODEBUDDY_HOME` is set).
+- Restores the `statusLine` from the backup taken at install time, only while the current `statusLine` still points at this HUD; if the command in the backup itself points to codebuddy-hud, the `statusLine` entry is removed instead. Replacements or removals you made after installation are preserved.
+- Removes the Windows `.cmd` shim, HUD-owned cache and state files, and the mounted `hud-config` skill directory or symlink.
+- Cleans up PATH registration: removes the runtime bin directory from the Windows user registry PATH, and unlinks `~/.local/bin/codebuddy-hud` on macOS/Linux (skipped automatically when `CODEBUDDY_HOME` is set).
 
 Your theme config (`codebuddy-hud.config.json`) and the installed runtime directory (`~/.codebuddy/codebuddy-hud-runtime/`) are preserved — delete them manually if desired. Nothing else in `settings.json` is touched.
 
@@ -225,7 +167,7 @@ codebuddy-hud --theme cyberpunk # Set directly
 codebuddy-hud --theme list      # List all themes
 ```
 
-You can also just describe the change inside a CodeBuddy Code session (the bundled `hud-config` Skill can be triggered to write the config), e.g. "switch the HUD theme to cyberpunk".
+You can also describe the change inside a CodeBuddy Code session (the bundled `hud-config` Skill writes the config), e.g. "switch the HUD theme to cyberpunk".
 
 `themeMode` defaults to `auto`, combining terminal background signals (e.g. `COLORFGBG`) to pick dark/light; it can be forced to `dark` or `light`.
 
@@ -233,7 +175,7 @@ You can also just describe the change inside a CodeBuddy Code session (the bundl
 
 ## Configuration
 
-Optional. Create `codebuddy-hud.config.json` at the project root to affect only that project, or in `~/.codebuddy/` to apply to all projects. Priority: project > user > built-in defaults.
+Optional. Create `codebuddy-hud.config.json` at the project root to affect only that project, or in `~/.codebuddy/` to apply to all projects. Priority: project > user > built-in defaults. The block below lists every field with its default:
 
 ```json
 {
@@ -269,15 +211,10 @@ Optional. Create `codebuddy-hud.config.json` at the project root to affect only 
 }
 ```
 
-Fields:
-
-- `theme` / `themeMode`: theme and dark/light mode — see "Themes".
 - `language`: UI language, `zh` or `en` (default `en`; any other value auto-detects from the system locale).
-- `defaultEffortLevel`: fallback reasoning effort when none is captured (default `medium`; options: `low`, `medium`, `high`, `xhigh`, `max`, `ultracode`).
-- `display.*`: per-segment switches and display parameters, all default `true` except `showVersion` (default `false`) and `useNerdFonts` (default `false`); `maxLines` controls maximum output lines (default `3`); `progressBarWidth` controls progress bar character width (default `10`); `toolActivityTailBytes` controls reverse scan byte budget for tool activities (default `16384`); `unicode` accepts `auto` / `true` / `false` (default `auto`, probes terminal capability).
-- `thresholds`: warning/critical thresholds for the context bar (defaults `0.7` / `0.9`).
-- `cacheHitThresholds`: color-grading thresholds for cache hit rate (defaults `80` / `50`).
-- `display.maxLines`: the host hard-truncates output at 3 lines; values above 3 do not make extra lines visible, so keep the default.
+- `defaultEffortLevel`: fallback reasoning effort when none is captured; options: `low`, `medium`, `high`, `xhigh`, `max`, `ultracode`.
+- `thresholds`: warning/critical thresholds for the context bar; `cacheHitThresholds`: color-grading thresholds for cache hit rate.
+- `display.*`: per-segment switches and display parameters. The host hard-truncates output at 3 lines, so a `maxLines` above 3 shows nothing extra — keep the default; `toolActivityTailBytes` is the reverse-scan byte budget for tool activity; `unicode` accepts `auto` / `true` / `false`.
 
 ### Environment variables
 
@@ -295,78 +232,42 @@ Fields:
 | `CODEBUDDY_HUD_FORCE_ASCII` / `CODEBUDDY_HUD_FORCE_UNICODE` | Forces ASCII / Unicode glyphs |
 | `CODEBUDDY_HUD_NO_GIT_CACHE` | Set to `1` to bypass the persistent Git cache |
 
+Usage of the mirror and fork variables is covered in [docs/install-advanced.md](docs/install-advanced.md).
+
 ---
 
 ## CLI reference
 
 | Command | Description |
 | :--- | :--- |
-| `--setup [--theme <name>]` | Write `statusLine` into `settings.json`, generate the Windows `.cmd` shim, and deploy the `hud-config` skill (interactive theme picker opens in TTY, or pass `--theme <name>` to skip; for source checkouts; PATH registration is handled by the one-command install scripts) |
+| `--setup [--theme <name>]` | Write `statusLine` into `settings.json`, generate the Windows `.cmd` shim, and deploy the `hud-config` skill (interactive theme picker opens in TTY, or pass `--theme <name>` to skip; for source checkouts — PATH registration is handled by the one-command install scripts) |
 | `--status` | Render the HUD once from demo data and exit |
 | `--theme [name\|list]` | Interactive theme picker; `list` prints themes; a name switches directly |
-| `--doctor` / `-d` `[--json]` | Print the environment diagnostic report (supports `--json` for machine consumption) |
-| `--update` | Check the latest release and, when outdated, download bootstrap in the background to self-upgrade (never automatic; user-invoked only) |
-| `--uninstall` | Uninstall and restore config from backup while the current `statusLine` still points at this HUD, cleanly removing deployed skills and PATH registration |
+| `--doctor` / `-d` `[--json]` | Print the environment diagnostic report (`--json` for machine consumption) |
+| `--update` | Check the latest release and, when outdated, download bootstrap to self-upgrade (user-invoked only) |
+| `--uninstall` | Uninstall and restore config from backup while the current `statusLine` still points at this HUD, removing deployed skills and PATH registration |
 | `--version` / `-v` | Print current version and exit |
 | `--help` / `-h` | Print CLI command options and exit |
 
 ---
 
-## File structure
-
-```text
-codebuddy-hud/
-├── runtime/
-│   ├── bin/codebuddy-hud.js      # Entry: stdin payload → ANSI HUD; hosts all CLI subcommands
-│   ├── renderer.js / renderer/   # 3-line layout assembly and segment rendering (format / diff-render / agents-render)
-│   ├── parser.js                 # Payload parsing (token / diff / cost)
-│   ├── transcript.js             # Tail-reads the transcript: turn tool counts + usage aggregation
-│   ├── session-stats.js          # /clear reset detection and incremental baselines
-│   ├── config.js                 # Theme presets, dark/light resolution, deepMerge
-│   ├── theme-selector.js / lang.js          # Interactive theme picker and i18n dictionary
-│   ├── doctor.js / statusline-installer.js  # Environment diagnostics / host config writer
-│   ├── uninstall.js / settings-file.js      # Uninstall cleanup / safe JSONC writes
-│   ├── update-checker.js                    # --update version resolution and self-upgrade
-│   ├── encoding.js / git.js / model-info.js / paths.js / sanitize.js
-│   └── codebuddy-hud.config.json # Built-in default config (theme presets live in config.js)
-├── scripts/                      # install.sh / install.ps1 / bootstrap.js / verify-*.js / run-tests.js
-├── tests/                        # node --test unit tests and payload fixtures
-├── docs/                         # Architecture and module deep references
-└── skills/hud-config/            # Bundled CodeBuddy configuration Skill
-```
-
----
-
 ## Cross-platform notes
 
-- **Windows**: the installer generates a `codebuddy-hud.cmd` shim with the Node absolute path baked in; it injects `@chcp 65001` when a non-ASCII path is detected. Terminal encoding probes are cached, and `CODEBUDDY_HUD_FORCE_ASCII` / `CODEBUDDY_HUD_FORCE_UNICODE` always override the cache.
-- **Windows path limitation**: to ensure cross-version compatibility and avoid shell escaping limits, avoid placing the repo or runtime in directories containing spaces or quotes.
-- **ASCII fallback**: when the terminal does not support Unicode, the HUD switches to plain ASCII symbols (borders, bars, icons) with no loss of functionality.
+- **Windows**: the `.cmd` shim bakes in the Node absolute path and injects `@chcp 65001` when a non-ASCII path is detected; avoid placing the repo or runtime in directories containing spaces or quotes.
+- **ASCII fallback**: when the terminal does not support Unicode, the HUD switches to plain ASCII symbols with no loss of functionality.
 - **macOS / Linux**: invoke the entry directly with `node`; no shim is needed.
 
 ---
 
 ## Host Refresh Mechanism & Constraints
 
-A common question is: **Why doesn't the ⏱ duration tick continuously like a stopwatch? Why doesn't tool activity update in real time during long-running commands (e.g. scripts, searches)?**
+**Why doesn't the ⏱ duration tick like a stopwatch, and why doesn't tool activity update in real time during long-running commands?** This is the architectural contract of CodeBuddy Code, not a HUD bug:
 
-This is determined by the **architectural contract of CodeBuddy Code**, not a bug in HUD:
+- The host spawns a one-off child process per refresh, pipes JSON via stdin, and captures stdout, with a **5000ms wall-clock hard timeout** that kills the process and clears the statusLine.
+- The host has no periodic timers; it invokes the statusLine only after **session / result / permission / settings / cost** events, with a **300ms debounce**. stdout capture is capped at 10240 UTF-16 characters and only the first 3 lines are kept.
+- During long-running tools, streaming generation, and idle input waiting, the host never triggers the statusLine command.
 
-1. **Short-lived child process model (Spawn & Exit)**: The host spawns a one-off child process per refresh, pipes JSON via stdin, and captures stdout (with a **5000ms wall-clock hard timeout** that kills the process and clears the statusLine). The host does not maintain a persistent daemon or IPC connection.
-2. **Purely passive discrete event-driven**: The host contains **no periodic timers (no `setInterval` heartbeats)** and invokes the statusLine only ~**300ms** after **session / result / permission / settings / cost** events; stdout capture is capped at **10240 UTF-16 characters** (length checked before appending) and only the first 3 lines are retained.
-3. **Silence during tool execution and idle**: During long-running read-only tools (e.g. `bash`, `grep`), streaming generation/thinking, or idle input waiting, the host **never triggers** the statusLine command.
-
-> **Host Version Note**: Verified up to CodeBuddy Code **v2.171.0** (re-verified 2026-10-21), this mechanism remains unchanged. HUD rendering is ~200ms p50 (0.15–0.32s through the `.cmd` shim) and is optimized to these boundaries. See [docs/architecture.md](docs/architecture.md) §4 and §7 for the full host contract and failure matrix.
-
----
-
-## Verified by CI
-
-Pushes to master/main, pull requests, and the daily schedule run the 3 OS × Node 18/20/22 matrix (see the CI badge above):
-
-- `npm test` — unit tests across parsing, rendering, session state, config, and installation modules.
-- `npm run verify` — E2E: payload rendering, CLI command shapes, edge cases.
-- `npm run verify:install` — real install/uninstall flow in an isolated host (CI invokes `node scripts/verify-install.js` directly).
+Verified up to CodeBuddy Code **v2.171.0** (re-verified 2026-10-21); this mechanism is unchanged. HUD rendering is ~200ms p50 (0.15–0.32s through the `.cmd` shim). See [docs/architecture.md](docs/architecture.md) §4 and §7 for the full host contract and failure matrix.
 
 ---
 
@@ -382,11 +283,14 @@ npm link                                    # Optional: global codebuddy-hud com
 npm test && npm run verify && npm run verify:install   # Full verification
 ```
 
+CI runs the 3 OS × Node 18/20/22 matrix on pushes to master/main, pull requests, and the daily schedule: `npm test` (unit tests), `npm run verify` (E2E: payload rendering, CLI command shapes, edge cases), and `npm run verify:install` (real install/uninstall in an isolated host; CI invokes `node scripts/verify-install.js` directly).
+
 References:
 
-- [AGENTS.md](AGENTS.md) — development constraints, pitfalls, and the commit verification loop.
+- [AGENTS.md](AGENTS.md) — development constraints, pitfalls, and the commit verification loop (includes the source layout).
 - [docs/architecture.md](docs/architecture.md) — system architecture and data flow (Chinese: [architecture_zh.md](docs/architecture_zh.md)).
 - [docs/module-reference.md](docs/module-reference.md) — module interfaces and persisted state.
+- [docs/install-advanced.md](docs/install-advanced.md) — mirror, local, and fork installs.
 - [CHANGELOG.md](CHANGELOG.md) — release history.
 
 ---

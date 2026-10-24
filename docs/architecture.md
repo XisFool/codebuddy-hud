@@ -155,75 +155,25 @@ sequenceDiagram
 
 ## 5. Core Subsystems & Algorithms
 
+> This section explains only why each subsystem is designed the way it is; signatures, constants, predicates and state-file schemas live solely in the matching [module-reference.md](module-reference.md) sections.
+
 ### 5.1 Sliding-Window Telemetry Scanner (`transcript.js`)
-- **Problem**: Prompt Cache hits, actual Credits, and active tools exist exclusively within `transcript.jsonl`, which can grow to dozens of megabytes in long sessions.
-- **Algorithm**:
-  1. **Tail-Only Reverse Scan**: `getTurnMetricsAndActivity()` aggregates turn usage and tool events in a single backward pass (16KB default window, 256KB upper bound; 40-line general budget, 200-line turn budget). Cumulative Credits uses forward checkpoint scanning.
-  2. **Straddle Reconstruction**: Slices spanning window boundaries are reassembled across sequential chunk reads.
-  3. **Turn Boundary Truncation**: Scanning halts when encountering the latest `role: 'user'`, isolating telemetry to the **current conversational turn** within the 200-line / 256KiB budget; when a turn outgrows this scan budget before reaching a user boundary, the window naturally bounds to recent calls and adapts metrics to **recent invocations hit rate** (`sum(hitTokens) / sum(promptTokens)`).
-  4. **Priority Resolution**:
-     ```
-     With valid rawUsage.prompt_tokens:
-       prompt_cache_hit_tokens -> prompt_tokens_details.cached_tokens -> cached_tokens -> 0
-     Otherwise, with valid usage.inputTokens:
-       sum(usage.inputTokensDetails[].cached_tokens)
-     ```
-  5. **Context Freshness & Dual Telemetry Matching (`contextStatus`)**:
-     - **Parent-Chain Traversal (`createContextTracker`)**: Traces backwards along `parentId` links. A completed compact summary (`isCompacted: true` and either `isSummary: true` or `isCompactInternal: true`) marks status `stale`.
-     - **Dual Telemetry Matching (`resolveReportedInputs`)**: For providers (e.g. DeepSeek) where miss is treated as creation and host `input_tokens` is deducted down to 0, matches against either the reconstructed total (`input + cacheRead + cacheCreation`) or raw `input_tokens`. Fresh requires `!sawUsage`, finite non-negative input/output, and `reportedOutput === output`.
-     - **Fallback Tail Window (`getCompactContextStatus`)**: Compares append ordering within bounded tail chunks when boundary parent links are omitted by the host.
+Prompt Cache hits, actual Credits and the tool-call sequence exist only in `transcript.jsonl`, which can reach dozens of megabytes, so only the file tail is read: one backward pass aggregates turn usage and tool activity, reassembles lines that straddle chunk boundaries, and stops at the latest `role: 'user'` so metrics describe the **current turn**; when a turn outgrows the scan budget the window simply stops at the most recent calls and the metric becomes the **recent-invocations hit rate** (`sum(hitTokens) / sum(promptTokens)`). Cumulative Credits uses a separate forward incremental scan (§5.4). Context freshness (`contextStatus`: `fresh`/`stale`/`unknown`) detects the window after `/compact` in which the host still reports old usage, and tolerates providers (e.g. DeepSeek) that count a miss as creation so the host deducts input down to 0. Budget constants, field priority and `createContextTracker` / `resolveReportedInputs` / `getCompactContextStatus` are in [module-reference.md §10](module-reference.md#10-runtimetranscriptjs--逆向滑窗遥测与-checkpoint-状态机).
 
 ### 5.2 Git Branch & Status Non-Blocking Probing (`git.js`)
-- **Direct HEAD Zero-Spawn**: Reads `.git/HEAD` directly via synchronous `fs.readFileSync` to resolve current branch or 7-character detached commit (historical measurement: <0.1ms) without spawning processes.
-- **Direct execFileSync Without Shell**: When dirty status is needed, executes `execFileSync('git', ['status', '--porcelain', '-b'], ...)` directly without cmd.exe/sh shell wrappers (historical Windows measurement: ~33ms saved per frame), with 200ms hard timeout, `windowsHide: true`, and `GIT_OPTIONAL_LOCKS: '0'`.
-- **Tiered Cache & Failure Debouncing**: Positive cache lasts 10 seconds; if HEAD is readable but `git status` fails, `dirty: null` is returned; a 60-second negative cache is recorded only when no HEAD fallback exists; non-repo directories use only a 5-second in-process negative cache. Exact predicates and `CODEBUDDY_HUD_NO_GIT_CACHE` semantics are in [module-reference.md §12](module-reference.md#12-runtimegitjs--git-分支与状态探测器).
-- **Lazy Loading**: `child_process` is required only when git probing is actually executed on cache misses, saving module evaluation cost on normal frames.
+The goal is that no frame pays subprocess cost for Git: `.git/HEAD` is read directly with zero spawns, a shell-free `git status` with a short timeout runs only when dirty state is needed, tiered positive/negative caches stop failures and non-repo directories from respawning, and `child_process` is lazy-loaded. Exact timeouts, TTLs and `CODEBUDDY_HUD_NO_GIT_CACHE` semantics are in [module-reference.md §12](module-reference.md#12-runtimegitjs--git-分支与状态探测器).
 
 ### 5.3 Session Baseline Tracking & `/clear` Detection (`session-stats.js`)
-- **Problem**: When a user executes `/clear`, the host context window resets, but cumulative tokens or added lines in the raw payload may report non-monotonic drops or retain stale session history.
-- **State Machine**:
-  1. Persists logical session baselines in `~/.codebuddy/codebuddy-hud-session-state/<hash>.json`.
-  2. Detects a clear boundary when any of the following holds:
-    - **Cliff drop**: current context occupancy (the restored value shared with Line 2; with `context_window_size`/`used_percentage` present, cache hits/deductions do not move it — without them the raw `input_tokens` is used) drops ≥50% relatively and ≥3000 absolutely;
-    - **Return to initial**: current context occupancy $\le 4096$ with previous $\ge 6000$ (a ≥35% drop);
-     - Cumulative `total_input_tokens` decreases;
-     - A new `session_id` for the same transcript, a physically truncated transcript (file size shrinks), or an explicit host `clear_signal` / `is_clear`;
-     - Lines added/removed or duration counters drop below their stored baselines (the cost baseline then resets to zero).
-  3. Subtracts the established baseline from raw host stats to display accurate turn-relative diffs and elapsed durations.
-  4. **Identity miss = new session**: when `/clear` swaps in a new transcript (or a fresh window renders its first frame) and the identity misses, the current payload cumulative cost is anchored as the new baseline directly, restarting Δ/duration at zero — no cross-identity shared state is involved (the legacy handoff mechanism is retired; leftover `handoff-*.json` files are covered by uninstall's whole-directory cleanup).
+`/clear` resets the host context window, but cumulative lines, duration and tokens in the payload can drop non-monotonically or retain stale history. The HUD therefore persists a session baseline and rebuilds it when a reset signal appears (context cliff / return to initial / cumulative counters regressing / transcript or session switch / explicit clear signal), so Δ and ⏱ reflect only the current session. An identity miss is simply a new session: the current payload cumulative becomes the new baseline with no cross-identity shared state (the legacy handoff mechanism is retired). Predicates, thresholds and the state schema are in [module-reference.md §11](module-reference.md#11-runtimesession-statsjs--会话基线与-clear-重置状态机) and [§15](module-reference.md#15-runtimepathsjs--跨平台路径解析与目录管理).
 
 ### 5.4 Incremental SHA-256 Checkpointing for Credits (`transcript.js`)
-- **Problem**: Recomputing full-session credits on every event repeats parsing of existing records, especially in long transcripts.
-- **Checkpoint Algorithm**:
-  1. Hashes the transcript absolute path with SHA-256 to isolate state: `~/.codebuddy/codebuddy-hud-usage-state/<sha256>.json`.
-  2. Stores checkpoint state (version 5); the full field list and invalidation predicates are in [module-reference.md §15](module-reference.md#15-runtimepathsjs--跨平台路径解析与目录管理).
-  3. Parses appended records from `offset`, retaining small identity/checkpoint verification reads. The chunk loop has a 100ms budget; an incomplete scan saves its progress and returns `complete: false` with no exposed credits total. The renderer hides Credits instead of falling back to payload credits. A partial trailing JSONL record remains uncommitted until complete.
-  4. **Rewrite & Truncation Guard**: `sourceSize` is the file-length baseline. If `file.size < sourceSize` (truncation/rotation), reset `offset = 0` and rebuild the checkpoint. If `size === sourceSize` but mtime/ctime or `sourceContentHash` changed, treat it as an in-place rewrite and rebuild as well.
+Re-scanning a long JSONL on every event would re-parse existing spend records, so state is isolated by SHA-256 of the transcript absolute path and only appended records are parsed from `offset`; size, mtime/ctime and content hash detect truncation, rotation and in-place rewrites, which trigger a full rebuild. The scan has a 100ms budget: an incomplete scan saves progress and returns `complete: false`, and the renderer **hides** Credits rather than falling back to payload values (truthful telemetry, §1); a partially written trailing line waits for the next run. Budget, invalidation predicates and the version 5 schema are in [module-reference.md §10](module-reference.md#10-runtimetranscriptjs--逆向滑窗遥测与-checkpoint-状态机) and [§15](module-reference.md#15-runtimepathsjs--跨平台路径解析与目录管理).
 
 ### 5.5 Multi-Layer Configuration & Theme Engine (`config.js`)
-- **Precedence Hierarchy** (4 merge layers via `deepMerge` in `loadConfig`, followed by theme resolution):
-  ```
-  Defaults (Built-in DEFAULT_CONFIG)
-    → Bundled Config (runtime/codebuddy-hud.config.json)
-      → Global User Config (~/.codebuddy/codebuddy-hud.config.json)
-        → Project Local Config (<cwd>/codebuddy-hud.config.json)
-          → Theme Resolution (resolveTheme post-processing)
-  ```
-  The first four layers are merged with `deepMerge`; `resolveTheme` is post-processing, not a merge layer. Note: `--theme <name>` is a persistent write operation (saves to user config), not a runtime argument overlay.
-- **Built-in Theme Presets**:
-  - `ocean` (default): Cyan & blue tech theme (dark: `cyan`/`gray`, light: `blue`/`gray`);
-  - `emerald`: Mint green eye-care theme (dark: `121` mint green, light: `green`/`gray`);
-  - `cyberpunk`: Neon pink & cyan (dark: `219` pastel pink + cyan, light: `magenta`/`blue`);
-  - `amber`: Amber gold (both dark & light use standard 16-color high-intensity `gold` `\x1b[93m` with `gray`);
-  - `monochrome`: Minimalist terminal black-and-white (dark: `white`/`gray`, light: `gray`/`gray`).
-- **Security Guard**: `deepMerge()` skips `__proto__` and caps recursion at 64; theme overrides apply only to palette keys, and values must be strict SGR sequences or strings ≤32 chars without C0/C1 controls (non-strings are dropped). Unknown color names render as unstyled text. This blocks terminal injection from project configs. Config files are read directly on each load; the settings effort fallback keeps only a process-local cache, while the transcript effort signal is persisted per transcript hash under the session-state directory (`effort-<sha256>.json`), supporting tail-scan adjudication, cache inheritance, and a bounded cold-start head scan.
+Configuration is merged with `deepMerge` over four layers (built-in defaults → bundled → global user → project local) and then `resolveTheme` post-processes it (post-processing, not a merge layer; `--theme <name>` is a persistent write to user config, not a runtime overlay). Project configs are untrusted, so merging skips `__proto__` and caps recursion depth, theme overrides must be strict SGR sequences or short constrained strings, and unknown color names degrade to unstyled text, blocking terminal injection. The transcript effort signal is persisted per transcript hash so long tasks can adjudicate from a tail scan and have a cold-start fallback. The five presets, validation rules and the effort resolution chain are in [module-reference.md §3](module-reference.md#3-runtimeconfigjs--多层配置合并与主题引擎) and [§8](module-reference.md#8-runtimemodel-infojs--推理强度归一化与额度回退).
 
-### 5.6 3-Line Adaptive Layout & Pruning (`renderer.js`)
-- **Line 1 (Identity & Status)**: Model Display Name (`bold`) · Reasoning Effort Icon · Git Branch & Dirty (`*`) · Workspace Name · Permission Mode (standard 16-color `brightPurple`).
-- **Line 2 (Tokens & Context)**: Current context input/capacity (title `bold`; restores occupancy when host deducts input to 0, arbitrated against `used_percentage` residual to prevent double-counting) · progress bar and percentage · output tokens · recent cache hit badge (solid green at ≥`excellent`, solid yellow at ≥`partial`, dim only for low/zero rates); renders in three states: `fresh` (progress bar and out enabled), `stale` (post-compact waiting, `--` numerator, progress bar and out hidden), and `unknown` (numerator shown, progress bar hidden, "last reported" hint).
-- **Line 3 (Diff & Cost & Latency & Tool Activity)**: `Δ +Added -Removed` · Actual Credits · Total Duration · Current tool activity and turn-aggregated tool badges (`◐ Edit: parser.js`, `✓ Edit ×3`). (Omitted if all are zero).
-
-The host (verified as a hard constant up to v2.171.0) retains only the first three stdout lines. The HUD's own three-line contract is strictly aligned with this truncation limit; tool activity is merged into Line 3 so every key segment stays visible.
+### 5.6 3-Line Adaptive Layout (`renderer.js`)
+The host (verified as a hard constant up to v2.171.0) retains only the first three stdout lines, and the HUD's three-line contract is strictly aligned with it: Line 1 identity & status, Line 2 tokens & context, Line 3 diff / cost / duration with tool activity **merged in**, so every key segment survives truncation; rows with no data are hidden whole and missing fields render as `--`. Line 2 uses three states (`fresh` / `stale` / `unknown`) to express how trustworthy the context data is, so stale numbers are not shown after `/compact`. Per-line fields, layout and tri-state rendering are in [module-reference.md §4](module-reference.md#4-runtimerendererjs--3-行看板装配与布局编排).
 
 ---
 
@@ -264,15 +214,7 @@ The host (verified as a hard constant up to v2.171.0) retains only the first thr
    - When paths contain non-ASCII characters, `resolveShortPath()` resolves Windows 8.3 short paths and prepends `@chcp 65001 >nul` to prevent `cmd.exe` parse crashes.
    - The shim is UTF-8, with `chcp 65001` when needed; UTF-16LE batch files are not supported by the tested cmd.exe invocation.
    - Windows host launcher double-escapes literal quotes across versions. Safe ASCII shim paths are left unquoted; paths requiring quotes retain them and remain subject to the host limitation.
-2. **Terminal UTF-8 Auto-Detection**:
-   - On Windows, directly spawns `spawnSync('chcp.com')` without shell wrappers (300ms hard timeout). Valid results are cached for 1 hour; timeouts or spawn failures gracefully fall back to ASCII and are cached for only 60 seconds (`probeTtlMs: 60000`) to prevent temporary latency spikes from pinning glyph degradation for an hour. `CODEBUDDY_HUD_FORCE_ASCII`/`UNICODE` takes precedence.
-   - Seamlessly falls back to ASCII glyphs (`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`, `[t]`, `[T]`) when UTF-8 / Unicode is unsupported.
-3. **Natural Event Loop Drain**:
-   - Eliminates abrupt `process.exit()` in rendering path. Releases all active `stdin` handles, timer handles, and let libuv naturally exit to prevent stdout buffer truncation.
-4. **Settings Writes & Uninstall Cleanup**:
-   - JSONC parsing preserves string content. Atomic replacement follows valid symlinks and retains existing POSIX permissions and ownership; new settings and first backups default to `0600`. Multiple hard links are rejected rather than silently detached.
-   - Uninstall restores only a non-HUD `statusLine` (a backup whose command mentions `codebuddy-hud` results in the entry being removed instead; restoration happens only while the current `statusLine` still points at this HUD — later user replacements or removals are kept), preserves other settings and user themes, and consumes the backup once parsed — it is retained only when parsing or writing fails.
-   - **Skill Lifecycle Management**: `setup` automatically deploys `skills/hud-config/` to `~/.codebuddy/skills/hud-config/` (Junction on Windows, symlink on POSIX, recursive copy fallback); `uninstall` automatically cleans up the deployed skill directory or symlink.
-   - Uninstall automatically cleans up system PATH registration (removes runtime directory from Windows user registry Path, unlinks `~/.local/bin/codebuddy-hud` on macOS/Linux); automatically skipped in sandbox testing mode (`CODEBUDDY_HOME` set) to protect host environment isolation.
-5. **Verification Isolation**:
-   - Setup/uninstall tests isolate runtime, settings and user state together. `CODEBUDDY_HOME` alone cannot protect the checkout's generated shim.
+2. **Terminal UTF-8 Auto-Detection**: On Windows the code page is probed by spawning `chcp.com` directly without a shell; success and failure use different cache lifetimes so a transient spike cannot pin ASCII degradation for an hour. `CODEBUDDY_HUD_FORCE_ASCII`/`UNICODE` takes precedence. Terminals without UTF-8 fall back to ASCII glyphs (`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`, `[t]`, `[T]`). TTLs and timeouts are in [module-reference.md §13](module-reference.md#13-runtimeencodingjs--终端字符集探测与编码缓存).
+3. **Natural Event Loop Drain**: The rendering path never calls `process.exit()`; it releases stdin and timer handles and lets libuv drain, so stdout buffers are not truncated into half an ANSI sequence. Stdout `EPIPE` is likewise swallowed silently (see §7).
+4. **Settings Writes & Uninstall Cleanup**: Settings writes preserve string content, permissions and symlinks and reject multi-hardlink targets ([§16](module-reference.md#16-runtimesettings-filejs--jsonc-安全解析与配置原子写入)); uninstall restores only a non-HUD `statusLine` and symmetrically cleans the skill deployment, shim, caches and system PATH registration, skipping PATH cleanup in sandbox testing (`CODEBUDDY_HOME` set) ([§20](module-reference.md#20-runtimeuninstalljs--卸载还原与深度清理)); `setup` skill deployment is in [§17](module-reference.md#17-runtimestatusline-installerjs--状态栏注册与-shim-烘焙器).
+5. **Verification Isolation**: Setup/uninstall tests must isolate runtime, settings and user state together; `CODEBUDDY_HOME` alone cannot protect the checkout's generated shim (see [§25](module-reference.md#25-scriptsverify-installjs--隔离宿主生命周期验证)).

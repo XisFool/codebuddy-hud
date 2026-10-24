@@ -157,76 +157,25 @@ sequenceDiagram
 
 ## 5. 核心子系统与底层机制深度解析
 
-### 5.1 逆向滑窗遥测扫描算法 (`transcript.js`)
-- **痛点**：Prompt Cache 真实命中数、实际 Credits 扣费与工具调用序列仅存在于 `transcript.jsonl` 中，长会话下该文件可能达数十 MB。
-- **算法细节**：
-  1. **尾部逆向读取**：`getTurnMetricsAndActivity()` 用一次回扫聚合本轮 usage 和工具活动；默认滑窗 16KB，全扫描上限 256KB（兼具行数硬预算：常规回扫上限 40 行，单轮聚合上限 200 行）。会话 Credits 另用前向增量扫描。
-  2. **跨块断行拼装 (Straddle Reconstruction)**：当滑窗边界切断了单行 JSONL 时，将未完成的前半段暂存并在读取前一块时完成拼装。
-  3. **Turn 轮次边界截断**：从后向前逆向回扫 API usage 记录，直到遇到 `role: 'user'` 时停止，确保在预算内展示的是**当前这一轮交互的聚合命中率**；当单轮交互超窗（超出 200 行 / 256KiB 扫描预算）未触碰用户边界时，滑窗自然截止于最近调用，指标口径自适应为**近期调用命中率**（`sum(hitTokens) / sum(promptTokens)`）。
-  4. **字段优先级判定**：
-     ```
-     rawUsage.prompt_tokens 有效时：
-       prompt_cache_hit_tokens -> prompt_tokens_details.cached_tokens -> cached_tokens -> 0
-     否则，usage.inputTokens 有效时：
-       sum(usage.inputTokensDetails[].cached_tokens)
-     ```
-  5. **上下文新鲜度与双向遥测匹配 (`contextStatus`)**：
-     - **父链逆向回溯 (`createContextTracker`)**：沿消息 `parentId` 链逆向追踪，遇到已完成的 compact 压缩摘要（`isCompacted: true` 且 `isSummary: true` 或 `isCompactInternal: true`）直接置为 `stale`；
-     - **双向遥测匹配 (`resolveReportedInputs`)**：针对 DeepSeek 等服务商将 miss 记为 creation 导致输入被宿主扣减为 0 的场景，比对同时接受还原总占用（`input + cacheRead + cacheCreation`）与未扣减的原始 `input_tokens`（`matchesInput = reportedInput === input || rawReportedInput === input`）；只有同时满足 `!sawUsage`、输入/输出均为有限非负数、`reportedOutput === output` 时才置 `fresh`；
-     - **保守尾窗回退 (`getCompactContextStatus`)**：宿主未在边界保留 parent 关联时，在尾窗内比对 compact 摘要与普通 usage 的位置顺序，若压缩摘要位于最新 usage 之后则标记 `stale`。
+> 本节只讲各子系统「为什么这样设计」；签名、常量、判据、状态文件 schema 一律以 [module-reference.md](module-reference.md) 对应章节为唯一来源。
+
+### 5.1 逆向滑窗遥测扫描 (`transcript.js`)
+Prompt Cache 命中、实际 Credits 与工具调用序列只存在于可达数十 MB 的 `transcript.jsonl`，因此只读文件尾部：单次逆向回扫同时聚合本轮 usage 与工具活动，跨块断行拼装，遇到最近的 `role: 'user'` 即截断，使指标代表**当前这一轮**；单轮超出扫描预算时窗口自然停在最近调用，口径自适应为**近期调用命中率**（`sum(hitTokens) / sum(promptTokens)`）。会话累计 Credits 另走前向增量扫描（见 §5.4）。上下文新鲜度 `contextStatus`（`fresh`/`stale`/`unknown`）用于识别 `/compact` 后宿主仍回传旧 usage 的窗口期，并兼容 DeepSeek 等把 miss 记为 creation、导致宿主输入被扣减为 0 的上报形态。预算常数、字段优先级与 `createContextTracker` / `resolveReportedInputs` / `getCompactContextStatus` 详见 [module-reference.md §10](module-reference.md#10-runtimetranscriptjs--逆向滑窗遥测与-checkpoint-状态机)。
 
 ### 5.2 Git 分支与状态非阻塞探测 (`git.js`)
-- **Direct HEAD 零派生**：优先以同步 `fs.readFileSync` 读取 `.git/HEAD` 直接解析当前分支名或 7 位游离态 commit（历史实测 <0.1ms），免除任何子进程派生。
-- **免 Shell 直连探测**：需要脏状态探测时，直连 `execFileSync('git', ['status', '--porcelain', '-b'], ...)`，不经 cmd.exe/sh 壳进程（Windows 历史实测每帧约省 33ms），硬超时 200ms 并附带 `windowsHide: true` 与 `GIT_OPTIONAL_LOCKS: '0'`。
-- **分级缓存与负缓存**：正缓存 10 秒；HEAD 可读但 `git status` 失败时返回 `dirty: null`；仅无 HEAD 回退时记录 60 秒失败负缓存；非 git 目录仅 5 秒进程内负缓存。精确判据与 `CODEBUDDY_HUD_NO_GIT_CACHE` 语义见 [module-reference.md §12](module-reference.md#12-runtimegitjs--git-分支与状态探测器)。
-- **懒加载防御**：`child_process` 仅在缓存未命中且确需派生 git 探测时才动态加载，普通静态帧节省模块解析开销。
+目标是让每一帧都不为 Git 付出子进程代价：优先直读 `.git/HEAD` 零派生，仅在需要脏状态时免 shell 直连 `git status`（短超时），并以分级正/负缓存防止失败或非仓库目录反复派生；`child_process` 懒加载。精确超时、TTL 与 `CODEBUDDY_HUD_NO_GIT_CACHE` 语义见 [module-reference.md §12](module-reference.md#12-runtimegitjs--git-分支与状态探测器)。
 
-### 5.3 会话基线捕获与 `/clear` 判定机制 (`session-stats.js`)
-- **痛点**：用户在宿主输入 `/clear` 时，上下文窗口被清空，但宿主累积的总 token 或行数可能出现负增量或残留历史数据。
-- **状态机**：
-  1. 在 `~/.codebuddy/codebuddy-hud-session-state/<hash>.json` 记录会话基线。
-  2. 触发判定（任一命中）：
-    - **Cliff Drop**：当前上下文占用（与 Line 2 同源的还原值；有 `context_window_size`/`used_percentage` 时缓存命中/扣除不改变该值，缺失时退回原始 `input_tokens`）相对降幅 ≥50%，且绝对降幅 ≥3000；
-    - **Return to Initial**：当前上下文占用 ≤4096，且此前 ≥6000（相对降幅 ≥35%）；
-     - 累计 `total_input_tokens` 下降；
-     - 同一 transcript 的 `session_id` 变化、transcript 文件物理截断（size 变小），或宿主显式 `clear_signal` / `is_clear`；
-     - 代码增删或耗时计数低于已存基线，此时将 cost 基线归零。
-  3. 识别到重置后自动建立新基线，使看板显示的耗时与变更严格反映当前会话增量。
-  4. **identity miss 即新会话**：`/clear` 切换新 transcript（或新窗口首帧）导致 identity 未命中时，直接以当前 payload 累计为新基线，Δ/⏱ 归零重来，不依赖任何跨 identity 共享状态（旧 handoff 机制已退役；存量 `handoff-*.json` 由 uninstall 整目录清理兜底）。
+### 5.3 会话基线捕获与 `/clear` 判定 (`session-stats.js`)
+`/clear` 会清空上下文窗口，但宿主累计的行数、耗时与 token 可能出现负增量或残留历史，因此 HUD 在状态目录记录会话基线，并在检测到「上下文断崖 / 回到初值 / 累计量倒退 / transcript 或 session 切换 / 显式清除信号」等重置迹象时重建基线，使 Δ 与 ⏱ 严格反映当前会话增量。identity 未命中即视为新会话，直接以当前 payload 累计为新基线，不依赖任何跨 identity 共享状态（旧 handoff 机制已退役）。判定条件、阈值与状态 schema 见 [module-reference.md §11](module-reference.md#11-runtimesession-statsjs--会话基线与-clear-重置状态机) 与 [§15](module-reference.md#15-runtimepathsjs--跨平台路径解析与目录管理)。
 
-### 5.4 增量 SHA-256 Credits Checkpoint 机制 (`transcript.js`)
-- **痛点**：每次事件刷新全量遍历长 JSONL 会重复解析已有消费记录。
-- **增量 Checkpoint 状态机**：
-  1. 基于 transcript 绝对路径 SHA-256 哈希隔离状态文件：`~/.codebuddy/codebuddy-hud-usage-state/<sha256>.json`。
-  2. 状态文件为 version 5，完整字段与失效条件见 [module-reference.md §15](module-reference.md#15-runtimepathsjs--跨平台路径解析与目录管理)。
-  3. 后续从 `offset` 增量解析，并保留少量身份与 checkpoint 校验读取。分块循环预算为 100ms；未完成时保存进度并返回 `complete: false`，不暴露累计 Credits。渲染层隐藏该值，也不回退到 payload Credits。未写完的 JSONL 尾行等待下一次续读。
-  4. **覆写与截断容灾**：以 `sourceSize` 为文件长度基线。若 `file.size < sourceSize`（截断/轮转），重置 `offset = 0` 并重建 Checkpoint；若 `size === sourceSize` 但 mtime/ctime 变化或 `sourceContentHash` 变化，同样判定为原地覆写并重建。
+### 5.4 增量 SHA-256 Credits Checkpoint (`transcript.js`)
+每次事件都全量重扫长 JSONL 会重复解析已有消费记录，因此以 transcript 绝对路径的 SHA-256 隔离状态文件，仅从 `offset` 增量解析，并以大小、mtime/ctime 与内容哈希识别截断、轮转与原地覆写后整体重建。扫描受 100ms 预算约束：未完成时保存进度并返回 `complete: false`，渲染层**隐藏** Credits 且不回退 payload（真实遥测契约，见 §1）；写到一半的尾行留待下次续读。预算、失效条件与 version 5 schema 见 [module-reference.md §10](module-reference.md#10-runtimetranscriptjs--逆向滑窗遥测与-checkpoint-状态机) 与 [§15](module-reference.md#15-runtimepathsjs--跨平台路径解析与目录管理)。
 
-### 5.5 多层级配置合并与主题调色板引擎 (`config.js`)
-- **配置覆盖优先级**：
-  ```
-  内置默认配置 (DEFAULT_CONFIG)
-    → 随包配置 (runtime/codebuddy-hud.config.json)
-      → 用户全局配置 (~/.codebuddy/codebuddy-hud.config.json)
-        → 项目局部配置 (./codebuddy-hud.config.json)
-          → 主题解析 (resolveTheme)
-  ```
-  前 4 层由 `deepMerge` 合并，第 5 步 `resolveTheme` 是后处理而非合并层。
-- `--theme <name>` 将主题保存到用户配置，不是运行时覆盖层。
-- **5 套内置主题预设规范**：
-  - `ocean`（默认）：深海青蓝科技风（暗色：`cyan`/`gray`，亮色：`blue`/`gray`）；
-  - `emerald`：翡翠绿清新护眼（暗色：浅薄荷翠绿 `121`，亮色：`green`/`gray`）；
-  - `cyberpunk`：赛博朋克霓虹（暗色：浅马卡龙粉紫 `219` + 荧光青，亮色：`magenta`/`blue`）；
-  - `amber`：琥珀金耀眼质感（双模式主色与强调色统一升级为标准 16 色高亮金色 `gold`，`\x1b[93m`，搭配 `gray`）；
-  - `monochrome`：黑白极简经典终端（暗色：白字灰辅 `white`/`gray`，亮色：`gray`/`gray`）。
-- **安全性防护**：`deepMerge()` 跳过 `__proto__`，递归深度上限 64；主题覆盖值仅作用于调色板键，值必须是严格 SGR 序列或长度 ≤32 且不含 C0/C1 的字符串，非字符串值被丢弃；未知颜色名输出为无样式文本（阻断项目配置终端注入）。配置文件每次直接读取；settings effort 仅保留进程内缓存，transcript effort 信号则按 transcript 哈希持久化到会话状态目录（`effort-<sha256>.json`），支持长任务的尾部扫描裁决、缓存继承与冷启动头扫兜底。
+### 5.5 多层级配置合并与主题引擎 (`config.js`)
+配置按「内置默认 → 随包 → 用户全局 → 项目局部」四层 `deepMerge`，再由 `resolveTheme` 后处理（后处理而非合并层；`--theme <name>` 是写入用户配置的持久操作，不是运行时覆盖层）。项目配置不可信，因此合并跳过 `__proto__`、限制递归深度，主题覆盖值只能是严格 SGR 序列或受限短字符串，未知颜色名降级为无样式文本，阻断项目配置的终端注入。effort 的 transcript 信号按 transcript 哈希持久化，使长任务可凭尾部扫描裁决并在冷启动时有兜底。5 套预设、校验规则与 effort 解析链见 [module-reference.md §3](module-reference.md#3-runtimeconfigjs--多层配置合并与主题引擎) 与 [§8](module-reference.md#8-runtimemodel-infojs--推理强度归一化与额度回退)。
 
-### 5.6 3 行自适应布局与自裁剪规则 (`renderer.js`)
-- **Line 1 (标识与状态)**：模型名称（`bold` 加粗）· 推理深度 (effort) · Git 分支与 Dirty 状态 (`*`) · 工作区目录 · 权限模式（标准 16 色高亮紫 `brightPurple`）。
-- **Line 2 (Tokens 与上下文)**：当前上下文输入占用/窗口容量（标题 `bold` 加粗；高缓存扣减至 0 场景自动还原活跃上下文总占用并引入残差仲裁防翻倍）· 进度条与百分比 · 输出 Token · 近期 Cache 命中率（≥`excellent` 纯绿、≥`partial` 纯黄，低命中率与 0% 追加细体）；支持 `fresh`（完整展示进度条与 out）、`stale`（压缩后待刷新，分子显示 `--` 且隐藏进度条与 out）、`unknown`（显示分子、隐藏进度条、提示上次上报）三态渲染。
-- **Line 3 (变更、消费、耗时与工具活动)**：`Δ +增加 -删除` · 实际 Credits · 总耗时 · 当前工具活动与本轮完成频次聚合（`◐ Edit: parser.js`、`✓ Edit ×3`）。（无数据自动隐藏整行）。
-
-宿主（源码复核至最新 v2.171.0 仍为常量）仅保留 stdout 前 3 行。HUD 的 3 行输出契约与该截断上限严格对齐；工具活动并入 Line 3，确保所有关键信息在截断限制下完整可见。
+### 5.6 3 行自适应布局 (`renderer.js`)
+宿主（源码复核至最新 v2.171.0 仍为常量）仅保留 stdout 前 3 行，HUD 的 3 行输出契约与之严格对齐：Line 1 标识与状态、Line 2 Tokens 与上下文、Line 3 变更/消费/耗时并**并入工具活动**，确保关键信息在截断下完整可见；无数据的行整行隐藏，字段缺失以 `--` 占位。Line 2 以 `fresh` / `stale` / `unknown` 三态表达上下文数据的可信度，避免 `/compact` 后展示过期数字。各行字段、排版与三态渲染细则见 [module-reference.md §4](module-reference.md#4-runtimerendererjs--3-行看板装配与布局编排)。
 
 ---
 
@@ -267,15 +216,7 @@ sequenceDiagram
    - 当路径包含非 ASCII 字符时，通过 `resolveShortPath()` 解析 Windows 8.3 短路径并强制注入 `@chcp 65001 >nul`，彻底规避批处理对非 ASCII 路径解析崩溃。
    - shim 为 UTF-8，必要时先 `chcp 65001`；实测 cmd.exe 不支持 UTF-16LE 批处理文件。
    - 针对 Windows 宿主启动器可能二次转义字面引号的兼容限制，安全 ASCII shim 路径省略引号；需要引号的路径保留引号，仍受宿主兼容限制。
-2. **终端编码自动探测与缓存**：
-   - Windows 下直连 `spawnSync('chcp.com')` 免壳探测代码页（硬超时 300ms）。探测成功缓存于 `codebuddy-hud-cache-state.json` 保持 1 小时；探测超时或派生失败当帧安全降级 ASCII，但仅缓存 60 秒（`probeTtlMs: 60000`）防抖，避免因偶发尖刺锁死 1 小时；`CODEBUDDY_HUD_FORCE_ASCII`/`UNICODE` 优先于缓存。
-   - 在不支持 UTF-8 的终端自动无缝回退至纯 ASCII 字符集（`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`, `[t]`, `[T]`）。
-3. **事件循环自然排空退出 (Natural Drain)**：
-   - 渲染完成后主动释放 Stdin 句柄与定时器，依靠 Node.js 事件循环自然排空退出，杜绝 `process.exit()` 引起的异步 Stdout 缓冲区截断。
-4. **配置写入与卸载清理**：
-   - JSONC 解析保留字符串。原子替换跟随有效符号链接，保留现有 POSIX 权限和所有者；新配置及首次备份默认 `0600`。多硬链接目标会被拒绝，避免悄悄断链。
-   - 卸载只恢复非本 HUD 的 `statusLine`（备份记录的命令含 `codebuddy-hud` 则改为移除该项；且仅当当前 `statusLine` 仍指向本 HUD，用户装后替换或删除的不被回滚），保留其他 settings 及用户主题；备份解析成功即回收，解析或写入失败时保留。
-   - 技能生命周期管理：`setup` 时自动将 `skills/hud-config/` 挂载至 `~/.codebuddy/skills/hud-config/`（Windows 优先 Junction，POSIX 优先目录软链，支持递归复制降级）；`uninstall` 时自动清理已部署的技能目录与软链。
-   - 卸载时自动清理系统级 PATH 注册（从 Windows 用户注册表 Path 移除 runtime 目录，macOS/Linux 删除 `~/.local/bin/codebuddy-hud` 软链接）；在测试沙箱模式下（`CODEBUDDY_HOME` 已设）自动跳过系统级 PATH 清理以保障环境隔离安全。
-5. **验证隔离**：
-   - 安装卸载测试同时隔离 runtime、settings 和用户目录；仅设置 `CODEBUDDY_HOME` 不能保护真实 shim。
+2. **终端编码自动探测与缓存**：Windows 下免壳直连 `chcp.com` 探测代码页，成功与失败采用不同缓存时长，避免偶发尖刺把 ASCII 降级锁死一小时；`CODEBUDDY_HUD_FORCE_ASCII`/`UNICODE` 优先。不支持 UTF-8 的终端自动回退纯 ASCII 字符集（`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`, `[t]`, `[T]`）。TTL 与超时见 [module-reference.md §13](module-reference.md#13-runtimeencodingjs--终端字符集探测与编码缓存)。
+3. **事件循环自然排空退出 (Natural Drain)**：渲染完成后主动释放 Stdin 句柄与定时器，依靠事件循环自然排空退出，杜绝 `process.exit()` 截断异步 stdout 缓冲区而输出半截 ANSI；stdout `EPIPE` 同理静默捕获（见 §7）。
+4. **配置写入与卸载清理**：settings 写入保留字符串内容、权限与符号链接，拒绝多硬链接目标（[§16](module-reference.md#16-runtimesettings-filejs--jsonc-安全解析与配置原子写入)）；卸载只还原非本 HUD 的 `statusLine`，并对称清理技能挂载、shim、缓存与系统 PATH 注册，测试沙箱（`CODEBUDDY_HOME` 已设）下跳过 PATH 清理（[§20](module-reference.md#20-runtimeuninstalljs--卸载还原与深度清理)）；`setup` 的技能挂载见 [§17](module-reference.md#17-runtimestatusline-installerjs--状态栏注册与-shim-烘焙器)。
+5. **验证隔离**：安装卸载测试必须同时隔离 runtime、settings 和用户目录；仅设置 `CODEBUDDY_HOME` 不能保护真实 shim（见 [§25](module-reference.md#25-scriptsverify-installjs--隔离宿主生命周期验证)）。
