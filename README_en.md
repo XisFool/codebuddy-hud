@@ -223,7 +223,7 @@ Optional. Create `codebuddy-hud.config.json` at the project root to affect only 
 | `CODEBUDDY_HOME` | Overrides the `~/.codebuddy` host directory (install, state, skills, cache) |
 | `CODEBUDDY_SETTINGS_PATH` | Overrides the host `settings.json` path |
 | `CODEBUDDY_HUD_DIR` | Overrides the runtime install directory (bootstrap) |
-| `CODEBUDDY_HUD_VERSION` | Pins install / update to a specific release tag |
+| `CODEBUDDY_HUD_VERSION` | Sets the release tag for bootstrap installation; `--update` resolves the latest release |
 | `CODEBUDDY_HUD_MIRROR` | Prefixes install, update, and tag-lookup URLs with a mirror |
 | `CODEBUDDY_HUD_BOOTSTRAP_URL` | Overrides the bootstrap.js download source (install and `--update`) |
 | `CODEBUDDY_HUD_LATEST_RELEASE_URL` | Overrides the Latest Release lookup URL (legacy alias `CODEBUDDY_HUD_REMOTE_PKG_URL`) |

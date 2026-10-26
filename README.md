@@ -223,7 +223,7 @@ codebuddy-hud --theme list      # 仅列出全部主题
 | `CODEBUDDY_HOME` | 覆盖 `~/.codebuddy` 宿主目录（安装、状态、技能、缓存） |
 | `CODEBUDDY_SETTINGS_PATH` | 覆盖宿主 `settings.json` 路径 |
 | `CODEBUDDY_HUD_DIR` | 覆盖 runtime 安装目录（bootstrap） |
-| `CODEBUDDY_HUD_VERSION` | 固定安装 / 更新到指定 Release tag |
+| `CODEBUDDY_HUD_VERSION` | 指定 bootstrap 安装的 Release tag；`--update` 自行查询最新 Release |
 | `CODEBUDDY_HUD_MIRROR` | 为安装、更新与 tag 查询添加镜像前缀 |
 | `CODEBUDDY_HUD_BOOTSTRAP_URL` | 覆盖 bootstrap.js 下载源（安装与 `--update`） |
 | `CODEBUDDY_HUD_LATEST_RELEASE_URL` | 覆盖 Latest Release 查询 URL（旧名 `CODEBUDDY_HUD_REMOTE_PKG_URL`） |
