@@ -249,6 +249,8 @@ Usage of the mirror and fork variables is covered in [docs/install-advanced.md](
 | `--version` / `-v` | Print current version and exit |
 | `--help` / `-h` | Print CLI command options and exit |
 
+`--version`/`-v` and `--help`/`-h` take precedence over setup, uninstall and other operations without reading stdin. `--theme --help` (or `--theme -h`) only lists themes, including on a TTY; combining it with `--setup` shows global help.
+
 ---
 
 ## Cross-platform notes

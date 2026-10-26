@@ -11,27 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added (新增特性)
-- **CLI 增补 `--version`/`-v` 与 `--help`/`-h` 选项**：`runtime/bin/codebuddy-hud.js` 为版本打印与简要帮助提供不读取 stdin 的快速分发，避免这两类查询等待 stdin；无参数运行仍按 statusLine 模式读取 stdin（800ms 保底超时）；`scripts/bootstrap.js` 补齐 `CODEBUDDY_HUD_REMOTE_PKG_URL` 历史环境变量兼容别名。
+
+- **CLI 查询**：新增 `--version`/`-v` 与 `--help`/`-h`，无需等待 stdin。
 
 ### Fixed (缺陷修复)
-- **Δ/⏱ 被缓存命中误判为 `/clear` 而清零**：`runtime/session-stats.js` 的重置信号改为复用 `parser.resolveContextInputTokens` 的上下文占用仲裁（缓存已扣除形态还原、未扣除形态保持原值）；缓存预热/命中与缓存 TTL 过期不再触发断崖误判（依赖 `context_window_size`/`used_percentage`，缺失时退回原始输入，该形态仍可能触发断崖），`/compact` 行为保持不变；`input_tokens` 缺失且 cache 计数为 0 时保持 `null`，不再把未知帧当成占用 0；
-- **项目配置主题色可注入终端控制序列**：`runtime/config.js` 的 `resolveTheme` 对 theme 覆盖值执行白名单校验（调色板键 + 严格 SGR 序列或纯色名），阻断恶意仓库通过 `codebuddy-hud.config.json` 注入清屏、OSC 52 剪贴板写入等序列；非字符串值不再导致渲染抛错；
-- **DCS/APC/PM/SOS 控制串 payload 残留**：`runtime/sanitize.js` 按 ECMA-48 整串吞到 ST（或未终止串结尾），并补齐 C1 单字节形式（`0x9B/0x9D/0x90` 等）；控制载荷不再以可见文本泄漏到看板；
-- **`--doctor` 误报转义路径不存在**：statusLine 命令分词改为转义感知，并按「原样 → 反转义」双形态校验；含 `$`/引号/反斜杠的 POSIX 路径不再误报，Windows 未转义的 UNC 与 `$` 目录路径不受影响；引号内以反斜杠结尾的 Windows 路径在转义感知分词失败时回退旧分词，避免把 `"...\"` 误读为转义引号；
-- **`--theme` 文案未国际化**：列表标题、用法提示、选择器标题/快捷键提示与预览框标题接入 `lang.js`；预览框按显示宽度（CJK 双列）计算边线，英文标题不再溢出右边框；未知主题参数与保存路径输出前经 `sanitizeTerminalText()`；
-- **`--uninstall` 覆盖用户后续修改的 statusLine**：仅当当前 `statusLine` 仍指向本 HUD 时才还原安装前备份；用户装后替换或删除的配置保持不变，备份仍被消费删除。
-- **一键安装 / `--uninstall` 破坏或误删用户 PATH 条目**：`scripts/install.ps1` 与 `runtime/uninstall.js` 改用注册表 API 读写 HKCU `Path`，保留 `%VAR%` 间接引用（`REG_EXPAND_SZ` 不再被压平为 `REG_SZ`）；卸载按归一化路径比较（忽略大小写、去除包裹引号与尾分隔符）并移除 runtime bin 目录，避免误删/漏删；
-- **effort 会话状态并发读到半截 JSON**：`runtime/model-info.js` 的状态写入改为临时文件 + rename 原子替换。
+
+- **CLI 参数优先级**：帮助与版本查询优先于安装、卸载等操作；主题帮助在 TTY 下也只列出预设，修正卸载帮助行对齐。
+- **transcript 尺寸记录**：文件单独增长也保存尺寸；stat 失败时其他状态写回保留上次有效尺寸，避免后续截断漏检。
+- **Δ/⏱ 缓存误判**：重置信号复用上下文占用仲裁，避免缓存命中或 TTL 过期被当作 `/clear`；缺失 `input_tokens` 且 cache 为 0 时按未知处理。缺少窗口大小/使用率时仍回退原始输入，缓存残差仍可能触发断崖。
+- **主题安全**：主题覆盖值经 SGR 白名单校验，阻断清屏、OSC 52 等终端注入；非字符串值安全降级。
+- **控制串残留**：DCS/APC/PM/SOS 及 C1 形式整串清除，未终止串吞到输入末尾。
+- **doctor 路径校验**：POSIX 支持 shell 反转义；Windows 保留 UNC、`\$` 等字面字符，避免误报存在，并兼容引号内尾反斜杠的分词歧义。
+- **主题文案与预览**：列表、选择器及用法提示接入 i18n，预览框按 CJK 双列宽度对齐；未知主题参数和保存路径经终端清洗。
+- **卸载还原**：仅当当前 `statusLine` 仍指向本 HUD 时还原备份，保留用户后续替换或删除的配置。
+- **Windows PATH**：安装/卸载保留 HKCU `Path` 的 `%VAR%` 与注册表值类型；卸载按归一化路径移除 runtime bin，避免误删或漏删。
+- **effort 状态**：临时文件 + rename 原子写入，避免并发读到半截 JSON。
+- **bootstrap 查询源**：兼容 `CODEBUDDY_HUD_REMOTE_PKG_URL` 旧名；显式 Release URL 跳过默认 302/API 查询，两变量同设时新名优先。
 
 ### Performance & Hardening (性能与稳健性加固)
-- **Git 探测去除 shell 壳进程并懒加载 `child_process`**：`runtime/git.js` 的 `git status` / `rev-parse` 改用 `execFileSync`，Windows 真实 spawn 帧约省 33ms；`child_process` 仅在 Git 探测或 Windows 编码探测时加载，普通帧约省 2ms。
+
+- **Git 探测**：使用免 shell 的 `execFileSync`，按需懒加载 `child_process`，降低 Windows 派生与普通帧开销。
 
 ### Documentation (文档对齐)
-- **宿主 v2.171.0 兼容性复核与全量文档漂移对齐**：复核 CodeBuddy Code v2.171.0 逆向确证（3 行截断、10240 个 UTF-16 字符、5s 超时与离散事件）；全面对齐双语 README、双语架构文档、模块参考与 AGENTS.md 中关于 Cache 命中率超窗滑窗、Git 探测规范、代码页 300ms 超时与 60s probeTtlMs 短缓存、TypeScript 接口签名及 CLI 选肤交互说明。
-- **文档漂移与冗余治理**：修正 README 错误列出的刷新事件（统一为 session / result / permission / settings / cost 五类）、镜像仅代理 raw 仍可安装的绝对化表述、卸载还原条件与环境变量清单；修正架构文档 Credits checkpoint 截断判据（`sourceSize`）、配置合并层级（4 次 deepMerge + 主题后处理）与依赖图缺边；修正模块参考中缓存徽章样式、`checkNodeVersion` 退出行为、`install.ps1` 下载源与新鲜度判定条件，并补齐三份状态文件 schema；AGENTS.md 收敛为硬约束与单一来源指针。
+
+- 对齐宿主 v2.171.0 的刷新/输出约束、CLI、遥测、状态 schema 与安装/更新变量；技术细则集中到模块参考，AGENTS.md 保留硬约束和索引，高级安装独立成文，双语文档同步。
 
 ### Tests (测试)
-- 单测用例增至 458 个（456 pass / 2 skipped），新增 CLI `--version` 与 `--help` 快速分发，新增缓存误判、零 cache 未知帧、未扣除载荷、主题注入、DCS/APC、doctor 转义与 Windows 尾反斜杠路径、theme 参数清洗、i18n 与卸载回滚等回归用例；`npm run verify` 与 `npm run verify:install` 各 10/10 通过。
+
+- 新增 CLI 参数组合（64 种）、TTY 主题帮助、transcript 增长/截断与 stat 失败、Release 查询源优先级等回归。全量验证命令见 [AGENTS.md](AGENTS.md#测试与验证)，用例数以实际输出为准。
 
 ---
 

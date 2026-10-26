@@ -249,6 +249,8 @@ codebuddy-hud --theme list      # 仅列出全部主题
 | `--version` / `-v` | 输出当前版本号并退出 |
 | `--help` / `-h` | 输出命令行选项帮助信息并退出 |
 
+`--version`/`-v`、`--help`/`-h` 优先于安装、卸载等操作，且不读取 stdin。`--theme --help`（或 `--theme -h`）只列出主题，TTY 下也不交互；与 `--setup` 组合时显示全局帮助。
+
 ---
 
 ## 跨平台说明

@@ -43,13 +43,15 @@
 
 ### 命令行参数支持 (CLI Flags)
 - `--setup [--theme <name>]`: 执行安装，写入 `settings.json`、生成 Windows `.cmd` shim 并自动挂载 `hud-config` 技能至 `~/.codebuddy/skills/`（在 TTY 终端运行自动唤起交互主题选择器，也可带 `--theme <name>` 直接指定跳过交互；PATH 注册由一键安装脚本完成，`--setup` 不修改 PATH）。
-- `--uninstall`: 仅恢复备份中的 `statusLine`（备份记录的命令自身指向 codebuddy-hud 时改为移除该项），彻底清理已部署或挂载的技能目录、缓存、系统 PATH 注册及 shim，保留其他 settings 与用户主题配置。
-- `--theme [name]`: 交互式切换或指定设置主题（如 `--theme cyberpunk`、`--theme list`）。
+- `--uninstall`: 仅当当前 `statusLine` 仍指向本 HUD 时按备份还原或移除；清理技能挂载、缓存、PATH 注册及 shim，保留其他 settings 与用户主题配置（详见 §20）。
+- `--theme [name|list]`: 交互式切换、指定主题或列出主题（如 `--theme cyberpunk`、`--theme list`）。
 - `--doctor [--json]`, `-d`: 运行全面诊断体检报告（`-d` 为短参数别名，支持 `--json` 输出结构化数据）。
 - `--status`: 冒烟探测当前状态栏能否正常渲染（3 行输出与 exit 0）。
-- `--update`: 用户主动更新（检查 + 升级二合一）；解析最新 Release tag，落后时后台下载该 tag 的 bootstrap 完成自举升级，渲染路径零网络契约不受影响。
+- `--update`: 用户主动更新（检查 + 升级二合一）；解析最新 Release tag，落后时下载该 tag 的 bootstrap 并派生后台自举进程，渲染路径零网络契约不受影响。
 - `--version, -v`: 输出当前 HUD 版本号并退出。
 - `--help, -h`: 输出命令行全部子命令与参数选项帮助信息并退出。
+
+分发顺序：`--version`/`-v` → `--help`/`-h` → 其余子命令，查询不读取 stdin、不会执行安装或卸载。`--theme --help` 或 `--theme -h` 只列出预设（TTY 下也不交互）；与 `--setup` 同用时显示全局帮助。
 
 ### 内部常数配置
 ```javascript
@@ -383,10 +385,12 @@ export const SESSION_STATS_VERSION: number;
 - **Cliff Drop**：当前上下文占用相对降幅 ≥50% 且绝对降幅 ≥3000；
 - **Return to Initial**：当前占用 ≤4096 且此前 ≥6000（相对降幅 ≥35%）；
 - 累计 `total_input_tokens` 下降；
-- 同一 transcript 的 `session_id` 变化、transcript 物理截断（size 变小），或宿主显式 `clear_signal` / `is_clear`；
+- 同一 transcript 的 `session_id` 变化、transcript 物理截断（本次正整数 size 小于上次有效记录），或宿主显式 `clear_signal` / `is_clear`；
 - 代码增删或耗时计数低于已存基线（此时 cost 基线归零）。
 
 `cwd` 用于相对 `transcript_path` 的解析（identity 派生）；identity miss 即视为新会话，直接以当前 payload 累计为新基线。`getSessionIdentity()` 有 transcript 时返回 `transcript:<normalizePlatformPath(path)>`，否则返回 `session:<session_id>`，该字符串作为状态文件哈希键。`getResetSignal` 的 `currentInputTokens` 取 `parser.resolveContextInputTokens` 的还原占用（与 Line 2 同源）：有 `context_window_size`/`used_percentage` 时缓存命中/扣除不改变该值；两者缺失时退回原始 `input_tokens`（缓存残差形态仍可能触发断崖）；`input_tokens` 缺失且 cache 计数为 0 时为 `null`，不参与断崖比较。
+
+`transcriptSize` 保存最近一次有效的正整数尺寸；单独增长也触发写回。stat 失败或尺寸为 0 时保留上次有效记录，即使其他信号触发写回；无重置且状态、尺寸均不变时不写盘。`0` 表示尚无有效尺寸，空文件本身不触发截断。
 
 ---
 
@@ -467,7 +471,7 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 
 ### 状态文件落盘格式与持久化契约
 
-- `session-state/<identity-sha256>.json` (会话基线与 /clear 重置信号状态):
+- `codebuddy-hud-session-state/<identity-sha256>.json` (会话基线与 /clear 重置信号状态):
 ```json
 {
   "version": 1,
@@ -488,7 +492,7 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 }
 ```
 
-- `session-state/effort-<transcript-sha256>.json` (会话推理深度 Effort 状态):
+- `codebuddy-hud-session-state/effort-<transcript-sha256>.json` (会话推理深度 Effort 状态):
 ```json
 {
   "version": 1,
@@ -598,6 +602,8 @@ export function printDoctorReport(report: DoctorReport, isJson?: boolean, option
 6. `git`: Git PATH 可达性、当前仓库分支与探测延迟。
 7. `transcript`: 遥测状态目录创建与可写性校验，并回显错误日志路径。
 
+命令路径在 POSIX 下按原样与 shell 反转义两种形式校验；Windows 只按字面路径校验，保留 UNC 与 `\$`，避免把不存在的路径反转义成另一个有效文件。引号内尾反斜杠造成分词歧义时回退非转义分词。
+
 ---
 
 ## 19. `runtime/theme-selector.js` — 交互式主题选择器
@@ -659,7 +665,7 @@ export async function runUpdate(options?: object): Promise<{ ok: boolean, messag
 
 ## 22. `scripts/bootstrap.js` — 跨平台原子安装引导
 
-**职责：** 支持本地与 GitHub Raw 远程安装，通过临时目录 `.tmp-<pid>` + 原子重命名完成无缝安装覆盖。按 302 重定向（无 API 限流）→ REST API（`GITHUB_TOKEN`/`GH_TOKEN` 提升限额）的顺序解析 Latest Release 的 `tag_name`，再从对应不可变 tag 下载；`CODEBUDDY_HUD_VERSION` 可固定 tag，`CODEBUDDY_HUD_RAW_BASE` 直接指定下载源并跳过 tag 解析。`CODEBUDDY_HUD_MIRROR` 为上述全部 GitHub URL（runtime 下载、tag 查询、API 兜底）加镜像前缀，tag 查询与 API 兜底在镜像未覆盖时自动回退直连，runtime 文件始终经镜像下载。支持 `--delay-start` 参数（`--update` 派生场景）：延迟 1s 再开始重装，等父进程完全退出以规避 Windows 文件锁。
+**职责：** 支持本地与 GitHub Raw 远程安装，通过临时目录 `.tmp-<pid>` + 原子重命名完成覆盖。本地安装直接复制仓库文件；远程安装解析 Release 的 `tag_name` 后从对应不可变 tag 下载。下载源优先级：`CODEBUDDY_HUD_RAW_BASE` → `CODEBUDDY_HUD_VERSION` → Latest Release 查询；前两者跳过查询。`CODEBUDDY_HUD_MIRROR` 为默认 GitHub URL 加镜像前缀，查询失败可回退直连，runtime 文件经镜像下载。`--delay-start` 延迟 1s 开始重装，供 `--update` 等待父进程退出以规避 Windows 文件锁。
 
 ### 核心导出与内部函数
 - `install(): Promise<void>`: 核心安装入口，支持本地复制与远端下载，通过临时目录 + 原子重命名完成安装。
@@ -668,7 +674,7 @@ export async function runUpdate(options?: object): Promise<{ ok: boolean, messag
 - `rawBaseForTag(tag: string): string`: 返回指定 Release tag 的 GitHub Raw 基础地址。
 - `resolveRemoteRawBase(options?: object): Promise<string>`: 解析 `CODEBUDDY_HUD_RAW_BASE`、`CODEBUDDY_HUD_VERSION` 或 Latest Release 后的下载源（含 `CODEBUDDY_HUD_MIRROR` 前缀）。
 - `fetchLatestTagVia302(url?: string): Promise<string>`: 从 `releases/latest` 的 302 `Location` 解析不可变 tag；省略 `url` 时使用镜像前缀后的默认地址。
-- `fetchLatestRelease(): Promise<object>`: 按 302 候选链 → API 候选链顺序解析最新版本 release 对象。
+- `fetchLatestRelease(options?: { candidates302?: string[]; apiCandidates?: string[] }): Promise<object>`: 显式 `CODEBUDDY_HUD_LATEST_RELEASE_URL`（兼容旧名 `CODEBUDDY_HUD_REMOTE_PKG_URL`，两者同设时新名优先）独占查询，按原 URL 请求，失败即报错；未设置时才按 302 候选链 → API 候选链解析。
 - `fetchUrlWithRetry(url: string, maxAttempts?: number): Promise<Buffer>`: 内部辅助实现（未在 module.exports 导出），网络下载重试包装（默认 3 次，1s/2s 指数退避）。
 - `mirrorPrefix(): string`: 解析 `CODEBUDDY_HUD_MIRROR` 环境变量并归一化为 URL 前缀。
 
