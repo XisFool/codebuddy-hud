@@ -146,8 +146,10 @@ function rawBaseForTag(tag) {
 }
 
 async function fetchLatestRelease(options = {}) {
-  // Strategy 1: 302 redirect (no API rate limit)
-  const candidates302 = options.candidates302 || urlCandidates(RELEASES_LATEST_URL);
+  // Explicit release sources bypass default discovery, including successful 302s.
+  const explicitApiUrl = process.env.CODEBUDDY_HUD_LATEST_RELEASE_URL || process.env.CODEBUDDY_HUD_REMOTE_PKG_URL;
+  // Strategy 1: 302 redirect (no API rate limit) when no explicit URL is set.
+  const candidates302 = explicitApiUrl ? [] : (options.candidates302 || urlCandidates(RELEASES_LATEST_URL));
   for (const candidate of candidates302) {
     try {
       return { tag_name: await fetchLatestTagVia302(candidate) };
@@ -158,8 +160,7 @@ async function fetchLatestRelease(options = {}) {
   // Strategy 2: GitHub REST API (with optional token for higher rate limit).
   // An explicit CODEBUDDY_HUD_LATEST_RELEASE_URL wins outright and is used
   // verbatim; otherwise the API URL is mirrored like every other GitHub URL.
-  const explicitApiUrl = process.env.CODEBUDDY_HUD_LATEST_RELEASE_URL || process.env.CODEBUDDY_HUD_REMOTE_PKG_URL;
-  const apiCandidates = options.apiCandidates || (explicitApiUrl ? [explicitApiUrl] : urlCandidates(LATEST_RELEASE_API_URL));
+  const apiCandidates = explicitApiUrl ? [explicitApiUrl] : (options.apiCandidates || urlCandidates(LATEST_RELEASE_API_URL));
   const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
   let lastErr;
   for (const candidate of apiCandidates) {

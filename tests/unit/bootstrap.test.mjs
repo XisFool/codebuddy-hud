@@ -171,6 +171,63 @@ describe('bootstrap installer', () => {
     }
   });
 
+  for (const { name, latest, legacy, expected } of [
+    { name: 'the primary URL', latest: '/primary', expected: '/primary' },
+    { name: 'the legacy URL', legacy: '/legacy', expected: '/legacy' },
+    { name: 'the primary URL over the legacy URL', latest: '/primary', legacy: '/legacy', expected: '/primary' },
+  ]) {
+    test(`fetchLatestRelease honors ${name} before successful default queries`, async () => {
+      const http = require('http');
+      const saved = {
+        CODEBUDDY_HUD_LATEST_RELEASE_URL: process.env.CODEBUDDY_HUD_LATEST_RELEASE_URL,
+        CODEBUDDY_HUD_REMOTE_PKG_URL: process.env.CODEBUDDY_HUD_REMOTE_PKG_URL,
+      };
+      const requests = [];
+      const server = http.createServer((req, res) => {
+        requests.push(req.url);
+        if (req.url === '/redirect') {
+          res.writeHead(302, { Location: 'https://github.com/XisFool/codebuddy-hud/releases/tag/v9.9.9' });
+          res.end();
+        } else if (req.url === '/invalid') {
+          res.end('<html>Unavailable</html>');
+        } else {
+          res.end(JSON.stringify({ tag_name: req.url === expected ? 'v1.2.3' : 'v9.9.9' }));
+        }
+      });
+      try {
+        await new Promise((resolve, reject) => {
+          server.once('error', reject);
+          server.listen(0, '127.0.0.1', resolve);
+        });
+        const base = `http://127.0.0.1:${server.address().port}`;
+        if (latest) process.env.CODEBUDDY_HUD_LATEST_RELEASE_URL = `${base}${latest}`;
+        else delete process.env.CODEBUDDY_HUD_LATEST_RELEASE_URL;
+        if (legacy) process.env.CODEBUDDY_HUD_REMOTE_PKG_URL = `${base}${legacy}`;
+        else delete process.env.CODEBUDDY_HUD_REMOTE_PKG_URL;
+        const options = {
+          candidates302: [`${base}/redirect`],
+          apiCandidates: [`${base}/fallback`],
+        };
+
+        assert.equal((await fetchLatestRelease(options)).tag_name, 'v1.2.3');
+        assert.deepEqual(requests, [expected]);
+
+        // A broken explicit source must fail instead of selecting another release.
+        requests.length = 0;
+        const selected = latest ? 'CODEBUDDY_HUD_LATEST_RELEASE_URL' : 'CODEBUDDY_HUD_REMOTE_PKG_URL';
+        process.env[selected] = `${base}/invalid`;
+        await assert.rejects(() => fetchLatestRelease(options), /was not valid JSON/);
+        assert.deepEqual(requests, ['/invalid']);
+      } finally {
+        for (const [key, value] of Object.entries(saved)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+        await new Promise(resolve => server.close(resolve));
+      }
+    });
+  }
+
   test('install copies local repo files and configures statusline in isolated environment', async () => {
     const fs = require('fs');
     const os = require('os');
