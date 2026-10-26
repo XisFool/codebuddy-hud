@@ -7,9 +7,11 @@ import path from 'node:path';
 
 function withIsolatedSettings(fn) {
   const original = process.env.CODEBUDDY_SETTINGS_PATH;
+  const originalHome = process.env.CODEBUDDY_HOME;
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-doctor-'));
   const settingsPath = path.join(tmpDir, 'settings.json');
   process.env.CODEBUDDY_SETTINGS_PATH = settingsPath;
+  process.env.CODEBUDDY_HOME = tmpDir;
   try {
     return fn({
       tmpDir,
@@ -19,6 +21,8 @@ function withIsolatedSettings(fn) {
   } finally {
     if (original === undefined) delete process.env.CODEBUDDY_SETTINGS_PATH;
     else process.env.CODEBUDDY_SETTINGS_PATH = original;
+    if (originalHome === undefined) delete process.env.CODEBUDDY_HOME;
+    else process.env.CODEBUDDY_HOME = originalHome;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
@@ -29,6 +33,7 @@ function getStatusLineCheck(report) {
 
 const require = createRequire(import.meta.url);
 const { runDoctor, printDoctorReport } = require('../../runtime/doctor.js');
+const { buildStatusLineCommand } = require('../../runtime/statusline-installer.js');
 
 describe('doctor diagnosis tool', () => {
   test('runDoctor returns structured check report without throwing', () => {
@@ -109,24 +114,34 @@ describe('doctor diagnosis tool', () => {
     });
   });
 
-  test('does not report shell-escaped POSIX paths as missing', () => {
+  test('accepts installer-quoted paths containing shell metacharacters', () => {
     withIsolatedSettings(({ tmpDir, writeSettings }) => {
-      // A directory containing '$' forces escapeShellArg to emit '\$' plus
-      // doubled backslashes; doctor must unescape before existsSync.
+      // The installer keeps Windows paths literal and escapes POSIX shell words.
       const binDir = path.join(tmpDir, 'node-$18');
       const hudScript = path.join(binDir, 'codebuddy-hud.js');
       fs.mkdirSync(binDir, { recursive: true });
       fs.writeFileSync(hudScript, '#!/usr/bin/env node\n');
-      const BS = String.fromCharCode(92);
-      const escapeShellArg = (value) => value
-        .split(BS).join(BS + BS)
-        .split('"').join(BS + '"')
-        .split('`').join(BS + '`')
-        .split('$').join(BS + '$');
+      if (process.platform === 'win32') fs.writeFileSync(hudScript.replace(/\.js$/, '.cmd'), '');
       writeSettings(JSON.stringify({
-        statusLine: { command: `"${escapeShellArg(process.execPath)}" "${escapeShellArg(hudScript)}"` },
+        statusLine: { command: buildStatusLineCommand(process.platform, hudScript, process.execPath) },
       }));
       assert.equal(getStatusLineCheck(runDoctor({ cwd: process.cwd() })).status, 'ok');
+    });
+  });
+
+  test('does not accept a different unescaped path for a missing Windows shim', { skip: process.platform !== 'win32' }, () => {
+    withIsolatedSettings(({ tmpDir, writeSettings }) => {
+      const missingScript = path.join(tmpDir, 'missing', '$bin', 'codebuddy-hud.js');
+      const lookalikeDir = path.join(tmpDir, 'missing$bin');
+      fs.mkdirSync(lookalikeDir);
+      fs.writeFileSync(path.join(lookalikeDir, 'codebuddy-hud.cmd'), '');
+      fs.writeFileSync(path.join(lookalikeDir, 'codebuddy-hud.js'), '');
+      writeSettings(JSON.stringify({
+        statusLine: { command: buildStatusLineCommand('win32', missingScript, process.execPath) },
+      }));
+
+      assert.equal(fs.existsSync(missingScript.replace(/\.js$/, '.cmd')), false);
+      assert.equal(getStatusLineCheck(runDoctor({ cwd: tmpDir })).status, 'warn');
     });
   });
 

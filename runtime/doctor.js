@@ -47,10 +47,10 @@ function checkNodeEnvironment(i18n) {
 // entrypoint (or a shim whose forwarded script is gone) pass as healthy.
 // POSIX installs are written through escapeShellArg (\ " ` $ escaped), so a
 // quoted token must be tokenized with escape awareness and checked in both its
-// literal and unescaped form. The raw form is tried first: win32 commands are
-// written unescaped, where \\ and \$ are literal path characters (UNC paths,
-// $-prefixed directories) and must not be rewritten.
+// literal and unescaped form. Win32 commands are checked only literally: \\
+// and \$ are path characters (UNC paths, $-prefixed directories), not escapes.
 function shellTokenCandidates(token) {
+  if (process.platform === 'win32') return [token];
   const unescaped = token.replace(/\\(["\\`$])/g, '$1');
   return unescaped === token ? [token] : [token, unescaped];
 }
