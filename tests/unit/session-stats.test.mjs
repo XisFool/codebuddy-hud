@@ -144,13 +144,55 @@ describe('getLogicalSessionCostData', () => {
 
   it('does not rewrite state file when data is unchanged (dirty-driven)', () => {
     const statePath = path.join(tmpDir, 'state.json');
-    sessionCost(payload(), cost());
+    const input = payload();
+    fs.writeFileSync(input.transcript_path, 'x'.repeat(1000));
+    sessionCost(input, cost());
+    // Make a rewrite observable even within the same filesystem timestamp tick.
+    const oldTime = new Date('2020-01-01T00:00:00Z');
+    fs.utimesSync(statePath, oldTime, oldTime);
     const initialMtime = fs.statSync(statePath).mtimeMs;
 
     // Second call with identical payload and cost should not touch disk
-    sessionCost(payload(), cost());
+    sessionCost(input, cost());
     const secondMtime = fs.statSync(statePath).mtimeMs;
     assert.equal(secondMtime, initialMtime);
+  });
+
+  it('checkpoints transcript growth even when token and cost signals are unchanged', () => {
+    const input = payload();
+    const statePath = path.join(tmpDir, 'state.json');
+    fs.writeFileSync(input.transcript_path, 'x'.repeat(1000));
+    sessionCost(input, cost());
+
+    fs.appendFileSync(input.transcript_path, 'x'.repeat(1000));
+    assert.deepEqual(sessionCost(input, cost()), cost({ added: 0, removed: 0, totalMs: 0, apiMs: 0 }));
+    assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).transcriptSize, 2000);
+
+    // Still larger than the first checkpoint, but smaller than the latest one.
+    fs.truncateSync(input.transcript_path, 1500);
+    const cleared = sessionCost(input, cost({ added: 1720, removed: 163, totalMs: 10030000, apiMs: 4984000 }));
+    assert.deepEqual(cleared, cost({ added: 0, removed: 0, totalMs: 0, apiMs: 0 }));
+  });
+
+  it('retains the transcript size when stat fails while another signal changes', () => {
+    const input = payload();
+    const statePath = path.join(tmpDir, 'state.json');
+    const heldPath = `${input.transcript_path}.hold`;
+    fs.writeFileSync(input.transcript_path, 'x'.repeat(2000));
+    sessionCost(input, cost());
+
+    fs.renameSync(input.transcript_path, heldPath);
+    const updated = payload({ totalInput: 100001 });
+    assert.deepEqual(sessionCost(updated, cost({ added: 1710 })),
+      cost({ added: 10, removed: 0, totalMs: 0, apiMs: 0 }));
+    const saved = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    assert.equal(saved.signal.totalInputTokens, 100001);
+    assert.equal(saved.transcriptSize, 2000);
+
+    fs.renameSync(heldPath, input.transcript_path);
+    fs.truncateSync(input.transcript_path, 1500);
+    const cleared = sessionCost(updated, cost({ added: 1720 }));
+    assert.deepEqual(cleared, cost({ added: 0, removed: 0, totalMs: 0, apiMs: 0 }));
   });
 
   it('shows new-process totals when cost counters drop on an identity hit', () => {

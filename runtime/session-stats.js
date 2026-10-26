@@ -289,7 +289,11 @@ function getLogicalSessionCostData(cbData, costData, opts) {
     signal.totalInputTokens !== previous.signal.totalInputTokens ||
     signal.currentInputTokens !== previous.signal.currentInputTokens
   );
-  const isDirty = !previous || reset || sessionIdChanged || baselineChanged || signalChanged;
+  // A failed stat must not erase the last usable size when other fields change.
+  const nextTranscriptSize = Number.isSafeInteger(transcriptSize) && transcriptSize > 0
+    ? transcriptSize : (previous ? previous.transcriptSize : 0);
+  const transcriptSizeChanged = Boolean(previous && nextTranscriptSize !== previous.transcriptSize);
+  const isDirty = !previous || reset || sessionIdChanged || baselineChanged || signalChanged || transcriptSizeChanged;
 
   if (isDirty) {
     writeState(statePath, {
@@ -298,7 +302,7 @@ function getLogicalSessionCostData(cbData, costData, opts) {
       sessionIdHash,
       baseline,
       signal,
-      transcriptSize,
+      transcriptSize: nextTranscriptSize,
       updatedAt: Date.now(),
     });
   }
