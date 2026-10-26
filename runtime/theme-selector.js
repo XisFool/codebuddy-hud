@@ -14,7 +14,7 @@ const ANSI_CYAN = '\x1b[36m';
 const THEMES = [
   { name: 'ocean', label: '深海青蓝 (Ocean · 默认科技风)' },
   { name: 'emerald', label: '翡翠绿 (Emerald · 清新护眼)' },
-  { name: 'cyberpunk', label: '赛博朋克 (Cyberpunk · 炫酷粉紫+荧光青)' },
+  { name: 'cyberpunk', label: '赛博朋克 (Cyberpunk · 炫酷粉紫)' },
   { name: 'amber', label: '琥珀金 (Amber · 沉稳金黄)' },
   { name: 'monochrome', label: '黑白极简 (Monochrome · 经典终端灰白)' },
 ];

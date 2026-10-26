@@ -157,8 +157,8 @@ export const THEME_PRESETS: Record<string, ThemePreset>;
 
 ### 内置主题预设 (THEME_PRESETS)
 - `ocean` (默认): 深海青蓝科技风 (dark: `cyan`/`gray`, light: `blue`/`gray`)
-- `emerald`: 翡翠绿清新护眼 (dark: `brightGreen`（256 色 `121` 浅薄荷绿）/`gray`, light: `green`/`gray`)
-- `cyberpunk`: 赛博朋克炫酷粉紫+荧光青 (dark: `brightMagenta`（256 色 `219` 浅马卡龙粉紫）/`cyan`, light: `magenta`/`blue`)
+- `emerald`: 翡翠绿清新护眼 (dark: `brightGreen`（256 色 `114` 柔和浅绿）/`gray`, light: `green`/`gray`)
+- `cyberpunk`: 赛博朋克炫酷粉紫 (dark: `brightMagenta`（256 色 `183` 柔和粉紫）/`gray`, light: `magenta`/`gray`；模型、分支、项目名及 out Token 使用同一主题主色)
 - `amber`: 琥珀金耀眼质感 (dark/light: `gold`（标准 16 色高亮金 `\x1b[93m`）/`gray`)
 - `monochrome`: 黑白极简经典终端 (dark: `white`/`gray`, light: `gray`/`gray`)
 

@@ -157,7 +157,7 @@ Your theme config (`codebuddy-hud.config.json`) and the installed runtime direct
 | :--- | :--- |
 | `ocean` (default) | Deep-sea cyan-blue |
 | `emerald` | Emerald green |
-| `cyberpunk` | Pink-purple + neon cyan |
+| `cyberpunk` | Pink-purple; matching model, branch, project and out token colors |
 | `amber` | Amber gold |
 | `monochrome` | Black-and-white minimal |
 

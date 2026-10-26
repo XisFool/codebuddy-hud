@@ -43,14 +43,16 @@ describe('theme-selector', () => {
     }
   });
 
-  it('renders cyberpunk preview with 249k and 1M having matching primary colors', () => {
-    const preview = renderThemePreview('cyberpunk');
-    const line2 = preview[1];
-    // In cyberpunk dark mode, primary is brightMagenta (\x1b[38;5;219m), accent is cyan (\x1b[36m).
-    // Both 249k and 1M must use primary brightMagenta.
-    assert.ok(line2.includes('\x1b[38;5;219m249k\x1b[0m'), 'cyberpunk preview 249k must be brightMagenta');
-    assert.ok(line2.includes('\x1b[38;5;219m1M\x1b[0m'), 'cyberpunk preview 1M must be brightMagenta');
-    assert.ok(!line2.includes('\x1b[36m249k\x1b[0m'), 'cyberpunk preview 249k must not be cyan');
+  it('renders cyberpunk identity and token fields in one theme color in both modes', () => {
+    for (const [mode, sgr] of [['dark', '\x1b[38;5;183m'], ['light', '\x1b[35m']]) {
+      const [line1, line2] = renderThemePreview('cyberpunk', mode);
+      for (const text of ['Deepseek-V4.1-Flash', 'main', 'codebuddy-hud']) {
+        assert.ok(line1.includes(`${sgr}${text}\x1b[0m`), `${mode}: ${text} must use the theme color`);
+      }
+      for (const text of ['249k', '1M', '1.1k']) {
+        assert.ok(line2.includes(`${sgr}${text}\x1b[0m`), `${mode}: ${text} must use the theme color`);
+      }
+    }
   });
 
   it('renders monochrome dark preview with brightWhite model and white tokens', () => {

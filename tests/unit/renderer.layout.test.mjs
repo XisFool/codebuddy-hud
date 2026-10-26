@@ -221,10 +221,10 @@ describe('renderHUD', () => {
     const output = renderHUD(fullPayload, cyberConfig);
     const line2 = output.split('\n')[1];
     // In fullPayload: input is 91k, ctxSize is 1M.
-    // ANSI for brightMagenta is \x1b[38;5;219m.
+    // ANSI for brightMagenta is \x1b[38;5;183m.
     // ANSI for cyan is \x1b[36m.
-    assert.ok(line2.includes('\x1b[38;5;219m91k\x1b[0m'), 'numerator must use themePrimary');
-    assert.ok(line2.includes('\x1b[38;5;219m1M\x1b[0m'), 'denominator must use themePrimary');
+    assert.ok(line2.includes('\x1b[38;5;183m91k\x1b[0m'), 'numerator must use themePrimary');
+    assert.ok(line2.includes('\x1b[38;5;183m1M\x1b[0m'), 'denominator must use themePrimary');
     assert.ok(!line2.includes('\x1b[36m91k\x1b[0m'), 'numerator must not use themeAccent');
   });
 });

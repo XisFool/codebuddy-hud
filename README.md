@@ -157,7 +157,7 @@ codebuddy-hud --uninstall
 | :--- | :--- |
 | `ocean`（默认） | 深海青蓝 |
 | `emerald` | 翡翠绿 |
-| `cyberpunk` | 赛博朋克（粉紫 + 荧光青） |
+| `cyberpunk` | 赛博朋克（粉紫；模型、分支、项目名及 out Token 同色） |
 | `amber` | 琥珀金 |
 | `monochrome` | 黑白极简 |
 

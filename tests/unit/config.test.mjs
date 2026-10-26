@@ -156,6 +156,15 @@ describe('THEME_PRESETS and resolveTheme', () => {
     const cyberpunk = resolveTheme({ theme: 'cyberpunk', themeMode: 'dark' });
     assert.equal(cyberpunk.primary, 'brightMagenta');
     assert.equal(cyberpunk.name, 'cyberpunk');
+    assert.equal(cyberpunk.accent, 'brightMagenta');
+    assert.equal(cyberpunk.model, 'brightMagenta');
+    assert.equal(cyberpunk.gitBranch, 'brightMagenta');
+
+    const cyberpunkLight = resolveTheme({ theme: 'cyberpunk', themeMode: 'light' });
+    assert.equal(cyberpunkLight.primary, 'magenta');
+    assert.equal(cyberpunkLight.accent, 'magenta');
+    assert.equal(cyberpunkLight.model, 'magenta');
+    assert.equal(cyberpunkLight.gitBranch, 'magenta');
 
     const emerald = resolveTheme({ theme: 'emerald', themeMode: 'dark' });
     assert.equal(emerald.primary, 'brightGreen');

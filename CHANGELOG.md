@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **CLI 查询**：新增 `--version`/`-v` 与 `--help`/`-h`，无需等待 stdin。
 
+### Changed (变更)
+
+- **主题配色**：深色 Emerald 与 Cyberpunk 分别改用柔和浅绿（256 色 `114`）和粉紫（256 色 `183`），保留原有版式及其他字段配色。
+- **Cyberpunk 主色统一**：深浅模式下，分支、项目名和 out Token 跟随模型与上下文用量的粉紫主色，同步主题选择器及中英文说明。
+
 ### Fixed (缺陷修复)
 
 - **CLI 参数优先级**：帮助与版本查询优先于安装、卸载等操作；主题帮助在 TTY 下也只列出预设，修正卸载帮助行对齐。
