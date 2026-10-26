@@ -5,6 +5,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -266,6 +267,78 @@ test('prints help with --help and -h and exits 0', async () => {
   assert.match(r2.out, /Usage:/);
   assert.match(r2.out, /--help, -h/);
   assert.equal(r2.err, '');
+});
+
+for (const flag of ['--help', '-h', '--version', '-v']) {
+  test(`${flag} takes precedence over commands without modifying the installation`, async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-entry-info-'));
+    const home = path.join(tempRoot, 'home');
+    const copiedRuntime = path.join(tempRoot, 'runtime');
+    const copiedBin = path.join(copiedRuntime, 'bin', 'codebuddy-hud.js');
+    const settingsPath = path.join(tempRoot, 'settings.json');
+    const env = { ...process.env, CODEBUDDY_HOME: home, CODEBUDDY_SETTINGS_PATH: settingsPath };
+    const isHelp = flag === '--help' || flag === '-h';
+    function snapshot(dir) {
+      return fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).map(entry => {
+        const entryPath = path.join(dir, entry.name);
+        return [entry.name, entry.isDirectory() ? snapshot(entryPath)
+          : createHash('sha256').update(fs.readFileSync(entryPath)).digest('hex')];
+      });
+    }
+    try {
+      fs.mkdirSync(home);
+      fs.cpSync(path.dirname(path.dirname(BIN)), copiedRuntime, { recursive: true });
+      fs.writeFileSync(settingsPath, JSON.stringify({ statusLine: { type: 'command', command: `node "${copiedBin}"` }, keep: true }));
+      fs.writeFileSync(path.join(home, 'codebuddy-hud.config.json'), JSON.stringify({ theme: 'ocean' }));
+      const before = snapshot(tempRoot);
+      for (const command of [
+        ['--setup'], ['--setup', '--theme', 'emerald'], ['--uninstall'],
+        ['--doctor'], ['-d'], ['--status'], ['--update'], ['--theme', 'emerald'],
+      ]) {
+        for (const args of [[...command, flag], [flag, ...command]]) {
+          const label = args.join(' ');
+          const r = await run({ args, env, bin: copiedBin });
+          assert.equal(r.code, 0, label);
+          assert.equal(r.err, '', label);
+          assert.deepEqual(snapshot(tempRoot), before, `${label} modified the installation`);
+          assert.match(r.out, isHelp
+            ? (command[0] === '--theme' ? /Available themes/ : /Usage:/)
+            : /^codebuddy-hud v\d+\.\d+\.\d+\r?\n$/, label);
+        }
+      }
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+}
+
+test('--theme help lists themes without invoking the selector on a TTY', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-entry-theme-help-'));
+  const copiedRuntime = path.join(tempRoot, 'runtime');
+  const copiedBin = path.join(copiedRuntime, 'bin', 'codebuddy-hud.js');
+  const env = { ...process.env, CODEBUDDY_HOME: tempRoot, CODEBUDDY_SETTINGS_PATH: path.join(tempRoot, 'settings.json') };
+  try {
+    fs.cpSync(path.dirname(path.dirname(BIN)), copiedRuntime, { recursive: true });
+    for (const flag of ['--help', '-h']) {
+      const script = `
+        Object.defineProperty(process.stdin, 'isTTY', { value: true });
+        Object.defineProperty(process.stdout, 'isTTY', { value: true });
+        require(${JSON.stringify(path.join(copiedRuntime, 'theme-selector.js'))}).selectThemeInteractive = async () => {
+          console.error('interactive selector must not run');
+          return null;
+        };
+        process.argv = [process.execPath, ${JSON.stringify(copiedBin)}, '--theme', ${JSON.stringify(flag)}];
+        require(${JSON.stringify(copiedBin)});
+      `;
+      const r = await run({ bin: '-e', args: [script], env });
+      assert.equal(r.code, 0);
+      assert.equal(r.err, '');
+      assert.match(r.out, /Available themes/);
+      assert.doesNotMatch(r.out, /--setup/);
+    }
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 
