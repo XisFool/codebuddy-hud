@@ -142,10 +142,12 @@ codebuddy-hud --uninstall
 卸载程序会：
 
 - 仅当当前 `statusLine` 仍指向本 HUD 时，从安装时的备份还原；若备份里的命令本身也指向 codebuddy-hud，则直接移除 `statusLine` 项。安装后你自行替换或删除的 `statusLine` 保持不变。
-- 删除 Windows `.cmd` shim，清理 HUD 自身的缓存与状态文件，清理挂载的 `hud-config` 技能目录与软链接。
+- 删除 Windows `.cmd` shim，清理 HUD 自身的缓存与状态文件；技能只清理指向本 HUD 源目录的链接或带归属标记的复制目录，未知同名目录会保留。
 - 清理 PATH 注册：移除 Windows 用户级注册表 PATH 中的 runtime bin 目录；macOS / Linux 上删除 `~/.local/bin/codebuddy-hud` 软链接（设置了 `CODEBUDDY_HOME` 时自动跳过）。
 
 用户主题配置（`codebuddy-hud.config.json`）与 `~/.codebuddy/codebuddy-hud-runtime/` 运行时目录会被保留（可手动删除）；除 `statusLine` 外不会改动 `settings.json` 的其他配置项。
+
+安装与卸载保留 `settings.json` 未涉及的注释、BOM 和格式。卸载后若文件与安装前备份不同，原文另存为旁边的 `.bak.codebuddy-hud.retained-<time>-<pid>`，路径会在卸载输出中显示。
 
 ---
 
@@ -176,6 +178,8 @@ codebuddy-hud --theme list      # 仅列出全部主题
 ## 配置
 
 可选。在项目根目录创建 `codebuddy-hud.config.json` 仅对当前项目生效；在 `~/.codebuddy/` 创建同名文件对所有项目生效。优先级：项目 > 用户 > 内置默认。下面是完整字段与默认值：
+
+HUD 配置使用严格 JSON（不含注释或尾逗号）；单个文件超过 256 KiB 时忽略该层。换主题遇到无效配置会报错并保留原文件。
 
 ```json
 {

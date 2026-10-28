@@ -142,10 +142,12 @@ codebuddy-hud --uninstall
 The uninstaller:
 
 - Restores the `statusLine` from the backup taken at install time, only while the current `statusLine` still points at this HUD; if the command in the backup itself points to codebuddy-hud, the `statusLine` entry is removed instead. Replacements or removals you made after installation are preserved.
-- Removes the Windows `.cmd` shim, HUD-owned cache and state files, and the mounted `hud-config` skill directory or symlink.
+- Removes the Windows `.cmd` shim and HUD-owned cache and state files. Skills are removed only when the link points to this HUD's source directory or the copied directory has its ownership marker; unknown directories with the same name are preserved.
 - Cleans up PATH registration: removes the runtime bin directory from the Windows user registry PATH, and unlinks `~/.local/bin/codebuddy-hud` on macOS/Linux (skipped automatically when `CODEBUDDY_HOME` is set).
 
 Your theme config (`codebuddy-hud.config.json`) and the installed runtime directory (`~/.codebuddy/codebuddy-hud-runtime/`) are preserved — delete them manually if desired. Nothing else in `settings.json` is touched.
+
+Setup and uninstall preserve untouched comments, BOM and formatting in `settings.json`. If the restored file differs from the original backup, uninstall retains the original beside it as `.bak.codebuddy-hud.retained-<time>-<pid>` and prints its path.
 
 ---
 
@@ -176,6 +178,8 @@ You can also describe the change inside a CodeBuddy Code session (the bundled `h
 ## Configuration
 
 Optional. Create `codebuddy-hud.config.json` at the project root to affect only that project, or in `~/.codebuddy/` to apply to all projects. Priority: project > user > built-in defaults. The block below lists every field with its default:
+
+HUD configs use strict JSON (no comments or trailing commas). A file larger than 256 KiB is ignored for that layer. Changing themes reports an invalid config and leaves the original file intact.
 
 ```json
 {

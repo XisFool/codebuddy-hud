@@ -163,7 +163,7 @@ export const THEME_PRESETS: Record<string, ThemePreset>;
 - `monochrome`: 黑白极简经典终端 (dark: `white`/`gray`, light: `gray`/`gray`)
 
 ### 安全机制
-设计动机见 [architecture §5.5](architecture_zh.md#55-多层级配置合并与主题引擎-configjs)。配置文件每次加载直接读取；`--theme <name>` 写入用户配置，不是运行时覆盖层；`resolveTheme` 是后处理而非合并层。
+设计动机见 [architecture §5.5](architecture_zh.md#55-多层级配置合并与主题引擎-configjs)。HUD 配置文件每次加载前检查大小，超过 256 KiB 或不是普通文件时跳过该层，保留其他层配置；`--theme <name>` 写入用户配置，不是运行时覆盖层；`resolveTheme` 是后处理而非合并层。
 
 `deepMerge()` 内部跳过 `__proto__` 键并将递归深度限制为 64，阻断恶意配置污染 V8 原型链与爆栈。主题覆盖值另经白名单校验：仅保留调色板已有关键字；值必须是严格 SGR 序列（`^\x1b\[[0-9;:]{0,48}m$`）或长度 ≤32 且不含 C0/C1 的字符串；非字符串值被丢弃。未知颜色名不会回退预设，而是由 `color()` 原样输出为无样式文本。
 
@@ -351,7 +351,7 @@ export function getTurnMetricsAndActivity(
 
 ### 辅助导出与常数
 - 辅助扫描函数：`getRecentToolActivity(transcriptPath, opts)` 返回 `{ status: 'active' | 'done', tool, detail } | null`（renderer 在无 `turnActivity` 时兜底调用）；`getRecentUsageMetrics(path, opts)`、`extractUsageMetrics(entry: object)`。
-- 滑窗预算常数：`DEFAULT_TAIL_BYTES` (16384)、`MAX_TOTAL_BYTES` (262144)、`MAX_SCAN_LINES` (40)、`MAX_TURN_SCAN_LINES` (200)；`MIN_TAIL_BYTES` 为 64，小于该值的 `display.toolActivityTailBytes` 会被 `normalizeTailBytes` 重置为 16384。
+- 滑窗预算常数：`DEFAULT_TAIL_BYTES` (16384)、`MAX_TOTAL_BYTES` (262144)、`MAX_SCAN_LINES` (40)、`MAX_TURN_SCAN_LINES` (200)；`MIN_TAIL_BYTES` 为 64，小于该值的 `display.toolActivityTailBytes` 会被 `normalizeTailBytes` 重置为 16384，大于 `MAX_TOTAL_BYTES` 时钳制至该上限；各逆向扫描同时按剩余字节预算限制读取。
 
 ---
 
@@ -534,6 +534,8 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 ### 接口定义
 ```typescript
 export function parseSettingsJson(raw: string): object;
+export function getSettingsProperty(raw: string, key: string): string | undefined;
+export function editSettingsProperty(raw: string, key: string, valueRaw: string | undefined): string;
 export function atomicWriteSettingsFile(targetPath: string, content: string): void;
 export function resolveWriteTarget(targetPath: string): string;
 export function isSettingsObject(value: unknown): boolean;
@@ -541,6 +543,7 @@ export function writePrivateFileIfAbsent(filePath: string, content: string): boo
 ```
 
 ### 核心安全契约
+- **局部文本修改**：`getSettingsProperty()` 读取对象直接成员的原文值；`editSettingsProperty()` 仅替换、插入或删除该成员，保留未涉及的注释、BOM、空白及换行。`undefined` 表示删除，重复键按 JSON 的末项生效规则读取，删除时清除所有同名项以免旧命令重新生效。
 - **严格保护字符串内容**：`stripJsonComments()` 仅剔除双引号字符串外的单行 `//` 与块级 `/* */` 注释，保留换行符与空格以确保 JSON 语法报错行号对齐；绝不误改字符串内部的路径或 URL。`parseSettingsJson()` 还会剥离 UTF-8 BOM、清除字符串外的尾随逗号；空内容返回 `{}`。
 - **符号链接解析跟随**：`resolveWriteTarget()` 循环解引用符号链接（上限 40 层防环），确保写操作直接作用于最终真实目标文件。
 - **原子替换与硬链接保护**：通过临时文件（`.tmp-<pid>-<time>`）写入后执行 `fs.renameSync()` 原子替换；检测到硬链接数 `nlink > 1` 时主动拒绝原子替换，防止意外破坏硬链接。
@@ -561,6 +564,9 @@ export function setup(options?: {
   platform?: string;
   nodeExe?: string;
   theme?: string;
+  rootDir?: string;
+  sourceSkillDir?: string;
+  targetSkillDir?: string;
 }): void;
 
 export function deploySkill(options?: {
@@ -570,16 +576,17 @@ export function deploySkill(options?: {
 }, hudBin?: string, platform?: string): void;
 
 export function buildStatusLineCommand(platform: string, hudBin: string, nodeExe: string): string;
+export function removeManagedSkill(targetDir: string, sourceDir: string): void;
 export function buildCmdShimContent(nodeExe: string, hudBin?: string): string;
 export function parseSettingsJson(content: string): object;
 export function isSettingsObject(val: unknown): val is Record<string, unknown>;
 ```
 
 ### 关键机制
-- **技能自动挂载**：`setup()` 时通过 `deploySkill()` 将 `skills/hud-config/` 挂载至 `~/.codebuddy/skills/hud-config/`（Windows 优先 Junction，POSIX 优先目录软链接，跨卷或失败时降级递归复制；带源目录存在性与自环防呆校验）。
+- **技能自动挂载**：`setup()` 时通过 `deploySkill()` 将 `skills/hud-config/` 挂载至 `~/.codebuddy/skills/hud-config/`（Windows 优先 Junction，POSIX 优先目录软链接，失败时降级递归复制）。仅替换/卸载指向本次源目录的链接或含 `.codebuddy-hud-managed` 标记（内容为 `codebuddy-hud\n`）的复制目录；未知目录与链接警告并保留，旧版无标记副本也按未知目录处理。标记仅写入复制目录，不写入链接目标；源目录本身禁止删除。
 - **Windows Shim**：烘焙 `process.execPath`、`%`→`%%`、非 ASCII 路径的 8.3 短路径与 `@chcp 65001 >nul`、宿主引号兼容规则见 [architecture §8.1](architecture_zh.md#8-跨平台与零依赖设计保障)。
-- **settings.statusLine 形状**：写入 `{ type: 'command', command, padding: 0 }`；Windows `.cmd` shim 以 `"%~dp0codebuddy-hud.js"` 转发同目录入口，`doctor` 按该转发约定校验健康度。
-- **无损配置恢复保障**：首次安装前将原始 `settings.json` 备份为 `settings.json.bak.codebuddy-hud`（仅备份一次，永不覆盖老备份）。安装成功后通过 `settings-file.js` 以原子写入写回标准格式。
+- **settings.statusLine 形状**：局部更新 `type: 'command'` 与 `command`，保留已有 padding 和额外字段；padding 缺失时才补 0。Windows `.cmd` shim 以 `"%~dp0codebuddy-hud.js"` 转发同目录入口，`doctor` 按该转发约定校验健康度。
+- **无损配置恢复保障**：首次安装前将原始 `settings.json` 备份为 `settings.json.bak.codebuddy-hud`（同一安装周期只备份一次），通过 `settings-file.js` 局部编辑后原子写回，不重新序列化整份 JSONC。`--setup --theme` 遇到换肤失败时中止，不继续写入 statusLine。
 
 ---
 
@@ -622,11 +629,15 @@ export const THEMES: Array<{ name: string; label: string }>;
 
 界面文案（列表标题、用法提示、选择器标题/快捷键提示、预览框标题）通过 `lang.js` 字典输出，`config.language` 生效；预览框顶边按显示宽度（CJK 双列）计算，与底边对齐。
 
+`saveUserTheme()` 与配置加载保持严格 JSON 口径；仅文件不存在时新建。读取/解析失败或根节点不是对象时中止，原文件不变；成功写入复用 `atomicWriteSettingsFile()`，保留既有权限和软链接，新文件默认 `0600`。
+
 ---
 
 ## 20. `runtime/uninstall.js` — 卸载还原与深度清理
 
-**职责：** 从首次备份仅还原非本 HUD 的 `statusLine`（且仅当当前 `statusLine` 仍指向本 HUD；用户装后替换或删除的项保留）——备份记录的命令含 `codebuddy-hud` 时（更早的安装副本或 `npm link` 全局 shim）改为移除 settings 中的该项，消除「报告卸载成功而 HUD 仍生效」；保留其他 settings 及用户主题配置；清理已部署的 `~/.codebuddy/skills/hud-config/` 技能目录/挂载；移除对应 runtime 的 Windows shim 与用户缓存；清理系统级 PATH 注册（从 Windows 用户注册表 Path 移除 runtime 目录，POSIX 移除 `~/.local/bin/codebuddy-hud` 软链接；沙箱测试模式下通过 `CODEBUDDY_HOME` 环境变量守卫自动跳过）。备份一经解析成功即回收，不依赖 settings 是否被写入；解析失败或写入失败时保留备份。
+**职责：** 从首次备份局部还原非本 HUD 的 `statusLine`（且仅当当前 `statusLine` 仍指向本 HUD；用户装后替换或删除的项保留）——备份记录的命令含 `codebuddy-hud` 时改为移除该项；保留其他 settings 原文及用户主题配置，仅清理可确认归属的技能部署（见 §17）；移除对应 runtime 的 Windows shim 与用户缓存；清理系统级 PATH 注册（`CODEBUDDY_HOME` 已设置时跳过）。成功处理后，若当前文件与备份原文不同，先以私有权限留存 `settings.json.bak.codebuddy-hud.retained-<time>-<pid>`，再回收活动备份，避免后续安装误用旧快照；解析、写入或留存失败时保留活动备份。
+
+仅当逐字比对确认 `statusLine` 以外的原文未变，且备份不指向旧 HUD 时，直接恢复备份原文，使新增/删除该字段也能精确往返；其他情况只修改该字段，不覆盖安装后的其他修改。
 
 ### 接口定义
 ```typescript
@@ -668,6 +679,7 @@ export async function runUpdate(options?: object): Promise<{ ok: boolean, messag
 **职责：** 支持本地与 GitHub Raw 远程安装，通过临时目录 `.tmp-<pid>` + 原子重命名完成覆盖。本地安装直接复制仓库文件；远程安装解析 Release 的 `tag_name` 后从对应不可变 tag 下载。下载源优先级：`CODEBUDDY_HUD_RAW_BASE` → `CODEBUDDY_HUD_VERSION` → Latest Release 查询；前两者跳过查询。`CODEBUDDY_HUD_MIRROR` 为默认 GitHub URL 加镜像前缀，查询失败可回退直连，runtime 文件经镜像下载。`--delay-start` 延迟 1s 开始重装，供 `--update` 等待父进程退出以规避 Windows 文件锁。
 
 ### 核心导出与内部函数
+- `RUNTIME_FILES: string[]`: 远端下载清单，覆盖 runtime 所需文件、技能与 LICENSE；本地复制同样包含 LICENSE，测试检查清单完整性。
 - `install(): Promise<void>`: 核心安装入口，支持本地复制与远端下载，通过临时目录 + 原子重命名完成安装。
 - `getTargetDir(): string`: 返回运行时目标安装目录路径（受 `CODEBUDDY_HUD_DIR` 环境变量影响）。
 - `checkNodeVersion(): void`: 校验当前 Node.js 版本 ≥18；不满足时向 stderr 打印错误并 `process.exit(1)`（不抛异常，调用方无法 catch）。
