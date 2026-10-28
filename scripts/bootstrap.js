@@ -29,6 +29,7 @@ function urlCandidates(url) {
 
 const RUNTIME_FILES = [
   'package.json',
+  'LICENSE',
   '.codebuddy-plugin/plugin.json',
   'runtime/codebuddy-hud.config.json',
   'runtime/config.js',
@@ -238,7 +239,7 @@ async function install() {
   try {
     if (isLocalCheckout) {
       console.log('  Mode: Local repository copy');
-      const filesToCopy = ['package.json', 'README.md'];
+      const filesToCopy = ['package.json', 'README.md', 'LICENSE'];
       for (const f of filesToCopy) {
         const src = path.join(localRepoRoot, f);
         if (fs.existsSync(src)) {
@@ -333,6 +334,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  RUNTIME_FILES,
   install,
   getTargetDir,
   checkNodeVersion,

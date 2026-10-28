@@ -2,6 +2,7 @@ import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import fs from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const {
@@ -12,9 +13,35 @@ const {
   fetchLatestTagVia302,
   fetchLatestRelease,
   mirrorPrefix,
+  RUNTIME_FILES,
 } = require('../../scripts/bootstrap.js');
 
 describe('bootstrap installer', () => {
+  test('remote file list contains every shipped runtime file and relative require dependency', () => {
+    const repoRoot = path.dirname(path.dirname(require.resolve('../../scripts/bootstrap.js')));
+    const manifest = new Set(RUNTIME_FILES);
+    assert.equal(manifest.size, RUNTIME_FILES.length, 'manifest must not contain duplicate downloads');
+    assert.ok(manifest.has('LICENSE'));
+    const visit = dir => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) visit(full);
+        else if (/\.(js|json)$/.test(entry.name)) {
+          const relative = path.relative(repoRoot, full).split(path.sep).join('/');
+          assert.ok(manifest.has(relative), `missing remote runtime file: ${relative}`);
+          if (entry.name.endsWith('.js')) {
+            for (const match of fs.readFileSync(full, 'utf8').matchAll(/require\(['"](\.[^'"]+)['"]\)/g)) {
+              const dependency = require.resolve(path.resolve(path.dirname(full), match[1]));
+              const required = path.relative(repoRoot, dependency).split(path.sep).join('/');
+              assert.ok(manifest.has(required), `${relative} requires unlisted ${required}`);
+            }
+          }
+        }
+      }
+    };
+    visit(path.join(repoRoot, 'runtime'));
+  });
+
   test('checkNodeVersion runs cleanly on current node', () => {
     assert.doesNotThrow(() => {
       checkNodeVersion();
@@ -252,6 +279,8 @@ describe('bootstrap installer', () => {
       await install();
 
       assert.ok(fs.existsSync(path.join(targetDir, 'runtime', 'bin', 'codebuddy-hud.js')));
+      assert.equal(fs.readFileSync(path.join(targetDir, 'LICENSE'), 'utf8'),
+        fs.readFileSync(require.resolve('../../LICENSE'), 'utf8'));
       const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
       assert.ok(settings.statusLine);
       assert.ok(settings.statusLine.command);
@@ -323,6 +352,8 @@ describe('bootstrap installer', () => {
       assert.match(installed.output, /Mode: Remote download/);
       assert.ok(requests.includes('runtime/settings-file.js'));
       assert.ok(requests.includes('runtime/update-checker.js'));
+      assert.ok(requests.includes('LICENSE'));
+      assert.equal(fs.readFileSync(path.join(targetDir, 'LICENSE'), 'utf8'), fs.readFileSync(path.join(repoRoot, 'LICENSE'), 'utf8'));
       assert.equal(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).model, 'retained');
       assert.ok(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).statusLine.command);
       const removed = await run(path.join(targetDir, 'runtime', 'bin', 'codebuddy-hud.js'), ['--uninstall']);
