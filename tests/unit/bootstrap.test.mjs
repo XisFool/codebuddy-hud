@@ -22,6 +22,9 @@ describe('bootstrap installer', () => {
     const manifest = new Set(RUNTIME_FILES);
     assert.equal(manifest.size, RUNTIME_FILES.length, 'manifest must not contain duplicate downloads');
     assert.ok(manifest.has('LICENSE'));
+    for (const rel of RUNTIME_FILES) {
+      assert.ok(fs.existsSync(path.join(repoRoot, rel)), `manifest entry missing from repo: ${rel}`);
+    }
     const visit = dir => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);

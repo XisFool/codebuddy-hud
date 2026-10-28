@@ -147,7 +147,7 @@ codebuddy-hud --uninstall
 
 用户主题配置（`codebuddy-hud.config.json`）与 `~/.codebuddy/codebuddy-hud-runtime/` 运行时目录会被保留（可手动删除）；除 `statusLine` 外不会改动 `settings.json` 的其他配置项。
 
-安装与卸载保留 `settings.json` 未涉及的注释、BOM 和格式。卸载后若文件与安装前备份不同，原文另存为旁边的 `.bak.codebuddy-hud.retained-<time>-<pid>`，路径会在卸载输出中显示。
+安装与卸载保留 `settings.json` 未涉及的注释、BOM 和格式。卸载后若文件与安装前备份不同，原文另存为旁边的 `.bak.codebuddy-hud.retained-<time>-<pid>`，路径会在卸载输出中显示；也可用 `codebuddy-hud --doctor` 查看残留副本（只列出、不自动删除）。
 
 ---
 

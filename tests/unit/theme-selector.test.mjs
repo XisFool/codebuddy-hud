@@ -110,6 +110,30 @@ describe('theme-selector', () => {
     }
   });
 
+  it('reports invalid user config with the file path and strict-JSON hint', () => {
+    const configPath = path.join(process.env.CODEBUDDY_HOME, 'codebuddy-hud.config.json');
+    try {
+      for (const raw of ['{"display":{"showCost":false},}', '']) {
+        fs.writeFileSync(configPath, raw);
+        assert.throws(() => saveUserTheme('amber'), err => {
+          assert.ok(err.message.includes(configPath), 'error must name the config file');
+          assert.ok(err.message.includes('strict JSON'), 'error must explain the strict-JSON rule');
+          assert.ok(err.message.includes('left unchanged'), 'error must confirm the file was preserved');
+          return true;
+        });
+        assert.equal(fs.readFileSync(configPath, 'utf8'), raw);
+      }
+      fs.writeFileSync(configPath, '[]');
+      assert.throws(() => saveUserTheme('amber'), err => {
+        assert.ok(err.message.includes('must be a JSON object'));
+        assert.ok(err.message.includes(configPath));
+        return true;
+      });
+    } finally {
+      fs.rmSync(configPath, { force: true });
+    }
+  });
+
   it('preserves other options and refuses writes through multiple hard links', () => {
     const configPath = path.join(process.env.CODEBUDDY_HOME, 'codebuddy-hud.config.json');
     const linkedPath = path.join(tmpDir, 'theme-hardlink.json');

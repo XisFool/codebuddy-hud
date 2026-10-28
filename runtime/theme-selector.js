@@ -39,10 +39,17 @@ function saveUserTheme(themeName) {
   try {
     userConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   } catch (err) {
-    if (!err || err.code !== 'ENOENT') throw err;
+    if (!err || err.code === 'ENOENT') {
+      userConfig = {};
+    } else if (err instanceof SyntaxError) {
+      throw new Error(`Invalid HUD config at ${configPath}: ${err.message}. ` +
+        'HUD config must be strict JSON (no comments or trailing commas); the original file was left unchanged.');
+    } else {
+      throw err;
+    }
   }
   if (!isSettingsObject(userConfig)) {
-    throw new Error('HUD config root must be a JSON object');
+    throw new Error(`HUD config root must be a JSON object: ${configPath}`);
   }
   userConfig.theme = themeName;
   atomicWriteSettingsFile(configPath, JSON.stringify(userConfig, null, 2));

@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added (新增特性)
 
 - **CLI 查询**：新增 `--version`/`-v` 与 `--help`/`-h`，无需等待 stdin。
+- **分发 LICENSE**：本地复制与远端下载清单均包含仓库 `LICENSE`，修复分发物缺失 MIT 许可文本的问题。
+- **远端清单漂移测试**：新增单测断言 `RUNTIME_FILES` 覆盖 `runtime/` 下全部 `.js/.json` 与相对 `require()` 依赖，并反向断言清单每一项在仓库中真实存在，防止重蹈 v0.3.9 漏 `update-checker.js` 的事故。
+- **doctor 残留副本检查**：`--doctor` 新增 `codebuddy` 检查项，列出卸载时保留的 `.bak.codebuddy-hud.retained-*` 原文副本并提示手动清理（只列出、不自动删除）。
 
 ### Changed (变更)
 
@@ -32,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Windows PATH**：安装/卸载保留 HKCU `Path` 的 `%VAR%` 与注册表值类型；卸载按归一化路径移除 runtime bin，避免误删或漏删。
 - **effort 状态**：临时文件 + rename 原子写入，避免并发读到半截 JSON。
 - **bootstrap 查询源**：兼容 `CODEBUDDY_HUD_REMOTE_PKG_URL` 旧名；显式 Release URL 跳过默认 302/API 查询，两变量同设时新名优先。
+- **安装/卸载 JSONC 无损**：`--setup`/`--uninstall` 改为局部文本编辑，仅改动 `statusLine` 成员，保留注释、BOM、换行与格式；已有 `padding` 与额外字段予以保留；卸载在确认 `statusLine` 之外无改动时整文精确还原，否则仅回写该字段并把原文另存 `.retained-<time>-<pid>` 后再退役备份。
+- **技能目录归属保护**：部署与卸载只处理指向本次源目录的链接或带 `.codebuddy-hud-managed` 标记的复制目录；未知同名目录/链接/文件一律警告并保留，不再误删用户文件。
+- **主题配置保护**：`--theme` 对无效配置（非法 JSON、非对象根节点、不可读文件）直接报错并保留原文件，不再重置为空对象；写入复用原子写与权限保留，错误信息点出文件路径与严格 JSON 要求。`--setup --theme` 遇到换肤失败时中止，不继续写入 `statusLine`。
+- **扫描预算上限**：`display.toolActivityTailBytes` 增加 `MAX_TOTAL_BYTES` 上限钳制，各逆向扫描按剩余字节预算限制单次读取；配置文件超过 256 KiB 或非普通文件时跳过该层，防止仓库内恶意配置触发大内存读取。
 
 ### Performance & Hardening (性能与稳健性加固)
 
@@ -44,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Tests (测试)
 
 - 新增 CLI 参数组合（64 种）、TTY 主题帮助、transcript 增长/截断与 stat 失败、Release 查询源优先级等回归。全量验证命令见 [AGENTS.md](AGENTS.md#测试与验证)，用例数以实际输出为准。
+- 新增远端清单漂移（正/反向）、JSONC 字节级往返、技能归属、主题失败保护、doctor 残留副本回归；`verify-install` 扩展用户技能保护与主题失败场景校验。
 
 ---
 

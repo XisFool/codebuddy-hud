@@ -147,7 +147,7 @@ The uninstaller:
 
 Your theme config (`codebuddy-hud.config.json`) and the installed runtime directory (`~/.codebuddy/codebuddy-hud-runtime/`) are preserved — delete them manually if desired. Nothing else in `settings.json` is touched.
 
-Setup and uninstall preserve untouched comments, BOM and formatting in `settings.json`. If the restored file differs from the original backup, uninstall retains the original beside it as `.bak.codebuddy-hud.retained-<time>-<pid>` and prints its path.
+Setup and uninstall preserve untouched comments, BOM and formatting in `settings.json`. If the restored file differs from the original backup, uninstall retains the original beside it as `.bak.codebuddy-hud.retained-<time>-<pid>` and prints its path. Run `codebuddy-hud --doctor` to list retained copies (listed only, never auto-deleted).
 
 ---
 
