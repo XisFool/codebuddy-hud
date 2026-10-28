@@ -1,12 +1,12 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
 const readline = require('readline');
 const { THEME_PRESETS, resolveTheme, isPresetName } = require('./config');
 const { getUserConfigPath, getSettingsPath } = require('./paths');
 const { sanitizeTerminalText } = require('./sanitize');
 const { getI18n } = require('./lang');
+const { atomicWriteSettingsFile, isSettingsObject } = require('./settings-file');
 const { color, bold, dim, RESET, BOLD, DIM } = require('./renderer/format');
 
 const ANSI_CYAN = '\x1b[36m';
@@ -35,34 +35,17 @@ function saveUserTheme(themeName) {
     throw new Error(`Invalid theme name: "${themeName}"`);
   }
   const configPath = getUserConfigPath();
-  const dir = path.dirname(configPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
   let userConfig = {};
   try {
-    if (fs.existsSync(configPath)) {
-      const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        userConfig = parsed;
-      }
-    }
-  } catch {
-    userConfig = {};
-  }
-
-  userConfig.theme = themeName;
-  const tmpPath = `${configPath}.tmp-${process.pid}-${Date.now()}`;
-  try {
-    const dir = path.dirname(configPath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(tmpPath, JSON.stringify(userConfig, null, 2));
-    fs.renameSync(tmpPath, configPath);
+    userConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   } catch (err) {
-    try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
-    throw err;
+    if (!err || err.code !== 'ENOENT') throw err;
   }
+  if (!isSettingsObject(userConfig)) {
+    throw new Error('HUD config root must be a JSON object');
+  }
+  userConfig.theme = themeName;
+  atomicWriteSettingsFile(configPath, JSON.stringify(userConfig, null, 2));
   return configPath;
 }
 

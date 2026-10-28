@@ -88,6 +88,62 @@ describe('theme-selector', () => {
     }, /Invalid theme name/);
   });
 
+  it('leaves invalid or unreadable user config byte-for-byte unchanged', () => {
+    const configPath = path.join(process.env.CODEBUDDY_HOME, 'codebuddy-hud.config.json');
+    const readFile = fs.readFileSync;
+    try {
+      for (const raw of ['{"display":{"showCost":false},}', '// comment\n{}', '[]', 'null', '1', '"theme"', '']) {
+        fs.writeFileSync(configPath, raw);
+        assert.throws(() => saveUserTheme('amber'));
+        assert.equal(fs.readFileSync(configPath, 'utf8'), raw);
+      }
+      fs.writeFileSync(configPath, '{"display":{"showCost":false}}');
+      fs.readFileSync = function (file, ...args) {
+        if (file === configPath) throw Object.assign(new Error('unreadable config'), { code: 'EACCES' });
+        return readFile.call(this, file, ...args);
+      };
+      assert.throws(() => saveUserTheme('amber'), /unreadable config/);
+      assert.equal(readFile(configPath, 'utf8'), '{"display":{"showCost":false}}');
+    } finally {
+      fs.readFileSync = readFile;
+      fs.rmSync(configPath, { force: true });
+    }
+  });
+
+  it('preserves other options and refuses writes through multiple hard links', () => {
+    const configPath = path.join(process.env.CODEBUDDY_HOME, 'codebuddy-hud.config.json');
+    const linkedPath = path.join(tmpDir, 'theme-hardlink.json');
+    try {
+      fs.writeFileSync(configPath, '{"display":{"showCost":false},"thresholds":{"warning":0}}');
+      saveUserTheme('amber');
+      const raw = fs.readFileSync(configPath, 'utf8');
+      assert.deepEqual(JSON.parse(raw), { display: { showCost: false }, thresholds: { warning: 0 }, theme: 'amber' });
+      fs.linkSync(configPath, linkedPath);
+      assert.throws(() => saveUserTheme('ocean'), /multiple hard links/);
+      assert.equal(fs.readFileSync(configPath, 'utf8'), raw);
+      assert.equal(fs.readFileSync(linkedPath, 'utf8'), raw);
+    } finally {
+      fs.rmSync(linkedPath, { force: true });
+      fs.rmSync(configPath, { force: true });
+    }
+  });
+
+  it('preserves theme config symlinks and POSIX permissions', { skip: process.platform === 'win32' }, () => {
+    const configPath = path.join(process.env.CODEBUDDY_HOME, 'codebuddy-hud.config.json');
+    const targetPath = path.join(tmpDir, 'theme-target.json');
+    try {
+      fs.writeFileSync(targetPath, '{"display":{"showCost":false}}', { mode: 0o640 });
+      fs.chmodSync(targetPath, 0o640);
+      fs.symlinkSync(targetPath, configPath);
+      saveUserTheme('emerald');
+      assert.equal(fs.lstatSync(configPath).isSymbolicLink(), true);
+      assert.equal(fs.statSync(targetPath).mode & 0o777, 0o640);
+      assert.equal(JSON.parse(fs.readFileSync(targetPath, 'utf8')).theme, 'emerald');
+    } finally {
+      fs.rmSync(configPath, { force: true });
+    }
+  });
+
   it('prints theme list without throwing', () => {
     assert.doesNotThrow(() => {
       printThemesList();
