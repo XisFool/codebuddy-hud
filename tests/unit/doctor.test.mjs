@@ -165,6 +165,44 @@ describe('doctor diagnosis tool', () => {
     });
   });
 
+  test('reports ok when no retained settings backups exist', () => {
+    withIsolatedSettings(({ tmpDir }) => {
+      fs.writeFileSync(path.join(tmpDir, 'settings.json.bak.codebuddy-hud'), '{}');
+      const check = runDoctor({ cwd: process.cwd() }).checks
+        .find(c => c.category === 'codebuddy' && (c.name.includes('Retained') || c.name.includes('残留')));
+      assert.ok(check);
+      assert.equal(check.status, 'ok');
+    });
+  });
+
+  test('flags retained settings backups for manual review without auto-deleting', () => {
+    withIsolatedSettings(({ tmpDir }) => {
+      const names = [1, 2].map(n => `settings.json.bak.codebuddy-hud.retained-100${n}-9${n}`);
+      for (const name of names) fs.writeFileSync(path.join(tmpDir, name), '{}');
+      fs.writeFileSync(path.join(tmpDir, 'settings.json.bak.codebuddy-hud'), '{}');
+      const check = runDoctor({ cwd: process.cwd() }).checks
+        .find(c => c.category === 'codebuddy' && (c.name.includes('Retained') || c.name.includes('残留')));
+      assert.ok(check);
+      assert.equal(check.status, 'warn');
+      for (const name of names) assert.ok(check.detail.includes(name));
+      assert.ok(check.message && check.message.length > 0);
+      for (const name of names) assert.ok(fs.existsSync(path.join(tmpDir, name)), 'doctor must not delete retained copies');
+    });
+  });
+
+  test('caps the retained-backup listing instead of dumping every file', () => {
+    withIsolatedSettings(({ tmpDir }) => {
+      for (let n = 0; n < 7; n++) {
+        fs.writeFileSync(path.join(tmpDir, `settings.json.bak.codebuddy-hud.retained-200${n}-7${n}`), '{}');
+      }
+      const check = runDoctor({ cwd: process.cwd() }).checks
+        .find(c => c.category === 'codebuddy' && (c.name.includes('Retained') || c.name.includes('残留')));
+      assert.ok(check);
+      assert.equal(check.status, 'warn');
+      assert.ok(check.detail.includes('and 2 more'));
+    });
+  });
+
   test('flags a Windows shim whose forwarded script is missing', () => {
     withIsolatedSettings(({ tmpDir, writeSettings }) => {
       const shim = path.join(tmpDir, 'bin', 'codebuddy-hud.cmd');

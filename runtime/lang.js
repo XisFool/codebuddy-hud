@@ -30,6 +30,7 @@ const DICTIONARY = {
     unicodeSupport: 'Unicode 渲染支持',
     gitEnvironment: 'Git 环境与当前仓库',
     transcriptAccess: 'Transcript 日志目录访问',
+    retainedBackups: '卸载残留的配置恢复副本',
     hostRefreshProtocol: '宿主刷新架构契约',
     doctorNodeOld: 'Node.js 版本过旧，需要 >= 18.0.0',
     doctorSettingsMissing: '未找到 settings.json，请先运行 codebuddy-hud --setup',
@@ -38,6 +39,7 @@ const DICTIONARY = {
     doctorCodepageWarn: '建议运行 "chcp 65001" 启用 UTF-8 支持以获得最佳渲染效果',
     doctorGitBranchSlow: 'Git 分支查询耗时偏高',
     doctorTranscriptMissing: '未检测到 transcript 日志目录或暂无写入',
+    doctorRetainedBackups: '卸载时保留了 settings 原文副本，确认无误后可手动删除',
 
     // Uninstall & Setup
     setupComplete: 'codebuddy-hud setup complete.',
@@ -81,6 +83,7 @@ const DICTIONARY = {
     unicodeSupport: 'Unicode Support',
     gitEnvironment: 'Git Environment & Active Repo',
     transcriptAccess: 'Transcript Directory Access',
+    retainedBackups: 'Retained settings recovery copies',
     hostRefreshProtocol: 'Host Refresh Architecture',
     doctorNodeOld: 'Node.js version is too old, requires >= 18.0.0',
     doctorSettingsMissing: 'settings.json not found, run codebuddy-hud --setup first',
@@ -89,6 +92,7 @@ const DICTIONARY = {
     doctorCodepageWarn: 'Recommendation: run "chcp 65001" for optimal UTF-8 rendering',
     doctorGitBranchSlow: 'Git branch resolution latency is high',
     doctorTranscriptMissing: 'Transcript directory not found or empty',
+    doctorRetainedBackups: 'Uninstall left original-settings copies behind; delete them manually once confirmed unneeded',
 
     // Uninstall & Setup
     setupComplete: 'codebuddy-hud setup complete.',

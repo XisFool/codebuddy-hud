@@ -260,6 +260,41 @@ function checkPathNormalization(i18n, cwd) {
   }];
 }
 
+// Uninstall retires the active `.bak.codebuddy-hud` snapshot but keeps a
+// `.retained-<time>-<pid>` copy of the original text when it differs from the
+// restored settings. Those copies accumulate by design (never auto-deleted),
+// so doctor surfaces them for a manual review-and-delete decision.
+function checkRetainedBackups(i18n) {
+  const settingsPath = getSettingsPath();
+  const dir = path.dirname(settingsPath);
+  const prefix = `${path.basename(settingsPath)}.bak.codebuddy-hud.retained-`;
+  let retained = [];
+  try {
+    retained = fs.readdirSync(dir).filter(name => name.startsWith(prefix));
+  } catch {
+    retained = [];
+  }
+  retained.sort();
+  if (retained.length === 0) {
+    return [{
+      category: 'codebuddy',
+      name: i18n.t('retainedBackups'),
+      status: 'ok',
+      detail: `No retained copies in ${dir}`,
+      message: null,
+    }];
+  }
+  const shown = retained.slice(0, 5).map(name => sanitizeTerminalText(name, 120));
+  const extra = retained.length - shown.length;
+  return [{
+    category: 'codebuddy',
+    name: i18n.t('retainedBackups'),
+    status: 'warn',
+    detail: extra > 0 ? `${shown.join(', ')} (and ${extra} more in ${dir})` : `${shown.join(', ')} (in ${dir})`,
+    message: i18n.t('doctorRetainedBackups'),
+  }];
+}
+
 function checkHostRefreshProtocol(i18n) {
   return [{
     category: 'codebuddy',
@@ -279,6 +314,7 @@ function runDoctor(options) {
   const checks = [
     checkNodeEnvironment(i18n),
     ...checkCodeBuddyConfig(i18n),
+    ...checkRetainedBackups(i18n),
     ...checkHostRefreshProtocol(i18n),
     ...checkEncodingEnvironment(i18n, config),
     ...checkPathNormalization(i18n, cwd),

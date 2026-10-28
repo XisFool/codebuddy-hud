@@ -608,6 +608,7 @@ export function printDoctorReport(report: DoctorReport, isJson?: boolean, option
 5. `terminal / windowsPathNormalization`: Windows 路径大小写规范化检查。
 6. `git`: Git PATH 可达性、当前仓库分支与探测延迟。
 7. `transcript`: 遥测状态目录创建与可写性校验，并回显错误日志路径。
+8. `codebuddy / retainedBackups`: 扫描 settings 同目录下的 `.bak.codebuddy-hud.retained-*` 原文副本并列出（最多 5 个），提示手动清理；只读不删，无残留时为 `ok`。
 
 命令路径在 POSIX 下按原样与 shell 反转义两种形式校验；Windows 只按字面路径校验，保留 UNC 与 `\$`，避免把不存在的路径反转义成另一个有效文件。引号内尾反斜杠造成分词歧义时回退非转义分词。
 
@@ -629,7 +630,7 @@ export const THEMES: Array<{ name: string; label: string }>;
 
 界面文案（列表标题、用法提示、选择器标题/快捷键提示、预览框标题）通过 `lang.js` 字典输出，`config.language` 生效；预览框顶边按显示宽度（CJK 双列）计算，与底边对齐。
 
-`saveUserTheme()` 与配置加载保持严格 JSON 口径；仅文件不存在时新建。读取/解析失败或根节点不是对象时中止，原文件不变；成功写入复用 `atomicWriteSettingsFile()`，保留既有权限和软链接，新文件默认 `0600`。
+`saveUserTheme()` 与配置加载保持严格 JSON 口径；仅文件不存在时新建。读取/解析失败或根节点不是对象时中止，原文件不变，错误信息点出配置文件路径与严格 JSON 要求；成功写入复用 `atomicWriteSettingsFile()`，保留既有权限和软链接，新文件默认 `0600`。
 
 ---
 
