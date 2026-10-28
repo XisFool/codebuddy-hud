@@ -7,13 +7,234 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
-const { buildStatusLineCommand, buildCmdShimContent, setup } = require('../../runtime/statusline-installer.js');
+const { buildStatusLineCommand, buildCmdShimContent, setup, deploySkill, parseSettingsJson } = require('../../runtime/statusline-installer.js');
 const { uninstall } = require('../../runtime/uninstall.js');
 const { getSessionStatsStateDir, getUpdateStatusPath } = require('../../runtime/paths.js');
 
 // POSIX fixtures use forward slashes; win32 fixtures use C:\... style.
 const POSIX_NODE = '/usr/bin/node';
 const POSIX_HUD = '/opt/codebuddy-hud/runtime/bin/codebuddy-hud.js';
+
+function withInstallerFixture(run) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-installer-boundary-'));
+  const saved = { CODEBUDDY_HOME: process.env.CODEBUDDY_HOME, CODEBUDDY_SETTINGS_PATH: process.env.CODEBUDDY_SETTINGS_PATH };
+  const options = {
+    settingsPath: path.join(root, 'settings.json'),
+    runtimeDir: path.join(root, 'runtime'),
+    sourceSkillDir: path.join(root, 'source-skill'),
+    targetSkillDir: path.join(root, 'home', 'skills', 'hud-config'),
+    platform: process.platform,
+  };
+  options.hudBin = path.join(options.runtimeDir, 'bin', 'codebuddy-hud.js');
+  fs.mkdirSync(path.dirname(options.hudBin), { recursive: true });
+  fs.writeFileSync(options.hudBin, '#!/usr/bin/env node\n');
+  fs.mkdirSync(options.sourceSkillDir);
+  fs.writeFileSync(path.join(options.sourceSkillDir, 'SKILL.md'), '# hud-config');
+  process.env.CODEBUDDY_HOME = path.join(root, 'home');
+  process.env.CODEBUDDY_SETTINGS_PATH = options.settingsPath;
+  try {
+    return run(options, root);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test('setup edits only statusLine command/type and uninstall restores exact JSONC', () => {
+  withInstallerFixture(options => {
+    const raw = '\ufeff{\r\n\t// user note\r\n\t"model": "original",\r\n'
+      + '\t"statusLine": {\r\n\t\t"type": "command", /* keep */\r\n'
+      + '\t\t"command": "old-command", // command note\r\n\t\t"padding": 7,\r\n'
+      + '\t\t"extra": {"text": "\\\"}, //"},\r\n\t},\r\n}\r\n';
+    fs.writeFileSync(options.settingsPath, raw);
+    setup(options);
+    const installed = fs.readFileSync(options.settingsPath, 'utf8');
+    const command = buildStatusLineCommand(options.platform, options.hudBin, process.execPath);
+    assert.equal(installed, raw.replace('"old-command"', JSON.stringify(command)));
+    const parsed = parseSettingsJson(installed);
+    assert.equal(parsed.statusLine.padding, 7);
+    assert.deepEqual(parsed.statusLine.extra, { text: '\"}, //' });
+    setup(options);
+    assert.equal(fs.readFileSync(options.settingsPath, 'utf8'), installed, 'repeat setup must be byte-idempotent');
+    uninstall(options);
+    assert.equal(fs.readFileSync(options.settingsPath, 'utf8'), raw);
+    assert.equal(fs.existsSync(options.settingsPath + '.bak.codebuddy-hud'), false);
+  });
+});
+
+test('uninstall preserves post-install edits and archives original text before retiring backup', () => {
+  withInstallerFixture((options, root) => {
+    const raw = '{\n // original comment\n "model":"before",\n "statusLine":{"command":"old-command","padding":2}\n}\n';
+    fs.writeFileSync(options.settingsPath, raw);
+    setup(options);
+    const installed = fs.readFileSync(options.settingsPath, 'utf8');
+    fs.writeFileSync(options.settingsPath, installed.replace('"before"', '"after"'));
+    uninstall(options);
+    assert.equal(fs.readFileSync(options.settingsPath, 'utf8'), raw.replace('"before"', '"after"'));
+    const retained = fs.readdirSync(root).filter(name => name.startsWith('settings.json.bak.codebuddy-hud.retained-'));
+    assert.equal(retained.length, 1);
+    assert.equal(fs.readFileSync(path.join(root, retained[0]), 'utf8'), raw);
+    assert.equal(fs.existsSync(options.settingsPath + '.bak.codebuddy-hud'), false);
+
+    // The retained original must never become the active snapshot for a new install.
+    setup(options);
+    assert.equal(fs.readFileSync(options.settingsPath + '.bak.codebuddy-hud', 'utf8'), raw.replace('"before"', '"after"'));
+  });
+});
+
+test('uninstall restores an explicitly disabled or non-object original statusLine', () => {
+  withInstallerFixture(options => {
+    for (const value of ['null', 'false', '"disabled"', '[]']) {
+      const raw = `{\n // original\n "statusLine": ${value},\n "model":"keep"\n}\n`;
+      fs.writeFileSync(options.settingsPath, raw);
+      setup(options);
+      uninstall(options);
+      assert.equal(fs.readFileSync(options.settingsPath, 'utf8'), raw);
+    }
+  });
+});
+
+test('setup and uninstall round-trip exact JSONC when statusLine was absent', () => {
+  withInstallerFixture(options => {
+    for (const raw of ['{}', '{"model":"keep"}', '\ufeff{\r\n // keep\r\n "model":"keep",\r\n}\r\n', '// comment only']) {
+      fs.writeFileSync(options.settingsPath, raw);
+      setup(options);
+      uninstall(options);
+      assert.equal(fs.readFileSync(options.settingsPath, 'utf8'), raw);
+    }
+  });
+});
+
+test('legacy settings that already lost comments keep the original recovery text', () => {
+  withInstallerFixture((options, root) => {
+    const original = '{\n // original note\n "model":"before",\n "statusLine":{"command":"old-command"}\n}\n';
+    fs.writeFileSync(options.settingsPath + '.bak.codebuddy-hud', original);
+    // Simulate a legacy setup that reserialized settings, then a later user edit.
+    fs.writeFileSync(options.settingsPath, '{"model":"after","statusLine":{"command":"codebuddy-hud"}}');
+    uninstall(options);
+    assert.equal(fs.readFileSync(options.settingsPath, 'utf8'), '{"model":"after","statusLine":{"command":"old-command"}}');
+    const retained = fs.readdirSync(root).find(name => name.includes('.retained-'));
+    assert.ok(retained);
+    assert.equal(fs.readFileSync(path.join(root, retained), 'utf8'), original);
+  });
+});
+
+test('uninstall retains original backup when a recovery copy cannot be written', () => {
+  withInstallerFixture(options => {
+    const raw = '{"model":"before","statusLine":{"command":"old-command"}}';
+    fs.writeFileSync(options.settingsPath, raw);
+    setup(options);
+    fs.writeFileSync(options.settingsPath, fs.readFileSync(options.settingsPath, 'utf8').replace('"before"', '"after"'));
+    const openSync = fs.openSync;
+    try {
+      fs.openSync = function (file, ...args) {
+        if (String(file).includes('.retained-')) throw new Error('recovery copy write failed');
+        return openSync.call(this, file, ...args);
+      };
+      uninstall(options);
+      assert.equal(fs.readFileSync(options.settingsPath + '.bak.codebuddy-hud', 'utf8'), raw);
+      assert.equal(parseSettingsJson(fs.readFileSync(options.settingsPath, 'utf8')).statusLine.command, 'old-command');
+    } finally {
+      fs.openSync = openSync;
+    }
+  });
+});
+
+test('setup with an invalid theme config aborts without changing settings or creating a shim', () => {
+  withInstallerFixture(options => {
+    const raw = '{"model":"keep"}';
+    fs.writeFileSync(options.settingsPath, raw);
+    fs.mkdirSync(process.env.CODEBUDDY_HOME, { recursive: true });
+    const configPath = path.join(process.env.CODEBUDDY_HOME, 'codebuddy-hud.config.json');
+    fs.writeFileSync(configPath, '{"display":{"showCost":false},}');
+    assert.throws(() => setup({ ...options, theme: 'amber' }));
+    assert.equal(fs.readFileSync(options.settingsPath, 'utf8'), raw);
+    assert.equal(fs.readFileSync(configPath, 'utf8'), '{"display":{"showCost":false},}');
+    assert.equal(fs.existsSync(options.hudBin.replace(/\.js$/, '.cmd')), false);
+  });
+});
+
+test('setup and uninstall never delete an unmarked user skill directory', () => {
+  withInstallerFixture(options => {
+    fs.mkdirSync(options.targetSkillDir, { recursive: true });
+    const note = path.join(options.targetSkillDir, 'MY-NOTES.md');
+    fs.writeFileSync(note, 'user data');
+    const userSkill = path.join(options.targetSkillDir, 'SKILL.md');
+    fs.writeFileSync(userSkill, '# user skill');
+    uninstall(options); // Even when HUD was never installed.
+    assert.equal(fs.readFileSync(note, 'utf8'), 'user data');
+    setup(options);
+    setup(options);
+    assert.equal(fs.readFileSync(note, 'utf8'), 'user data');
+    assert.equal(fs.readFileSync(userSkill, 'utf8'), '# user skill');
+    uninstall(options);
+    assert.equal(fs.readFileSync(note, 'utf8'), 'user data');
+  });
+});
+
+test('setup and uninstall leave foreign skill links and their targets untouched', () => {
+  withInstallerFixture((options, root) => {
+    const other = path.join(root, 'user-source');
+    fs.mkdirSync(other);
+    fs.writeFileSync(path.join(other, 'MY-NOTES.md'), 'user data');
+    fs.mkdirSync(path.dirname(options.targetSkillDir), { recursive: true });
+    fs.symlinkSync(other, options.targetSkillDir, process.platform === 'win32' ? 'junction' : 'dir');
+    setup(options);
+    uninstall(options);
+    assert.equal(fs.lstatSync(options.targetSkillDir).isSymbolicLink(), true);
+    assert.equal(fs.readFileSync(path.join(other, 'MY-NOTES.md'), 'utf8'), 'user data');
+  });
+});
+
+test('copy fallback marks only its copy and can update and uninstall it', () => {
+  withInstallerFixture(options => {
+    const symlinkSync = fs.symlinkSync;
+    try {
+      fs.symlinkSync = () => { throw new Error('links unavailable'); };
+      deploySkill(options, options.hudBin, options.platform);
+      assert.equal(fs.lstatSync(options.targetSkillDir).isSymbolicLink(), false);
+      assert.equal(fs.readFileSync(path.join(options.targetSkillDir, '.codebuddy-hud-managed'), 'utf8'), 'codebuddy-hud\n');
+      assert.equal(fs.existsSync(path.join(options.sourceSkillDir, '.codebuddy-hud-managed')), false);
+      fs.writeFileSync(path.join(options.sourceSkillDir, 'SKILL.md'), '# updated');
+      deploySkill(options, options.hudBin, options.platform);
+      assert.equal(fs.readFileSync(path.join(options.targetSkillDir, 'SKILL.md'), 'utf8'), '# updated');
+    } finally {
+      fs.symlinkSync = symlinkSync;
+    }
+    uninstall(options);
+    assert.equal(fs.existsSync(options.targetSkillDir), false);
+    assert.equal(fs.readFileSync(path.join(options.sourceSkillDir, 'SKILL.md'), 'utf8'), '# updated');
+  });
+});
+
+test('failed link removal never falls back to deleting or copying over the target', () => {
+  withInstallerFixture(options => {
+    deploySkill(options, options.hudBin, options.platform);
+    assert.equal(fs.lstatSync(options.targetSkillDir).isSymbolicLink(), true);
+    const unlinkSync = fs.unlinkSync;
+    const cpSync = fs.cpSync;
+    let copyAttempted = false;
+    try {
+      fs.unlinkSync = function (file, ...args) {
+        if (file === options.targetSkillDir) throw new Error('link is locked');
+        return unlinkSync.call(this, file, ...args);
+      };
+      fs.cpSync = () => { copyAttempted = true; throw new Error('must not copy over a locked link'); };
+      deploySkill(options, options.hudBin, options.platform);
+      uninstall(options);
+      assert.equal(copyAttempted, false);
+      assert.equal(fs.lstatSync(options.targetSkillDir).isSymbolicLink(), true);
+      assert.equal(fs.readFileSync(path.join(options.sourceSkillDir, 'SKILL.md'), 'utf8'), '# hud-config');
+      assert.equal(fs.existsSync(path.join(options.sourceSkillDir, '.codebuddy-hud-managed')), false);
+    } finally {
+      fs.unlinkSync = unlinkSync;
+      fs.cpSync = cpSync;
+    }
+  });
+});
 
 describe('buildStatusLineCommand', () => {
   test('is exported as a pure function without side effects', () => {
@@ -293,7 +514,7 @@ test('setup keeps commas followed by closing delimiters inside settings strings'
 
     setup({ settingsPath, runtimeDir, platform: 'linux', nodeExe: '/usr/bin/node' });
 
-    const installed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    const installed = parseSettingsJson(fs.readFileSync(settingsPath, 'utf8'));
     assert.equal(installed.command, 'echo ,}');
     assert.deepEqual(installed.items, ['x,]']);
   } finally {
@@ -411,7 +632,8 @@ test('uninstall preserves JSONC settings with comments and trailing commas witho
     process.env.CODEBUDDY_HOME = path.join(tempRoot, 'home');
     uninstall({ settingsPath, runtimeDir, platform: 'win32' });
     const contentAfter = fs.readFileSync(settingsPath, 'utf8');
-    const parsed = JSON.parse(contentAfter);
+    assert.equal(contentAfter, jsoncContent.replace('"statusLine": {\n    "command": "node runtime/bin/codebuddy-hud.js"\n  },', ''));
+    const parsed = parseSettingsJson(contentAfter);
     assert.equal(parsed.model, 'deepseek-v4');
     assert.equal(parsed.statusLine, undefined);
   } finally {
@@ -608,7 +830,7 @@ test('setup and uninstall manage skill directory correctly', () => {
     assert.ok(fs.readFileSync(targetSkillFile, 'utf8').includes('v2'));
 
     // 3. Uninstall removes target skill without touching source
-    uninstall({ settingsPath, runtimeDir, targetSkillDir, platform: process.platform });
+    uninstall({ settingsPath, runtimeDir, sourceSkillDir, targetSkillDir, platform: process.platform });
     assert.equal(fs.existsSync(targetSkillDir), false, 'target skill directory should be removed on uninstall');
     assert.equal(fs.existsSync(path.join(sourceSkillDir, 'SKILL.md')), true, 'source skill directory should remain intact');
   } finally {

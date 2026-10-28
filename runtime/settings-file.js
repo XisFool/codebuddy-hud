@@ -106,6 +106,92 @@ function parseSettingsJson(raw) {
   return JSON.parse(cleaned);
 }
 
+// Locate direct object members without reserializing JSONC. Validation stays
+// with the existing parser; tokens only retain offsets for surgical edits.
+function settingsMembers(raw) {
+  if (!isSettingsObject(parseSettingsJson(raw))) {
+    throw new Error('settings.json root must be a JSON object');
+  }
+  const tokens = [];
+  const pattern = /"(?:\\[\s\S]|[^"\\])*"|\/\/[^\r\n]*|\/\*[\s\S]*?\*\/|[{}\[\]:,]|[^\s{}\[\]:,"/]+/g;
+  for (const match of raw.matchAll(pattern)) {
+    if (match[0].startsWith('//') || match[0].startsWith('/*')) continue;
+    tokens.push({ text: match[0], start: match.index, end: match.index + match[0].length });
+  }
+  const members = [];
+  let i = 1;
+  while (i < tokens.length && tokens[i].text !== '}') {
+    const key = tokens[i];
+    i += 2; // key and colon
+    const valueStart = tokens[i].start;
+    let depth = 0;
+    do {
+      const token = tokens[i++].text;
+      if (token === '{' || token === '[') depth++;
+      if (token === '}' || token === ']') depth--;
+    } while (depth > 0);
+    const valueEnd = tokens[i - 1].end;
+    const comma = tokens[i].text === ',' ? tokens[i++].start : null;
+    members.push({ key: JSON.parse(key.text), start: key.start, valueStart, valueEnd, comma });
+  }
+  return { members, close: tokens.length ? tokens[tokens.length - 1].start : null };
+}
+
+function getSettingsProperty(raw, key) {
+  const matches = settingsMembers(raw).members.filter(member => member.key === key);
+  const member = matches[matches.length - 1]; // JSON's last duplicate key wins.
+  return member ? raw.slice(member.valueStart, member.valueEnd) : undefined;
+}
+
+// valueRaw is a validated JSON/JSONC value; undefined removes the property.
+// The same small helper edits the statusLine object and its type/command keys.
+function editSettingsProperty(raw, key, valueRaw) {
+  const { members, close } = settingsMembers(raw);
+  const matches = members.filter(member => member.key === key);
+  const member = matches[matches.length - 1];
+  if (member) {
+    if (valueRaw !== undefined) {
+      parseSettingsJson(valueRaw);
+      return raw.slice(0, member.valueStart) + valueRaw + raw.slice(member.valueEnd);
+    }
+    // Remove all duplicates so deleting the effective value cannot expose an
+    // older HUD command. Leave surrounding comments and whitespace untouched.
+    let result = raw.slice(0, member.start) + raw.slice(member.valueEnd);
+    if (member.comma !== null) {
+      const comma = member.start + member.comma - member.valueEnd;
+      result = result.slice(0, comma) + result.slice(comma + 1);
+    } else {
+      const previous = members[members.indexOf(member) - 1];
+      if (previous && previous.comma !== null) {
+        result = result.slice(0, previous.comma) + result.slice(previous.comma + 1);
+      }
+    }
+    return matches.length > 1 ? editSettingsProperty(result, key, undefined) : result;
+  }
+  if (valueRaw === undefined) return raw;
+  parseSettingsJson(valueRaw);
+  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
+  const property = `${JSON.stringify(key)}: ${valueRaw}`;
+  if (close === null) return raw + (raw && !/[\r\n]$/.test(raw) ? eol : '') + `{${eol}  ${property}${eol}}`;
+
+  const last = members[members.length - 1];
+  const commaAt = last && last.comma === null ? last.valueEnd : null;
+  const lineStart = raw.lastIndexOf('\n', close - 1) + 1;
+  const closingIndent = raw.slice(lineStart, close);
+  let at = close;
+  let insertion = ` ${property}`;
+  if (/^[\t ]*$/.test(closingIndent)) {
+    at = lineStart;
+    const first = members[0];
+    const firstIndent = first ? raw.slice(raw.lastIndexOf('\n', first.start - 1) + 1, first.start) : '';
+    const indent = firstIndent && /^[\t ]+$/.test(firstIndent) ? firstIndent : closingIndent + '  ';
+    insertion = `${indent}${property}${last && last.comma !== null ? ',' : ''}${eol}`;
+  }
+  let result = raw.slice(0, at) + insertion + raw.slice(at);
+  if (commaAt !== null) result = result.slice(0, commaAt) + ',' + result.slice(commaAt);
+  return result;
+}
+
 function resolveWriteTarget(targetPath) {
   let current = path.resolve(String(targetPath));
   for (let depth = 0; depth < MAX_SYMLINK_DEPTH; depth++) {
@@ -215,6 +301,8 @@ module.exports = {
   atomicWriteSettingsFile,
   isSettingsObject,
   parseSettingsJson,
+  getSettingsProperty,
+  editSettingsProperty,
   resolveWriteTarget,
   writePrivateFileIfAbsent,
 };

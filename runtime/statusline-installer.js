@@ -2,14 +2,49 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getSettingsPath, getHudSkillTargetDir } = require('./paths');
+const { getSettingsPath, getHudSkillTargetDir, normalizePlatformPath } = require('./paths');
 const { sanitizeTerminalText } = require('./sanitize');
 const {
   atomicWriteSettingsFile,
   isSettingsObject,
   parseSettingsJson,
   writePrivateFileIfAbsent,
+  getSettingsProperty,
+  editSettingsProperty,
 } = require('./settings-file');
+
+const SKILL_MARKER = '.codebuddy-hud-managed';
+
+function removeManagedSkill(targetDir, sourceDir) {
+  let stat;
+  try {
+    stat = fs.lstatSync(targetDir);
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return;
+    throw err;
+  }
+  if (normalizePlatformPath(targetDir) === normalizePlatformPath(sourceDir)) {
+    throw new Error('Refusing to remove the source skill directory');
+  }
+  if (stat.isSymbolicLink()) {
+    const destination = path.resolve(path.dirname(targetDir), fs.readlinkSync(targetDir));
+    if (normalizePlatformPath(destination) !== normalizePlatformPath(sourceDir)) {
+      throw new Error('Existing skill link is not managed by this HUD; leaving it untouched');
+    }
+    fs.unlinkSync(targetDir);
+  } else {
+    const marker = path.join(targetDir, SKILL_MARKER);
+    if (!stat.isDirectory() || !fs.existsSync(marker) || !fs.lstatSync(marker).isFile()
+        || fs.readFileSync(marker, 'utf8') !== 'codebuddy-hud\n') {
+      throw new Error('Existing skill directory is not managed by this HUD; leaving it untouched');
+    }
+    if (fs.existsSync(sourceDir)
+        && normalizePlatformPath(fs.realpathSync(targetDir)) === normalizePlatformPath(fs.realpathSync(sourceDir))) {
+      throw new Error('Refusing to remove the source skill directory');
+    }
+    fs.rmSync(targetDir, { recursive: true, force: true });
+  }
+}
 
 // Escape characters that stay special inside a double-quoted shell word.
 // Backslash must be escaped first, otherwise the backslashes added by the
@@ -87,19 +122,8 @@ function deploySkill(options, hudBin, platform) {
       fs.mkdirSync(parentDir, { recursive: true });
     }
 
-    // 4. Remove pre-existing target (unlink symlink/junction or remove directory)
-    try {
-      const stat = fs.lstatSync(targetDir);
-      if (stat.isSymbolicLink()) {
-        try {
-          fs.unlinkSync(targetDir);
-        } catch {
-          fs.rmSync(targetDir, { recursive: true, force: true });
-        }
-      } else {
-        fs.rmSync(targetDir, { recursive: true, force: true });
-      }
-    } catch {}
+    // 4. Only replace a link to this source or a marked copy.
+    removeManagedSkill(targetDir, sourceDir);
 
     // 5. Deploy skill: Windows prefers junction, POSIX prefers dir symlink
     const linkType = platform === 'win32' ? 'junction' : 'dir';
@@ -109,6 +133,7 @@ function deploySkill(options, hudBin, platform) {
     } catch {
       // Fall back to recursive directory copy
       fs.cpSync(sourceDir, targetDir, { recursive: true });
+      fs.writeFileSync(path.join(targetDir, SKILL_MARKER), 'codebuddy-hud\n', { flag: 'wx', mode: 0o600 });
       console.log(`Registered CodeBuddy skill (copied): ${sanitizeTerminalText(targetDir, 512)}`);
     }
   } catch (err) {
@@ -128,9 +153,9 @@ function setup(options) {
   const platform = opts.platform || process.platform;
 
   let settings = {};
+  let rawSettings = '';
   const fileExists = fs.existsSync(settingsPath);
   if (fileExists) {
-    let rawSettings = '';
     try {
       rawSettings = fs.readFileSync(settingsPath, 'utf8');
     } catch (err) {
@@ -167,12 +192,8 @@ function setup(options) {
   }
 
   if (opts.theme) {
-    try {
-      const { saveUserTheme } = require('./theme-selector');
-      saveUserTheme(opts.theme);
-    } catch {
-      // ignore
-    }
+    const { saveUserTheme } = require('./theme-selector');
+    saveUserTheme(opts.theme);
   }
 
   // Build command string
@@ -198,17 +219,18 @@ function setup(options) {
   }
   command = buildStatusLineCommand(platform, hudBin, nodeExe);
 
-  settings.statusLine = {
-    type: 'command',
-    command: command,
-    padding: 0,
-  };
-
-  atomicWriteSettingsFile(settingsPath, JSON.stringify(settings, null, 2));
+  let statusLine = isSettingsObject(settings.statusLine)
+    ? getSettingsProperty(rawSettings, 'statusLine') : '{}';
+  statusLine = editSettingsProperty(statusLine, 'type', JSON.stringify('command'));
+  statusLine = editSettingsProperty(statusLine, 'command', JSON.stringify(command));
+  if (!isSettingsObject(settings.statusLine) || !Object.hasOwn(settings.statusLine, 'padding')) {
+    statusLine = editSettingsProperty(statusLine, 'padding', '0');
+  }
+  atomicWriteSettingsFile(settingsPath, editSettingsProperty(rawSettings, 'statusLine', statusLine));
   console.log(`\nStatusLine configured in: ${sanitizeTerminalText(settingsPath, 512)}`);
   console.log(`Command: ${sanitizeTerminalText(command, 1024)}`);
   deploySkill(opts, hudBin, platform);
   console.log('\ncodebuddy-hud setup complete.');
 }
 
-module.exports = { setup, deploySkill, buildStatusLineCommand, buildCmdShimContent, parseSettingsJson, isSettingsObject };
+module.exports = { setup, deploySkill, removeManagedSkill, buildStatusLineCommand, buildCmdShimContent, parseSettingsJson, isSettingsObject };

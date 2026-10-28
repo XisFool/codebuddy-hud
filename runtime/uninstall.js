@@ -14,7 +14,11 @@ const {
   getHudSkillTargetDir,
 } = require('./paths');
 const { sanitizeTerminalText } = require('./sanitize');
-const { atomicWriteSettingsFile, parseSettingsJson, isSettingsObject } = require('./settings-file');
+const {
+  atomicWriteSettingsFile, parseSettingsJson, isSettingsObject,
+  getSettingsProperty, editSettingsProperty, writePrivateFileIfAbsent,
+} = require('./settings-file');
+const { removeManagedSkill } = require('./statusline-installer');
 
 // A statusLine belongs to this HUD when its command mentions `codebuddy-hud`.
 // The literal name covers every install shape: an absolute or relative
@@ -107,6 +111,9 @@ function uninstall(options) {
         // Describes how the on-disk backup was consumed; also drives its
         // deletion. Null means no backup was present.
         let backupAction = null;
+        let backupContent = null;
+        let restoredStatusLine;
+        let restoredSettings;
 
         if (fs.existsSync(backupPath)) {
           try {
@@ -115,13 +122,21 @@ function uninstall(options) {
             if (!isSettingsObject(backup)) {
               throw new Error('backup root is not a JSON object');
             }
+            backupContent = backupRaw;
+            // Restore exact whitespace too, but only when a text comparison
+            // proves that nothing outside statusLine changed after setup.
+            if (isHudStatusLine(settings.statusLine) && !isHudStatusLine(backup.statusLine)
+                && editSettingsProperty(backupRaw, 'statusLine', getSettingsProperty(rawSettings, 'statusLine')) === rawSettings) {
+              restoredSettings = backupRaw;
+            }
             // Restore only a statusLine that is not this HUD. The backup may
             // itself have been taken over an earlier HUD install (another
             // checkout, or the `npm link` global shim); reinstating it would
             // report a successful uninstall while leaving the HUD configured.
-            if (backup.statusLine && !isHudStatusLine(backup.statusLine)) {
+            if (Object.hasOwn(backup, 'statusLine') && !isHudStatusLine(backup.statusLine)) {
               if (isHudStatusLine(settings.statusLine)) {
                 settings.statusLine = backup.statusLine;
+                restoredStatusLine = getSettingsProperty(backupRaw, 'statusLine');
                 backupAction = 'Restored settings from backup';
                 modified = true;
               } else {
@@ -150,7 +165,9 @@ function uninstall(options) {
         }
 
         if (modified) {
-          atomicWriteSettingsFile(settingsPath, JSON.stringify(settings, null, 2));
+          rawSettings = restoredSettings === undefined
+            ? editSettingsProperty(rawSettings, 'statusLine', restoredStatusLine) : restoredSettings;
+          atomicWriteSettingsFile(settingsPath, rawSettings);
         }
 
         if (removedStatusLine) {
@@ -159,6 +176,16 @@ function uninstall(options) {
 
         if (backupAction) {
           try {
+            // A legacy install may already have stripped comments. Keep its
+            // original text when it differs from the restored settings, but
+            // retire the active backup so a later install takes a fresh one.
+            if (backupContent !== rawSettings) {
+              const retainedPath = `${backupPath}.retained-${Date.now()}-${process.pid}`;
+              if (!writePrivateFileIfAbsent(retainedPath, backupContent)) {
+                throw new Error('Recovery copy already exists');
+              }
+              cleaned.push(`Retained original settings: ${sanitizeTerminalText(retainedPath, 512)}`);
+            }
             fs.unlinkSync(backupPath);
             cleaned.push(`${backupAction}: ${sanitizeTerminalText(backupPath, 512)}`);
           } catch (err) {
@@ -250,24 +277,16 @@ function uninstall(options) {
   // Remove deployed skill
   const skillDir = opts.targetSkillDir || getHudSkillTargetDir();
   let skillExists = false;
-  let isSymlink = false;
   try {
-    const stat = fs.lstatSync(skillDir);
+    fs.lstatSync(skillDir);
     skillExists = true;
-    isSymlink = stat.isSymbolicLink();
   } catch {}
 
   if (skillExists) {
     try {
-      if (isSymlink) {
-        try {
-          fs.unlinkSync(skillDir);
-        } catch {
-          fs.rmSync(skillDir, { recursive: true, force: true });
-        }
-      } else {
-        fs.rmSync(skillDir, { recursive: true, force: true });
-      }
+      const sourceDir = opts.sourceSkillDir
+        || path.resolve(path.dirname(hudBin), '..', '..', 'skills', 'hud-config');
+      removeManagedSkill(skillDir, sourceDir);
       cleaned.push(`Removed CodeBuddy skill: ${sanitizeTerminalText(skillDir, 512)}`);
     } catch (err) {
       cleaned.push(`Warning: could not remove skill: ${sanitizeTerminalText(err && err.message, 160)}`);

@@ -5,6 +5,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { parseSettingsJson } = require('../runtime/settings-file');
 
 const SOURCE_RUNTIME = path.join(__dirname, '..', 'runtime');
 const SOURCE_SKILLS = path.join(__dirname, '..', 'skills');
@@ -100,8 +101,10 @@ async function main() {
       filter: (source) => source !== path.join(SOURCE_RUNTIME, 'bin', 'codebuddy-hud.cmd'),
     });
     fs.cpSync(SOURCE_SKILLS, skillsDir, { recursive: true });
-    // 0. Seed user settings to verify preservation
-    fs.writeFileSync(settingsPath, JSON.stringify({ userCustomSetting: 'preserved' }, null, 2));
+    // 0. Seed JSONC settings to verify exact preservation through the real CLI.
+    const originalSettings = '\ufeff{\r\n  // User comment\r\n  "userCustomSetting": "preserved",\r\n'
+      + '  "statusLine": {"type":"command","command":"original-statusline","padding":7,"extra":true},\r\n}\r\n';
+    fs.writeFileSync(settingsPath, originalSettings);
 
     // 1. Run --setup in isolated environment
     const setupRes = await runProcess(process.execPath, [HUD_BIN, '--setup'], { env: isolatedEnv });
@@ -110,7 +113,7 @@ async function main() {
     // 2. Verify settings.json configuration
     let settings = null;
     try {
-      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      settings = parseSettingsJson(fs.readFileSync(settingsPath, 'utf8'));
     } catch (e) {
       settings = null;
     }
@@ -118,6 +121,8 @@ async function main() {
       && settings.userCustomSetting === 'preserved'
       && settings.statusLine
       && settings.statusLine.type === 'command'
+      && settings.statusLine.padding === 7
+      && settings.statusLine.extra === true
       && typeof settings.statusLine.command === 'string'
       && settings.statusLine.command.length > 0;
     record('settings-written-and-preserved', !!settingsValid, 'statusLine missing or settings not preserved');
@@ -182,15 +187,15 @@ async function main() {
     const uninstRes = await runProcess(process.execPath, [HUD_BIN, '--uninstall'], { env: isolatedEnv });
     record('uninstall-exit-0', uninstRes.code === 0, `code ${uninstRes.code} (stderr: ${uninstRes.stderr})`);
 
-    // 6. Verify settings.json restored and statusLine deleted
+    // 6. Verify the original statusLine and all JSONC text are restored.
     let afterSettings = null;
     try {
-      afterSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      afterSettings = parseSettingsJson(fs.readFileSync(settingsPath, 'utf8'));
     } catch {}
     const uninstallSettingsOk = afterSettings
-      && afterSettings.statusLine === undefined
-      && afterSettings.userCustomSetting === 'preserved';
-    record('settings-restored-cleanly', !!uninstallSettingsOk, 'statusLine not removed or original setting lost');
+      && afterSettings.statusLine.command === 'original-statusline'
+      && fs.readFileSync(settingsPath, 'utf8') === originalSettings;
+    record('settings-restored-cleanly', !!uninstallSettingsOk, 'original JSONC settings not restored exactly');
 
     // 7. Verify Windows .cmd shim deleted on win32
     if (isWin) {
@@ -226,6 +231,30 @@ async function main() {
       }
     }
     record('isolated-state-files-cleaned', remainingStateFiles.length === 0, `lingering files: ${remainingStateFiles.join(', ')}`);
+
+    // 9. Existing user skills must survive both setup and uninstall.
+    fs.mkdirSync(targetSkillDir, { recursive: true });
+    const notePath = path.join(targetSkillDir, 'MY-NOTES.md');
+    fs.writeFileSync(notePath, 'user-owned note');
+    await runProcess(process.execPath, [HUD_BIN, '--setup'], { env: isolatedEnv });
+    record('setup-preserves-user-skill', fs.existsSync(notePath) && fs.readFileSync(notePath, 'utf8') === 'user-owned note',
+      'setup changed an unowned skill directory');
+    await runProcess(process.execPath, [HUD_BIN, '--uninstall'], { env: isolatedEnv });
+    record('uninstall-preserves-user-skill', fs.existsSync(notePath) && fs.readFileSync(notePath, 'utf8') === 'user-owned note',
+      'uninstall changed an unowned skill directory');
+
+    // Failures still exit 0 by contract; assert the error and unchanged bytes.
+    const configPath = path.join(tmpHome, 'codebuddy-hud.config.json');
+    const invalidConfig = '{"display":{"showCost":false},}';
+    fs.writeFileSync(configPath, invalidConfig);
+    const themeRes = await runProcess(process.execPath, [HUD_BIN, '--theme', 'amber'], { env: isolatedEnv });
+    record('theme-failure-preserves-config', themeRes.code === 0 && themeRes.stderr.includes('theme configuration failed')
+      && fs.readFileSync(configPath, 'utf8') === invalidConfig, 'invalid theme config was overwritten or failure was hidden');
+    const settingsBeforeFailure = fs.readFileSync(settingsPath, 'utf8');
+    const setupThemeRes = await runProcess(process.execPath, [HUD_BIN, '--setup', '--theme', 'amber'], { env: isolatedEnv });
+    record('setup-theme-failure-preserves-settings', setupThemeRes.code === 0 && setupThemeRes.stderr.includes('setup failed')
+      && fs.readFileSync(settingsPath, 'utf8') === settingsBeforeFailure
+      && fs.readFileSync(configPath, 'utf8') === invalidConfig, 'setup ignored a theme failure or modified user settings');
 
   } finally {
     try {
