@@ -206,8 +206,12 @@ function deepMerge(target, source, depth) {
   return result;
 }
 
+const MAX_CONFIG_BYTES = 256 * 1024;
+
 function loadJsonFile(filePath) {
   try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size > MAX_CONFIG_BYTES) return null;
     const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     return (data && typeof data === 'object' && !Array.isArray(data)) ? data : null;
   } catch {

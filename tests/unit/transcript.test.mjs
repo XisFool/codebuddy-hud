@@ -44,6 +44,29 @@ const cbResult = (callId, name) => cbLine({
 const cbMessage = cbLine({ type: 'message', role: 'assistant', message: { content: 'text' } });
 
 describe('getRecentToolActivity — input guards', () => {
+  it('bounds fallback tool and usage reads for oversized and uneven windows', () => {
+    const file = writeTmp('scan-budget.jsonl', 'x'.repeat(MAX_TOTAL_BYTES * 4));
+    const readSync = fs.readSync;
+    try {
+      for (const scan of [getRecentToolActivity, getRecentUsageMetrics, getTurnUsageMetrics]) {
+        for (const tailBytes of [500 * 1024 * 1024, 200000, 64, 0, 0.5, -1, Infinity]) {
+          let totalRead = 0;
+          fs.readSync = function (...args) {
+            const bytes = readSync.apply(this, args);
+            totalRead += bytes;
+            assert.ok(totalRead <= MAX_TOTAL_BYTES, `read ${totalRead} bytes with tailBytes=${tailBytes}`);
+            return bytes;
+          };
+          scan(file, { tailBytes });
+          // Scanners degrade silently, so assert outside their catch as well.
+          assert.equal(totalRead, MAX_TOTAL_BYTES, `${scan.name}: tailBytes=${tailBytes}`);
+        }
+      }
+    } finally {
+      fs.readSync = readSync;
+    }
+  });
+
   it('returns null for null / empty / non-string paths', () => {
     assert.equal(getRecentToolActivity(null), null);
     assert.equal(getRecentToolActivity(''), null);

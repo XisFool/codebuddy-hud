@@ -19,7 +19,7 @@ const MIN_TAIL_BYTES = 64;
 function normalizeTailBytes(value) {
   if (!Number.isFinite(value)) return DEFAULT_TAIL_BYTES;
   const n = Math.floor(value);
-  return n >= MIN_TAIL_BYTES ? n : DEFAULT_TAIL_BYTES;
+  return n >= MIN_TAIL_BYTES ? Math.min(n, MAX_TOTAL_BYTES) : DEFAULT_TAIL_BYTES;
 }
 
 function parseArguments(argValue) {
@@ -114,7 +114,7 @@ function scanBackwards(fd, size, tailBytes) {
   let scannedTotal = 0;
 
   while (end > 0 && totalRead < MAX_TOTAL_BYTES && scannedTotal < MAX_SCAN_LINES) {
-    const len = Math.min(tailBytes, end);
+    const len = Math.min(tailBytes, end, MAX_TOTAL_BYTES - totalRead);
     const start = end - len;
     const buf = Buffer.alloc(len);
     const bytesRead = fs.readSync(fd, buf, 0, len, start);
@@ -266,7 +266,7 @@ function collectUsageBackwards(transcriptPath, opts, limit, stopOnUserTurn) {
     let scanned = 0;
 
     while (end > 0 && totalRead < MAX_TOTAL_BYTES && scanned < maxLines) {
-      const len = Math.min(tailBytes, end);
+      const len = Math.min(tailBytes, end, MAX_TOTAL_BYTES - totalRead);
       const start = end - len;
       const buf = Buffer.alloc(len);
       const bytesRead = fs.readSync(fd, buf, 0, len, start);

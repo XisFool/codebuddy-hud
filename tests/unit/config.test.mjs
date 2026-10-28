@@ -135,6 +135,47 @@ describe('loadConfig', () => {
     fs.utimesSync(configPath, fixedTime, fixedTime);
     assert.equal(loadConfig(projectDir).defaultEffortLevel, 'max');
   });
+
+  it('ignores oversized config files before reading while retaining other layers', () => {
+    const projectDir = path.join(tmpDir, 'oversized-config');
+    const userPath = path.join(process.env.CODEBUDDY_HOME, 'codebuddy-hud.config.json');
+    const projectPath = path.join(projectDir, 'codebuddy-hud.config.json');
+    const readFile = fs.readFileSync;
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.mkdirSync(path.dirname(userPath), { recursive: true });
+    try {
+      fs.writeFileSync(userPath, '{"defaultEffortLevel":"low"}');
+      fs.writeFileSync(projectPath, JSON.stringify({ padding: 'x'.repeat(256 * 1024), defaultEffortLevel: 'max' }));
+      fs.readFileSync = function (file, ...args) {
+        assert.notEqual(file, projectPath, 'oversized project config must not be read');
+        return readFile.call(this, file, ...args);
+      };
+      assert.equal(loadConfig(projectDir).defaultEffortLevel, 'low');
+      fs.readFileSync = readFile;
+
+      // The limit applies to UTF-8 bytes and to user configs as well.
+      fs.writeFileSync(userPath, JSON.stringify({ padding: '中'.repeat(90000), defaultEffortLevel: 'max' }));
+      fs.writeFileSync(projectPath, '{"language":"zh"}');
+      fs.readFileSync = function (file, ...args) {
+        assert.notEqual(file, userPath, 'oversized user config must not be read');
+        return readFile.call(this, file, ...args);
+      };
+      const config = loadConfig(projectDir);
+      assert.equal(config.defaultEffortLevel, 'medium');
+      assert.equal(config.language, 'zh');
+    } finally {
+      fs.readFileSync = readFile;
+      fs.rmSync(userPath, { force: true });
+    }
+  });
+
+  it('accepts a config exactly at the byte limit', () => {
+    const projectDir = path.join(tmpDir, 'config-at-limit');
+    fs.mkdirSync(projectDir, { recursive: true });
+    const json = '{"defaultEffortLevel":"low"}';
+    fs.writeFileSync(path.join(projectDir, 'codebuddy-hud.config.json'), json.padEnd(256 * 1024, ' '));
+    assert.equal(loadConfig(projectDir).defaultEffortLevel, 'low');
+  });
 });
 
 describe('THEME_PRESETS and resolveTheme', () => {
