@@ -10,49 +10,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.4.0] - 2026-11-02
+
 ### Added (新增特性)
 
-- **CLI 查询**：新增 `--version`/`-v` 与 `--help`/`-h`，无需等待 stdin。
-- **分发 LICENSE**：本地复制与远端下载清单均包含仓库 `LICENSE`，修复分发物缺失 MIT 许可文本的问题。
-- **远端清单漂移测试**：新增单测断言 `RUNTIME_FILES` 覆盖 `runtime/` 下全部 `.js/.json` 与相对 `require()` 依赖，并反向断言清单每一项在仓库中真实存在，防止重蹈 v0.3.9 漏 `update-checker.js` 的事故。
-- **doctor 残留副本检查**：`--doctor` 新增 `codebuddy` 检查项，列出卸载时保留的 `.bak.codebuddy-hud.retained-*` 原文副本并提示手动清理（只列出、不自动删除）。
+- **CLI 查询与优先级**：新增 `--version`/`-v` 与 `--help`/`-h` 命令，执行无需等待 stdin；分发优先级高于安装、卸载与换肤操作；`--status` 演示 payload 版本号改为动态读取 `package.json`，不再硬编码旧版本号。
+- **配置与备份保护诊断**：`--doctor` 新增 `codebuddy / retainedBackups` 检查项，扫描并列出卸载时保留的 `.bak.codebuddy-hud.retained-*` 原文副本（严格过滤普通文件，排除同名前缀目录）并提示手动清理（只列出、不自动删除）。
+- **分发完整性与漂移守卫**：本地复制与远端下载清单均补齐仓库 `LICENSE`（MIT）；新增远端运行清单（`RUNTIME_FILES`）双向漂移测试，既断言覆盖 `runtime/` 下全部依赖，又反向断言清单中每一项在仓库中物理存在，防止分发遗漏。
 
-### Changed (变更)
+### Changed & Refactored (变更与品牌重构)
 
-- **主题配色**：深色 Emerald 与 Cyberpunk 分别改用柔和浅绿（256 色 `114`）和粉紫（256 色 `183`），保留原有版式及其他字段配色。
+- **品牌名称统一**：安装/卸载提示文案、主题预览项目名与 E2E 验证脚本标头全面统一为 `codebuddy-hud`，彻底消除历史遗留的 `codebuddy-cli-hud`。
+- **主题配色优化**：深色 Emerald 与 Cyberpunk 分别改用柔和浅绿（256 色 `114`）和粉紫（256 色 `183`），保留原有版式及其他字段配色。
 - **Cyberpunk 主色统一**：深浅模式下，分支、项目名和 out Token 跟随模型与上下文用量的粉紫主色，同步主题选择器及中英文说明。
 
-### Fixed (缺陷修复)
+### Fixed (缺陷修复与安全加固)
 
-- **CLI 参数优先级**：帮助与版本查询优先于安装、卸载等操作；主题帮助在 TTY 下也只列出预设，修正卸载帮助行对齐。
-- **transcript 尺寸记录**：文件单独增长也保存尺寸；stat 失败时其他状态写回保留上次有效尺寸，避免后续截断漏检。
-- **Δ/⏱ 缓存误判**：重置信号复用上下文占用仲裁，避免缓存命中或 TTL 过期被当作 `/clear`；缺失 `input_tokens` 且 cache 为 0 时按未知处理。缺少窗口大小/使用率时仍回退原始输入，缓存残差仍可能触发断崖。
-- **主题安全**：主题覆盖值经 SGR 白名单校验，阻断清屏、OSC 52 等终端注入；非字符串值安全降级。
-- **控制串残留**：DCS/APC/PM/SOS 及 C1 形式整串清除，未终止串吞到输入末尾。
-- **doctor 路径校验**：POSIX 支持 shell 反转义；Windows 保留 UNC、`\$` 等字面字符，避免误报存在，并兼容引号内尾反斜杠的分词歧义。
-- **主题文案与预览**：列表、选择器及用法提示接入 i18n，预览框按 CJK 双列宽度对齐；未知主题参数和保存路径经终端清洗。
-- **卸载还原**：仅当当前 `statusLine` 仍指向本 HUD 时还原备份，保留用户后续替换或删除的配置。
-- **Windows PATH**：安装/卸载保留 HKCU `Path` 的 `%VAR%` 与注册表值类型；卸载按归一化路径移除 runtime bin，避免误删或漏删。
-- **effort 状态**：临时文件 + rename 原子写入，避免并发读到半截 JSON。
-- **bootstrap 查询源**：兼容 `CODEBUDDY_HUD_REMOTE_PKG_URL` 旧名；显式 Release URL 跳过默认 302/API 查询，两变量同设时新名优先。
-- **安装/卸载 JSONC 无损**：`--setup`/`--uninstall` 改为局部文本编辑，仅改动 `statusLine` 成员，保留注释、BOM、换行与格式；已有 `padding` 与额外字段予以保留；卸载在确认 `statusLine` 之外无改动时整文精确还原，否则仅回写该字段并把原文另存 `.retained-<time>-<pid>` 后再退役备份。
-- **技能目录归属保护**：部署与卸载只处理指向本次源目录的链接或带 `.codebuddy-hud-managed` 标记的复制目录；未知同名目录/链接/文件一律警告并保留，不再误删用户文件。
-- **主题配置保护**：`--theme` 对无效配置（非法 JSON、非对象根节点、不可读文件）直接报错并保留原文件，不再重置为空对象；写入复用原子写与权限保留，错误信息点出文件路径与严格 JSON 要求。`--setup --theme` 遇到换肤失败时中止，不继续写入 `statusLine`。
-- **扫描预算上限**：`display.toolActivityTailBytes` 增加 `MAX_TOTAL_BYTES` 上限钳制，各逆向扫描按剩余字节预算限制单次读取；配置文件超过 256 KiB 或非普通文件时跳过该层，防止仓库内恶意配置触发大内存读取。
+- **安装/卸载 JSONC 无损**：`--setup`/`--uninstall` 改为基于 AST token 的局部精准文本编辑，仅改动 `statusLine` 成员，保留注释、BOM、换行与格式；已有 `padding` 与额外字段予以保留；卸载在确认 `statusLine` 之外无改动时整文精确还原，若存在其他改动则仅回写该字段并把原文另存 `.retained-<time>-<pid>` 后再退役备份。
+- **技能目录归属保护**：部署与卸载只处理指向本次源目录的链接或带 `.codebuddy-hud-managed` 标记的复制目录；未知同名目录/链接/文件一律警告并保留，绝不误删用户自定义技能。
+- **主题配置保护与国际化**：`--theme` 对无效配置（非法 JSON、非对象根节点、不可读文件）直接报错并保留原文件，不再重置为空对象；报错信息点出文件路径与严格 JSON 要求；`--setup --theme` 遇到换肤失败时安全中止，不继续写入 `statusLine`；主题列表、选择器及用法提示接入 `lang.js` 国际化，预览框按 CJK 双列宽度对齐。
+- **终端安全加固**：主题覆盖值经 SGR 白名单校验，阻断清屏、OSC 52 剪贴板劫持等终端注入；`sanitizeTerminalText` 完整剥离 DCS/APC/PM/SOS 及 C1 形式（`0x90/0x98/0x9E/0x9F` 等）控制串，未终止串安全吞到输入末尾。
+- **读取预算上限**：`display.toolActivityTailBytes` 增加 `MAX_TOTAL_BYTES`（256 KiB）上限钳制，各逆向扫描按剩余字节预算限制单次读取；配置文件超过 256 KiB 或非普通文件时跳过该层，防止仓库内恶意配置触发大内存读取。
+- **Δ/⏱ 缓存误判消除**：重置信号复用上下文占用仲裁，避免缓存命中或 TTL 过期被当作 `/clear`；缺失 `input_tokens` 且 cache 为 0 时按未知处理。缺少窗口大小/使用率时仍回退原始输入，缓存残差仍可能触发断崖。
+- **transcript 尺寸持久化**：文件单独增长也保存尺寸；stat 失败时其他状态写回保留上次有效尺寸，避免后续截断漏检。
+- **卸载还原守卫**：仅当当前 `statusLine` 仍指向本 HUD 时还原备份，保留用户后续替换或删除的配置意图。
+- **Windows PATH 保护**：安装/卸载通过注册表 API 读写 HKCU `Path`，保留 `%VAR%` 间接引用与 `REG_EXPAND_SZ` 值类型；卸载按归一化路径比对移除 runtime bin，避免误删或漏删。
+- **会话 Effort 状态原子写**：采用临时文件 + rename 原子写入，避免多进程并发读到半截 JSON。
+- **Bootstrap 查询源优先级**：显式 Release URL 跳过默认 302/API 查询；兼容 `CODEBUDDY_HUD_REMOTE_PKG_URL` 旧变量别名，新名优先。
+- **Doctor 路径校验增强**：POSIX 支持 shell 反转义；Windows 保留 UNC、`\$` 等字面字符（不执行 shell 反转义），避免误报存在，并兼容引号内尾反斜杠的分词歧义。
 
 ### Performance & Hardening (性能与稳健性加固)
 
-- **Git 探测**：使用免 shell 的 `execFileSync`，按需懒加载 `child_process`，降低 Windows 派生与普通帧开销。
+- **Git 探测零 Shell 派生**：使用免 shell 的 `execFileSync` 直连 `git status`，按需懒加载 `child_process`，普通渲染帧避免加载子进程模块，Windows 派生开销节省约 33ms。
 
-### Documentation (文档对齐)
+### Documentation (文档对齐与宿主契约)
 
-- 对齐宿主 v2.171.0 的刷新/输出约束、CLI、遥测、状态 schema 与安装/更新变量；技术细则集中到模块参考，AGENTS.md 保留硬约束和索引，高级安装独立成文，双语文档同步。
-- **宿主契约复核**：实测至 CodeBuddy Code v2.179.2（2026-11-02）——3 行截断、10240 UTF-16 字符上限（先判长度再追加）、五类事件 300ms 去抖与 5000ms 硬超时均不变；各文档版本引用同步更新为 v2.179.2。
+- **宿主契约实测复核**：实测至 CodeBuddy Code **v2.179.2**（2026-11-02 复核）——输出前 3 行截断、10240 UTF-16 字符上限（先判长度再追加）、五类事件 300ms 去抖与 5000ms 硬超时均保持不变；各文档版本引用全面同步为 v2.179.2。
+- **架构文档解耦与重构**：抽离国内镜像、Git Clone、Fork 等高级安装到独立文档 `docs/install-advanced*.md`；架构文档聚焦设计动机，技术细则集中收拢至模块参考文档，双语文档完全对齐。
 
-### Tests (测试)
+### Tests (测试与验证工程)
 
-- 新增 CLI 参数组合（64 种）、TTY 主题帮助、transcript 增长/截断与 stat 失败、Release 查询源优先级等回归。全量验证命令见 [AGENTS.md](AGENTS.md#测试与验证)，用例数以实际输出为准。
-- 新增远端清单漂移（正/反向）、JSONC 字节级往返、技能归属、主题失败保护、doctor 残留副本回归；`verify-install` 扩展用户技能保护与主题失败场景校验。
+- **测试套件扩充至 496 个用例**：
+  - 新增 CLI 参数组合矩阵（64 种组合覆盖）、TTY 主题帮助、transcript 尺寸增长/截断与 stat 失败、Release 查询源优先级等测试。
+  - 新增远端清单双向漂移测试（正向覆盖全部 runtime 依赖，反向断言仓库真实存在）。
+  - 新增 JSONC 字节级无损往返、技能目录归属判断、主题失败保护、doctor 残留副本过滤回归。
+  - `verify:install` 扩充至 14 个端到端隔离生命周期场景校验（含用户技能保护与换肤失败配置保全）。
 
 ---
 
@@ -188,7 +190,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 支持主题换肤、Token 上下文进度条、Cache 命中率、Git diff、会话 Credits 与工具活动展示。
 - 提供跨平台一键安装、卸载与环境体检诊断。
 
-[Unreleased]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.9...HEAD
+[Unreleased]: https://github.com/XisFool/codebuddy-hud/compare/v0.4.0...HEAD
+[v0.4.0]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.9...v0.4.0
 [v0.3.9]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.8...v0.3.9
 [v0.3.8]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.7...v0.3.8
 [v0.3.7]: https://github.com/XisFool/codebuddy-hud/compare/v0.3.5...v0.3.7

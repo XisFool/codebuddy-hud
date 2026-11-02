@@ -60,4 +60,4 @@ node runtime/bin/codebuddy-hud.js --status
 
 - 提交前必须通过 `npm test`、`npm run verify`、`npm run verify:install`；用例数以当次实际输出为准，严禁带错提交。
 - Commit message 使用中文。
-- 发布：更新 `package.json` 与 `CHANGELOG.md` → 全量验证 → 创建注释 tag `vX.Y.Z` → 推送 master 与 tag → 创建 GitHub Release → 在隔离 `CODEBUDDY_HOME` 中真实远程安装并确认 `--status` 退出码 0。
+- 发布：更新 `package.json`、`.codebuddy-plugin/plugin.json`、`docs/` 目标版本与 `CHANGELOG.md` → 全量验证 → 创建注释 tag `vX.Y.Z` → 推送 master 与 tag → 创建 GitHub Release → 在隔离 `CODEBUDDY_HOME` 中真实远程安装并确认 `--status` 退出码 0。

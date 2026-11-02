@@ -1,6 +1,6 @@
 # CodeBuddy HUD 模块 API 参考手册 (Module Reference)
 
-> **版本：** `v0.3.9+`  
+> **版本：** `v0.4.0+`  
 > **根路径：** 所有模块相对路径均以仓库根目录或 `~/.codebuddy/codebuddy-hud-runtime/` 为基准。
 
 ---
@@ -267,7 +267,7 @@ export function resetModelInfoCache(): void;
 
 ### 关键机制
 - **白名单归一化**：仅接受 `low` / `medium` / `high` / `xhigh` / `max` / `ultracode`（含 `med`、`extra-high`、`maximum`、`ultra` 等别名映射）；未知值视为不可信输入，沿解析链下探。
-- **effort 解析链**：`cbData.reasoning_effort` → `cbData.model.reasoning_effort` → `cbData.model.effort` → transcript 会话信号（按 transcript 哈希持久化于会话状态目录）→ `settings.json` 的 `reasoningEffort`（仅进程内缓存）→ 模型名推断 → `config.defaultEffortLevel`。
+- **effort 解析链**：`cbData.reasoning_effort` → `cbData.model.reasoning_effort` → `cbData.model.effort` → transcript 会话信号（按 transcript 哈希持久化于会话状态目录，采用 `.tmp-<pid>-<time>` + `rename` 原子写）→ `settings.json` 的 `reasoningEffort`（仅进程内缓存）→ 模型名推断 → `config.defaultEffortLevel`。
 - **Credits 回退**：仅提取 payload `cost.credits` 明示的实际消费；缺失返回 `null`，不基于模型费率元数据推算。
 
 ---
@@ -492,7 +492,7 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 }
 ```
 
-- `codebuddy-hud-session-state/effort-<transcript-sha256>.json` (会话推理深度 Effort 状态):
+- `codebuddy-hud-session-state/effort-<transcript-sha256>.json` (会话推理深度 Effort 状态，原子写入):
 ```json
 {
   "version": 1,
@@ -608,7 +608,7 @@ export function printDoctorReport(report: DoctorReport, isJson?: boolean, option
 5. `terminal / windowsPathNormalization`: Windows 路径大小写规范化检查。
 6. `git`: Git PATH 可达性、当前仓库分支与探测延迟。
 7. `transcript`: 遥测状态目录创建与可写性校验，并回显错误日志路径。
-8. `codebuddy / retainedBackups`: 扫描 settings 同目录下的 `.bak.codebuddy-hud.retained-*` 原文副本并列出（最多 5 个），提示手动清理；只读不删，无残留时为 `ok`。
+8. `codebuddy / retainedBackups`: 扫描 settings 同目录下的 `.bak.codebuddy-hud.retained-*` 原文副本并列出（最多 5 个，严格过滤普通文件排除同名前缀目录），提示手动清理；只读不删，无残留时为 `ok`。
 
 命令路径在 POSIX 下按原样与 shell 反转义两种形式校验；Windows 只按字面路径校验，保留 UNC 与 `\$`，避免把不存在的路径反转义成另一个有效文件。引号内尾反斜杠造成分词歧义时回退非转义分词。
 

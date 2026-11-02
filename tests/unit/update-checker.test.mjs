@@ -66,7 +66,7 @@ describe('update-checker', () => {
   });
 
   test('rawBaseForTag validates the tag shape and encodes it into the raw URL', () => {
-    assert.equal(rawBaseForTag('v0.3.9'), 'https://raw.githubusercontent.com/XisFool/codebuddy-hud/v0.3.9');
+    assert.equal(rawBaseForTag('v0.4.0'), 'https://raw.githubusercontent.com/XisFool/codebuddy-hud/v0.4.0');
     assert.equal(rawBaseForTag('1.2.3-beta.1'), 'https://raw.githubusercontent.com/XisFool/codebuddy-hud/1.2.3-beta.1');
     assert.throws(() => rawBaseForTag('9.9.9:bad'), /Invalid release tag/);
     assert.throws(() => rawBaseForTag('../../etc'), /Invalid release tag/);
