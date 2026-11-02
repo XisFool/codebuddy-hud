@@ -1,7 +1,7 @@
 # CodeBuddy HUD System Architecture
 
 > **Target Version:** `v0.3.9+`  
-> **Host Compatibility:** CodeBuddy Code CLI (including latest v2.171.0+; subject to the Windows quoting and three-line display contracts below)
+> **Host Compatibility:** CodeBuddy Code CLI (including latest v2.179.2+; subject to the Windows quoting and three-line display contracts below)
 > **Engine Baseline:** Pure Node.js Standard Library (`>= 18.0.0`, Zero npm dependencies)
 
 ---
@@ -115,7 +115,7 @@ graph TD
 
 ## 4. Execution Lifecycle & Timing
 
-The host (verified up to latest v2.171.0) debounces statusline invocations by ~300ms across **session / result / permission / settings / cost** event streams. Each execution has a **5000ms wall-clock hard timeout**; stdout capture is capped at **10240 UTF-16 characters** (length checked before appending) and only the first 3 lines are retained. Idle sessions and read-only tool executions do not poll; failed executions clear the statusline without automatic retry.
+The host (verified up to latest v2.179.2) debounces statusline invocations by ~300ms across **session / result / permission / settings / cost** event streams. Each execution has a **5000ms wall-clock hard timeout**; stdout capture is capped at **10240 UTF-16 characters** (length checked before appending) and only the first 3 lines are retained. Idle sessions and read-only tool executions do not poll; failed executions clear the statusline without automatic retry.
 
 ```mermaid
 sequenceDiagram
@@ -173,7 +173,7 @@ Re-scanning a long JSONL on every event would re-parse existing spend records, s
 Configuration is merged with `deepMerge` over four layers (built-in defaults → bundled → global user → project local) and then `resolveTheme` post-processes it (post-processing, not a merge layer; `--theme <name>` is a persistent write to user config, not a runtime overlay). Project configs are untrusted, so merging skips `__proto__` and caps recursion depth, theme overrides must be strict SGR sequences or short constrained strings, and unknown color names degrade to unstyled text, blocking terminal injection. The transcript effort signal is persisted per transcript hash so long tasks can adjudicate from a tail scan and have a cold-start fallback. The five presets, validation rules and the effort resolution chain are in [module-reference.md §3](module-reference.md#3-runtimeconfigjs--多层配置合并与主题引擎) and [§8](module-reference.md#8-runtimemodel-infojs--推理强度归一化与额度回退).
 
 ### 5.6 3-Line Adaptive Layout (`renderer.js`)
-The host (verified as a hard constant up to v2.171.0) retains only the first three stdout lines, and the HUD's three-line contract is strictly aligned with it: Line 1 identity & status, Line 2 tokens & context, Line 3 diff / cost / duration with tool activity **merged in**, so every key segment survives truncation; rows with no data are hidden whole and missing fields render as `--`. Line 2 uses three states (`fresh` / `stale` / `unknown`) to express how trustworthy the context data is, so stale numbers are not shown after `/compact`. Per-line fields, layout and tri-state rendering are in [module-reference.md §4](module-reference.md#4-runtimerendererjs--3-行看板装配与布局编排).
+The host (verified as a hard constant up to v2.179.2) retains only the first three stdout lines, and the HUD's three-line contract is strictly aligned with it: Line 1 identity & status, Line 2 tokens & context, Line 3 diff / cost / duration with tool activity **merged in**, so every key segment survives truncation; rows with no data are hidden whole and missing fields render as `--`. Line 2 uses three states (`fresh` / `stale` / `unknown`) to express how trustworthy the context data is, so stale numbers are not shown after `/compact`. Per-line fields, layout and tri-state rendering are in [module-reference.md §4](module-reference.md#4-runtimerendererjs--3-行看板装配与布局编排).
 
 ---
 

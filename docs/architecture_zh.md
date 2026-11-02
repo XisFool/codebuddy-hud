@@ -1,7 +1,7 @@
 # CodeBuddy HUD 系统架构设计全景文档
 
 > **目标版本：** `v0.3.9+`  
-> **宿主兼容性：** CodeBuddy Code CLI（涵盖最新 v2.171.0+；受下文说明的 Windows 引号兼容与三行显示契约约束）
+> **宿主兼容性：** CodeBuddy Code CLI（涵盖最新 v2.179.2+；受下文说明的 Windows 引号兼容与三行显示契约约束）
 > **底层运行环境：** 纯 Node.js 标准库 (`>= 18.0.0`，绝对零外部 npm 依赖)
 
 ---
@@ -117,7 +117,7 @@ graph TD
 
 ## 4. 单次交互执行流与生命周期时序 (Execution Flow)
 
-宿主（实测至最新 v2.171.0）在 **session / result / permission / settings / cost** 五类离散事件后约 **300ms** 去抖触发 HUD。单次执行有 **5000ms wall-clock 硬超时**；stdout 捕获上限为 **10240 个 UTF-16 字符**（先判长度再追加），最终只取前 3 行。空闲与只读工具执行时不周期刷新；命令失败会清空 HUD，且不会自动定时重试。
+宿主（实测至最新 v2.179.2）在 **session / result / permission / settings / cost** 五类离散事件后约 **300ms** 去抖触发 HUD。单次执行有 **5000ms wall-clock 硬超时**；stdout 捕获上限为 **10240 个 UTF-16 字符**（先判长度再追加），最终只取前 3 行。空闲与只读工具执行时不周期刷新；命令失败会清空 HUD，且不会自动定时重试。
 
 ```mermaid
 sequenceDiagram
@@ -175,7 +175,7 @@ Prompt Cache 命中、实际 Credits 与工具调用序列只存在于可达数�
 配置按「内置默认 → 随包 → 用户全局 → 项目局部」四层 `deepMerge`，再由 `resolveTheme` 后处理（后处理而非合并层；`--theme <name>` 是写入用户配置的持久操作，不是运行时覆盖层）。项目配置不可信，因此合并跳过 `__proto__`、限制递归深度，主题覆盖值只能是严格 SGR 序列或受限短字符串，未知颜色名降级为无样式文本，阻断项目配置的终端注入。effort 的 transcript 信号按 transcript 哈希持久化，使长任务可凭尾部扫描裁决并在冷启动时有兜底。5 套预设、校验规则与 effort 解析链见 [module-reference.md §3](module-reference.md#3-runtimeconfigjs--多层配置合并与主题引擎) 与 [§8](module-reference.md#8-runtimemodel-infojs--推理强度归一化与额度回退)。
 
 ### 5.6 3 行自适应布局 (`renderer.js`)
-宿主（源码复核至最新 v2.171.0 仍为常量）仅保留 stdout 前 3 行，HUD 的 3 行输出契约与之严格对齐：Line 1 标识与状态、Line 2 Tokens 与上下文、Line 3 变更/消费/耗时并**并入工具活动**，确保关键信息在截断下完整可见；无数据的行整行隐藏，字段缺失以 `--` 占位。Line 2 以 `fresh` / `stale` / `unknown` 三态表达上下文数据的可信度，避免 `/compact` 后展示过期数字。各行字段、排版与三态渲染细则见 [module-reference.md §4](module-reference.md#4-runtimerendererjs--3-行看板装配与布局编排)。
+宿主（源码复核至最新 v2.179.2 仍为常量）仅保留 stdout 前 3 行，HUD 的 3 行输出契约与之严格对齐：Line 1 标识与状态、Line 2 Tokens 与上下文、Line 3 变更/消费/耗时并**并入工具活动**，确保关键信息在截断下完整可见；无数据的行整行隐藏，字段缺失以 `--` 占位。Line 2 以 `fresh` / `stale` / `unknown` 三态表达上下文数据的可信度，避免 `/compact` 后展示过期数字。各行字段、排版与三态渲染细则见 [module-reference.md §4](module-reference.md#4-runtimerendererjs--3-行看板装配与布局编排)。
 
 ---
 

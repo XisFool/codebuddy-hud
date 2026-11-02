@@ -44,7 +44,7 @@ Context Token 249k/1M [###-------] 25%  |  out 1.1k  |  cache 96.8%
 - **Line 2 (resources)**: current context input usage, context window bar and percentage (numerator aligned with the host's `used_percentage`), output tokens and recent prompt cache hit rate (sliding window aggregation); after compact, stale host data is marked as waiting for a fresh usage report.
 - **Line 3 (session activity)**: diff stats `Δ +N -M` (falls back to `[D]` on ASCII terminals), actual session spend (credits, falling back to `$USD` when unavailable), session duration, current AI action, and completed tool-call counts (up to 3). Δ / credits / ⏱ are session-baseline totals (reset only by `/clear`), while tool counts are scanned from the current turn's transcript.
 
-3 lines is a hard cap, aligned with CodeBuddy Code host limits (verified up to v2.171.0+ to truncate stdout at the first three lines); data-less lines are omitted entirely, while an empty individual field shows a `--` placeholder (e.g. `cache --`).
+3 lines is a hard cap, aligned with CodeBuddy Code host limits (verified up to v2.179.2+ to truncate stdout at the first three lines); data-less lines are omitted entirely, while an empty individual field shows a `--` placeholder (e.g. `cache --`).
 
 ---
 
@@ -273,7 +273,7 @@ Usage of the mirror and fork variables is covered in [docs/install-advanced.md](
 - The host has no periodic timers; it invokes the statusLine only after **session / result / permission / settings / cost** events, with a **300ms debounce**. stdout capture is capped at 10240 UTF-16 characters and only the first 3 lines are kept.
 - During long-running tools, streaming generation, and idle input waiting, the host never triggers the statusLine command.
 
-Verified up to CodeBuddy Code **v2.171.0** (re-verified 2026-10-21); this mechanism is unchanged. HUD rendering is ~200ms p50 (0.15–0.32s through the `.cmd` shim). See [docs/architecture.md](docs/architecture.md) §4 and §7 for the full host contract and failure matrix.
+Verified up to CodeBuddy Code **v2.179.2** (re-verified 2026-11-02); this mechanism is unchanged. HUD rendering is ~200ms p50 (0.15–0.32s through the `.cmd` shim). See [docs/architecture.md](docs/architecture.md) §4 and §7 for the full host contract and failure matrix.
 
 ---
 

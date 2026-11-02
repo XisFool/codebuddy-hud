@@ -6,7 +6,7 @@ CodeBuddy Code 的 statusLine HUD：宿主在 **session / result / permission / 
 
 1. **零 npm 依赖**：仅用 Node 内置模块（`fs`/`path`/`readline`/`crypto`/`os`/`child_process`/`https`/`http`）。
 2. **恒 `exit(0)` 且极速**：预算 <1500ms（p50 ~200ms），stdin 保底 800ms；内部异常静默降级，监听 stdout/stderr error 防 EPIPE；用 `process.exitCode = 0` + 自然排空，禁用 `process.exit()`。
-3. **严格 ≤3 行**：宿主 v2.171.0 取 stdout 前 3 行、捕获上限 10240 个 UTF-16 字符（先判长度再追加）；`display.maxLines` 结构上限 3；无数据行隐藏，字段缺失用 `--`。
+3. **严格 ≤3 行**：宿主 v2.179.2 取 stdout 前 3 行、捕获上限 10240 个 UTF-16 字符（先判长度再追加）；`display.maxLines` 结构上限 3；无数据行隐藏，字段缺失用 `--`。
 4. **终端安全**：所有外部文本经 `sanitizeTerminalText()`（ANSI/OSC/DCS/APC/PM/SOS、C0/C1、Bidi）；`effort` 白名单；主题值经 `resolveTheme` 的 SGR 白名单。
 5. **数据真实**：Cache 严格取自 transcript（无 payload 兜底，缺失 `cache --`）；Credits 优先 transcript 增量，仅完全无 transcript 遥测时回退 payload `cost.credits`；扫描未完成时隐藏。绝不伪造。
 

@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation (文档对齐)
 
 - 对齐宿主 v2.171.0 的刷新/输出约束、CLI、遥测、状态 schema 与安装/更新变量；技术细则集中到模块参考，AGENTS.md 保留硬约束和索引，高级安装独立成文，双语文档同步。
+- **宿主契约复核**：实测至 CodeBuddy Code v2.179.2（2026-11-02）——3 行截断、10240 UTF-16 字符上限（先判长度再追加）、五类事件 300ms 去抖与 5000ms 硬超时均不变；各文档版本引用同步更新为 v2.179.2。
 
 ### Tests (测试)
 
