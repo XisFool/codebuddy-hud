@@ -120,20 +120,27 @@ if (args.includes('--version') || args.includes('-v')) {
 } else if (args.includes('--setup')) {
   (async () => {
     try {
-      let selectedTheme = null;
+      let selectedTheme;
       const themeIdx = args.indexOf('--theme');
       if (themeIdx !== -1 && args[themeIdx + 1] && !args[themeIdx + 1].startsWith('--')) {
         selectedTheme = args[themeIdx + 1];
       } else if (process.stdin.isTTY && process.stdout.isTTY) {
         const { selectThemeInteractive } = require('../theme-selector');
-        selectedTheme = await selectThemeInteractive({ config: loadConfig() });
+        const config = loadConfig(process.cwd());
+        selectedTheme = await selectThemeInteractive({ config, initialTheme: config.theme && config.theme.name });
+      }
+      // null means the selector was cancelled (Ctrl-C/Esc); anything else
+      // (including "never shown") proceeds with the install.
+      if (selectedTheme === null) {
+        console.log('setup cancelled');
+        return;
       }
       require('../statusline-installer').setup(selectedTheme ? { theme: selectedTheme } : undefined);
     } catch (err) {
       logError(err);
-      console.error('setup failed (see codebuddy-hud-error.log)');
+      console.error(`setup failed: ${sanitizeTerminalText(err && err.message, 200)} (see codebuddy-hud-error.log)`);
+      process.exitCode = 1;
     }
-    process.exitCode = 0;
   })();
 } else if (args.includes('--theme')) {
   (async () => {
@@ -142,6 +149,7 @@ if (args.includes('--version') || args.includes('-v')) {
       const { getI18n } = require('../lang');
       const { saveUserTheme, printThemesList, selectThemeInteractive } = require('../theme-selector');
       const config = loadConfig(process.cwd());
+      const activeTheme = config.theme && config.theme.name;
       const { t } = getI18n(config);
       const themeIdx = args.indexOf('--theme');
       const themeArg = (themeIdx !== -1 && args[themeIdx + 1] && !args[themeIdx + 1].startsWith('--')) ? args[themeIdx + 1] : null;
@@ -154,10 +162,13 @@ if (args.includes('--version') || args.includes('-v')) {
           console.log(`\x1b[32m✔\x1b[0m ${t('themeSetSuccess')} '\x1b[1m${themeArg}\x1b[0m' (${t('themeSavedTo')} ${sanitizeTerminalText(savedPath, 512)})`);
         } else {
           console.error(`${t('unknownTheme')}: "${sanitizeTerminalText(themeArg, 64)}". ${t('availableThemes')}: ${Object.keys(THEME_PRESETS).join(', ')}`);
+          process.exitCode = 1;
         }
       } else if (process.stdin.isTTY && process.stdout.isTTY) {
-        const selected = await selectThemeInteractive({ config });
-        if (selected) {
+        const selected = await selectThemeInteractive({ config, initialTheme: activeTheme });
+        // Selecting the already-active theme is a no-op: writing it globally
+        // would clobber a project/object-form theme (and its overrides).
+        if (selected && selected !== activeTheme) {
           const savedPath = saveUserTheme(selected);
           console.log(`\x1b[32m✔\x1b[0m ${t('themeSetSuccess')} '\x1b[1m${selected}\x1b[0m' (${t('themeSavedTo')} ${sanitizeTerminalText(savedPath, 512)})\n`);
         }
@@ -166,29 +177,34 @@ if (args.includes('--version') || args.includes('-v')) {
       }
     } catch (err) {
       logError(err);
-      console.error('theme configuration failed (see codebuddy-hud-error.log)');
+      console.error(`theme configuration failed: ${sanitizeTerminalText(err && err.message, 200)} (see codebuddy-hud-error.log)`);
+      process.exitCode = 1;
     }
-    process.exitCode = 0;
   })();
 } else if (args.includes('--uninstall')) {
   try {
-    require('../uninstall').uninstall();
+    if (require('../uninstall').uninstall() === false) {
+      process.exitCode = 1;
+    }
   } catch (err) {
     logError(err);
-    console.error('uninstall failed (see codebuddy-hud-error.log)');
+    console.error(`uninstall failed: ${sanitizeTerminalText(err && err.message, 200)} (see codebuddy-hud-error.log)`);
+    process.exitCode = 1;
   }
-  process.exitCode = 0;
 } else if (args.includes('--doctor') || args.includes('-d')) {
   try {
     const isJson = args.includes('--json');
     const { runDoctor, printDoctorReport } = require('../doctor');
     const report = runDoctor({ cwd: process.cwd(), json: isJson });
     printDoctorReport(report, isJson);
+    if (report.status === 'fail') {
+      process.exitCode = 1;
+    }
   } catch (err) {
     logError(err);
-    console.error('doctor check failed (see codebuddy-hud-error.log)');
+    console.error(`doctor check failed: ${sanitizeTerminalText(err && err.message, 200)} (see codebuddy-hud-error.log)`);
+    process.exitCode = 1;
   }
-  process.exitCode = 0;
 } else if (args.includes('--status')) {
   let statusCwd = '';
   try { statusCwd = process.cwd(); } catch { statusCwd = ''; }
@@ -213,13 +229,19 @@ if (args.includes('--version') || args.includes('-v')) {
         console.log(result.message);
       } else {
         console.error(result.message);
+        process.exitCode = 1;
       }
     } catch (err) {
       logError(err);
-      console.error('update failed (see codebuddy-hud-error.log)');
+      console.error(`update failed: ${sanitizeTerminalText(err && err.message, 200)} (see codebuddy-hud-error.log)`);
+      process.exitCode = 1;
     }
-    process.exitCode = 0;
   })();
+} else if (args.length > 0) {
+  // Render mode is argument-free; anything left here is an unknown flag.
+  console.error(`Unknown argument: ${sanitizeTerminalText(args[0], 64)}`);
+  console.error('Run "codebuddy-hud --help" for usage.');
+  process.exitCode = 2;
 } else {
   // Normal statusLine mode: read stdin
   const MAX_STDIN_SIZE = 1024 * 1024;

@@ -759,11 +759,15 @@ function getCompactContextStatus(transcriptPath, contextWindow, opts) {
   try {
     const resolved = path.isAbsolute(transcriptPath) ? transcriptPath : path.resolve(opts?.cwd || process.cwd(), transcriptPath);
     const fd = fs.openSync(resolved, 'r');
-    const size = fs.fstatSync(fd).size;
-    const start = Math.max(0, size - MAX_TOTAL_BYTES);
-    const text = Buffer.alloc(size - start);
-    fs.readSync(fd, text, 0, text.length, start);
-    fs.closeSync(fd);
+    let text;
+    try {
+      const size = fs.fstatSync(fd).size;
+      const start = Math.max(0, size - MAX_TOTAL_BYTES);
+      text = Buffer.alloc(size - start);
+      fs.readSync(fd, text, 0, text.length, start);
+    } finally {
+      fs.closeSync(fd);
+    }
     let compactAt = -1;
     let usageAt = -1;
     let index = 0;
