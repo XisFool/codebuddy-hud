@@ -270,7 +270,9 @@ function checkRetainedBackups(i18n) {
   const prefix = `${path.basename(settingsPath)}.bak.codebuddy-hud.retained-`;
   let retained = [];
   try {
-    retained = fs.readdirSync(dir).filter(name => name.startsWith(prefix));
+    retained = fs.readdirSync(dir, { withFileTypes: true })
+      .filter(entry => entry.isFile() && entry.name.startsWith(prefix))
+      .map(entry => entry.name);
   } catch {
     retained = [];
   }
