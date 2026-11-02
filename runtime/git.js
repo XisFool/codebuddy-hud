@@ -88,7 +88,10 @@ function findGitInfo(cwd) {
 function readDirectBranch(gitDir) {
   try {
     const headPath = path.join(gitDir, 'HEAD');
-    if (!fs.existsSync(headPath)) return null;
+    // A hostile repo can make HEAD an arbitrarily large file; only a ref line
+    // or a 40-char SHA is meaningful, so refuse oversized input up front.
+    const stat = fs.statSync(headPath);
+    if (!stat.isFile() || stat.size > 4096) return null;
     const content = fs.readFileSync(headPath, 'utf8').trim();
     if (!content) return null;
     if (content.startsWith('ref: ')) {

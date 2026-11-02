@@ -3,9 +3,9 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const { getCodeBuddyHome, getSettingsPath, getErrorLogPath, getTranscriptUsageStateDir, normalizePlatformPath } = require('./paths');
+const { getCodeBuddyHome, getSettingsPath, getErrorLogPath, getTranscriptUsageStateDir, normalizePlatformPath, getUserConfigPath } = require('./paths');
 const { supportsUnicode } = require('./encoding');
-const { detectThemeMode, loadConfig } = require('./config');
+const { detectThemeMode, loadConfig, isPresetName } = require('./config');
 const { getGitStatus } = require('./git');
 const { getI18n } = require('./lang');
 const { sanitizeTerminalText } = require('./sanitize');
@@ -67,23 +67,60 @@ function tokenizeStatusLineCommand(command, escapeAware) {
   return tokens;
 }
 
-function findMissingTokens(tokens) {
-  const pathLike = tokens.filter(t => /[\\/]/.test(t));
-  if (pathLike.length === 0) {
-    const first = tokens[0];
-    return first && shellTokenCandidates(first).some(t => fs.existsSync(t)) ? [] : [first];
+function isRegularFile(p) {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
   }
+}
 
-  const missing = [];
-  for (const token of pathLike) {
-    const existing = shellTokenCandidates(token).find(t => fs.existsSync(t));
-    if (!existing) {
-      missing.push(token);
-    } else if (/\.cmd$/i.test(existing)) {
-      const forwarded = path.join(path.dirname(existing), 'codebuddy-hud.js');
-      if (!fs.existsSync(forwarded)) missing.push(forwarded);
+// Resolve a bare command through PATH. Windows installs may use
+// `codebuddy-hud` (npm link) or `codebuddy-hud.cmd` (generated shim).
+function findCommandInPath(name) {
+  const dirs = String(process.env.PATH || '').split(path.delimiter);
+  const exts = process.platform === 'win32' ? ['', '.cmd', '.bat', '.exe'] : [''];
+  for (const dir of dirs) {
+    if (!dir) continue;
+    for (const ext of exts) {
+      const candidate = path.join(dir, name + ext);
+      if (isRegularFile(candidate)) return candidate;
     }
   }
+  return null;
+}
+
+// A token is only a real target when it can actually be executed:
+// - path-like tokens must be regular files (a directory passed doctor before);
+// - a bare first token is resolved through PATH (it used to be checked
+//   relative to the cwd and reported missing);
+// - other bare tokens are arguments/flags and cannot be validated.
+function findMissingTokens(tokens) {
+  const missing = [];
+  tokens.forEach((token, index) => {
+    let target = null;
+    let isArgument = false;
+    for (const candidate of shellTokenCandidates(token)) {
+      if (/[\\/]/.test(candidate)) {
+        if (isRegularFile(candidate)) { target = candidate; break; }
+      } else if (index === 0) {
+        target = findCommandInPath(candidate);
+        if (target) break;
+      } else {
+        isArgument = true;
+        break;
+      }
+    }
+    if (isArgument) return;
+    if (!target) {
+      missing.push(token);
+      return;
+    }
+    if (/\.cmd$/i.test(target)) {
+      const forwarded = path.join(path.dirname(target), 'codebuddy-hud.js');
+      if (!isRegularFile(forwarded)) missing.push(forwarded);
+    }
+  });
   return missing;
 }
 
@@ -153,11 +190,78 @@ function checkCodeBuddyConfig(i18n) {
     {
       category: 'codebuddy',
       name: i18n.t('statusLineCommand'),
-      status: statusLineOk ? 'ok' : 'warn',
+      // settings.json exists but the HUD cannot run (missing/invalid command
+      // or a target that does not exist) is critical, not a warning: the old
+      // warn only let `ok: true` claim the HUD was fine while nothing rendered.
+      status: statusLineOk ? 'ok' : (settingsExists ? 'fail' : 'warn'),
       detail: statusLineCmd || '(not configured)',
       message: statusLineMsg,
     },
   ];
+}
+
+// The renderer silently ignores a broken or oversized HUD config and falls
+// back to defaults, so doctor must surface it instead of reporting all-green.
+function checkHudConfig(i18n, cwd) {
+  const files = [getUserConfigPath()];
+  if (typeof cwd === 'string' && cwd) {
+    files.push(path.join(cwd, 'codebuddy-hud.config.json'));
+  }
+  const problems = [];
+  const seen = new Set();
+  let checkedAny = false;
+
+  for (const file of files) {
+    let key;
+    try { key = path.resolve(file); } catch { key = file; }
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    let raw;
+    try {
+      raw = fs.readFileSync(file, 'utf8');
+    } catch {
+      continue; // missing config is fine (defaults apply)
+    }
+    checkedAny = true;
+    if (Buffer.byteLength(raw, 'utf8') > 256 * 1024) {
+      problems.push(`${file}: exceeds 256KB, ignored`);
+      continue;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      problems.push(`${file}: invalid JSON (${err && err.message ? err.message : err})`);
+      continue;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      problems.push(`${file}: root must be a JSON object`);
+      continue;
+    }
+    const theme = parsed.theme;
+    const themeValid = theme === undefined || isPresetName(theme)
+      || (theme && typeof theme === 'object' && !Array.isArray(theme)
+          && (theme.name === undefined || isPresetName(theme.name)));
+    if (!themeValid) {
+      problems.push(`${file}: unknown theme name`);
+    }
+    const maxLines = parsed.display && parsed.display.maxLines;
+    if (maxLines !== undefined
+        && !(typeof maxLines === 'number' && Number.isFinite(maxLines) && maxLines >= 1)) {
+      problems.push(`${file}: display.maxLines must be a positive number`);
+    }
+  }
+
+  return [{
+    category: 'codebuddy',
+    name: i18n.t('hudConfigFile'),
+    status: problems.length > 0 ? 'warn' : 'ok',
+    detail: problems.length > 0
+      ? problems.join('; ')
+      : (checkedAny ? 'User/project config is valid' : 'No HUD config file (defaults apply)'),
+    message: problems.length > 0 ? i18n.t('doctorHudConfigInvalid') : null,
+  }];
 }
 
 function checkEncodingEnvironment(i18n, config) {
@@ -234,6 +338,9 @@ function checkTranscriptAccess(i18n) {
     if (!fs.existsSync(usageDir)) {
       fs.mkdirSync(usageDir, { recursive: true });
     }
+    // An existing but read-only directory must not pass: the renderer needs
+    // to write checkpoints here, and mkdir-on-exists proves nothing.
+    fs.accessSync(usageDir, fs.constants.W_OK);
   } catch {
     usageOk = false;
   }
@@ -316,6 +423,7 @@ function runDoctor(options) {
   const checks = [
     checkNodeEnvironment(i18n),
     ...checkCodeBuddyConfig(i18n),
+    ...checkHudConfig(i18n, cwd),
     ...checkRetainedBackups(i18n),
     ...checkHostRefreshProtocol(i18n),
     ...checkEncodingEnvironment(i18n, config),
@@ -358,7 +466,9 @@ function printDoctorReport(report, isJson, options) {
     if (item.status === 'warn') mark = warnMark;
     if (item.status === 'fail') mark = failMark;
 
-    console.log(`  ${mark} \x1b[1m${item.name}\x1b[0m: ${item.detail}`);
+    // detail may embed external strings (e.g. a git branch read from
+    // .git/HEAD); strip control sequences before printing to the terminal.
+    console.log(`  ${mark} \x1b[1m${item.name}\x1b[0m: ${sanitizeTerminalText(item.detail, 512)}`);
     if (item.path) {
       console.log(`     \x1b[90mPath: ${sanitizeTerminalText(item.path, 120)}\x1b[0m`);
     }

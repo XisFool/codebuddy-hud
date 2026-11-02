@@ -275,9 +275,14 @@ async function runUpdate(options = {}) {
     };
   }
 
-  const tmpPath = path.join(os.tmpdir(), `codebuddy-hud-bootstrap-${process.pid}-${Date.now()}.js`);
+  // Private staging directory: a predictable name in the shared tmpdir (the
+  // old `codebuddy-hud-bootstrap-<pid>-<time>.js`) lets another local user
+  // pre-create the file and feed the updater their own script.
+  let tmpPath;
   try {
-    fs.writeFileSync(tmpPath, script, { mode: 0o600 });
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hud-update-'));
+    tmpPath = path.join(tmpDir, 'bootstrap.js');
+    fs.writeFileSync(tmpPath, script, { mode: 0o600, flag: 'wx' });
   } catch (err) {
     return {
       ok: false,

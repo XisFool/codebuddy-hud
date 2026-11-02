@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const readline = require('readline');
-const { THEME_PRESETS, resolveTheme, isPresetName } = require('./config');
+const { THEME_PRESETS, resolveTheme, isPresetName, detectThemeMode } = require('./config');
 const { getUserConfigPath, getSettingsPath } = require('./paths');
 const { sanitizeTerminalText } = require('./sanitize');
 const { getI18n } = require('./lang');
@@ -61,9 +61,12 @@ function getActiveThemeName() {
     const configPath = getUserConfigPath();
     if (fs.existsSync(configPath)) {
       const userConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      if (userConfig && typeof userConfig === 'object' && !Array.isArray(userConfig)
-          && isPresetName(userConfig.theme)) {
-        return userConfig.theme;
+      if (userConfig && typeof userConfig === 'object' && !Array.isArray(userConfig)) {
+        const value = userConfig.theme;
+        if (isPresetName(value)) return value;
+        // Object form (`{"theme":{"name":"amber", ...overrides}}`) is valid
+        // config too; the old string-only check reported it as ocean.
+        if (value && typeof value === 'object' && isPresetName(value.name)) return value.name;
       }
     }
   } catch {
@@ -122,7 +125,9 @@ function selectThemeInteractive(opts) {
   const initialTheme = options.initialTheme || getActiveThemeName();
 
   if (!isTTY) {
-    return Promise.resolve(initialTheme);
+    // No selector was shown: "no choice" (null), not "keep current" — the
+    // callers must not treat this as an explicit theme selection.
+    return Promise.resolve(null);
   }
 
   let selectedIndex = THEMES.findIndex(t => t.name === initialTheme);
@@ -130,12 +135,10 @@ function selectThemeInteractive(opts) {
 
   return new Promise((resolve) => {
     let lastRenderedLines = 0;
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-      terminal: true,
-    });
-    readline.emitKeypressEvents(process.stdin, rl);
+    // No readline Interface: its line editor echoes every unhandled key into
+    // the preview. emitKeypressEvents alone keeps raw-mode key handling and
+    // leaves the screen untouched.
+    readline.emitKeypressEvents(process.stdin);
 
     function restoreCursor() {
       try { process.stdout.write('\x1b[?25h'); } catch {}
@@ -159,7 +162,6 @@ function selectThemeInteractive(opts) {
         try { process.stdin.setRawMode(false); } catch {}
       }
       process.stdin.removeListener('keypress', onKeypress);
-      try { rl.close(); } catch {}
       try { process.stdin.pause(); } catch {}
     }
 
@@ -202,15 +204,19 @@ function selectThemeInteractive(opts) {
       outputLines.push('');
       const currentTheme = THEMES[selectedIndex].name;
       const previewTitle = t('themePreviewTitle');
-      // Bottom border is 92 columns: └ + 90 dashes + ┘.
-      const topDashes = Math.max(0, 84 - displayWidth(previewTitle) - currentTheme.length);
+      // Box width: 92 columns normally, clamped to the terminal so the border
+      // does not wrap (and desynchronize the redraw) on narrow terminals.
+      const terminalWidth = Number(process.stdout.columns);
+      const boxWidth = Number.isFinite(terminalWidth) && terminalWidth >= 60
+        ? Math.min(92, Math.floor(terminalWidth)) : 92;
+      const topDashes = Math.max(0, boxWidth - 8 - displayWidth(previewTitle) - currentTheme.length);
       outputLines.push(`${DIM}┌─ ${previewTitle} (${currentTheme}) ${'─'.repeat(topDashes)}┐${RESET}`);
 
-      const previewLines = renderThemePreview(currentTheme);
+      const previewLines = renderThemePreview(currentTheme, detectThemeMode(options.config));
       for (const pl of previewLines) {
         outputLines.push(`  ${pl}`);
       }
-      outputLines.push(`${DIM}└${'─'.repeat(90)}┘${RESET}`);
+      outputLines.push(`${DIM}└${'─'.repeat(boxWidth - 2)}┘${RESET}`);
 
       lastRenderedLines = outputLines.length;
       process.stdout.write(outputLines.join('\n') + '\n');
@@ -267,13 +273,19 @@ function selectThemeInteractive(opts) {
     }
 
     process.stdin.on('keypress', onKeypress);
+    process.stdin.resume();
     render();
   });
 }
 
 function printThemesList(config) {
   const { t } = getI18n(config);
-  const current = getActiveThemeName();
+  // The merged config is authoritative: it includes project and object-form
+  // themes, which the global-config-only probe below cannot see.
+  const themeValue = config && config.theme;
+  const current = (themeValue && typeof themeValue === 'object' && isPresetName(themeValue.name))
+    ? themeValue.name
+    : getActiveThemeName();
   console.log(`\n${BOLD}${t('availableThemes')}:${RESET}\n`);
   for (let i = 0; i < THEMES.length; i++) {
     const item = THEMES[i];
