@@ -14,7 +14,7 @@
 5. [`runtime/renderer/format.js` — 格式化、进度条与 Cache 徽标](#5-runtimerendererformatjs--格式化进度条与-cache-徽标)
 6. [`runtime/renderer/diff-render.js` — 代码变更、Credits 与耗时渲染器](#6-runtimerendererdiff-renderjs--代码变更credits-与耗时渲染)
 7. [`runtime/renderer/agents-render.js` — 工具活动频次聚合渲染器](#7-runtimerendereragents-renderjs--工具活动格式化渲染)
-8. [`runtime/model-info.js` — 推理强度归一化与额度回退](#8-runtimemodel-infojs--推理强度归一化与额度回退)
+8. [`runtime/model-info.js` — 推理强度归一化与 Credits 解析](#8-runtimemodel-infojs--推理强度归一化与-credits-解析)
 9. [`runtime/lang.js` — 多语言国际化字典与探测器](#9-runtimelangjs--多语言国际化)
 10. [`runtime/transcript.js` — 逆向滑窗遥测与增量 Checkpoint 状态机](#10-runtimetranscriptjs--逆向滑窗遥测与-checkpoint-状态机)
 11. [`runtime/session-stats.js` — 会话基线捕获与 `/clear` 重置状态机](#11-runtimesession-statsjs--会话基线与-clear-重置状态机)
@@ -185,7 +185,7 @@ export function renderHUD(
 ### 3 行输出排版规范
 - **Line 1 (Identity)**: `[ModelName] [EffortIcon][EffortLabel] │ [Branch*] │ [Workspace] │ [Permission]`（模型名称加粗；权限模式统一使用标准 16 色高亮紫 `brightPurple`；ASCII 模式下图标为空，仅保留级别文本）
 - **Line 2 (Tokens)**: `Context Token 249k/1M [███░░░░░░░] 25% │ out 1.1k │ cache 96.8%`；Context Token 标题加粗，占用分子支持高缓存扣减还原与防翻倍仲裁；compact 压缩后若宿主仍提供旧 usage，则显示等待提示与 `--` 占位。
-- **Line 3 (Diff/Cost/Tools)**: `Δ +1.7k -161 │ 82.04 credits │ ⏱ 2h47m │ ◐ Edit: parser.js  ✓ Read ×3  ✓ Grep ×2` (全空自动隐藏)
+- **Line 3 (Diff/Cost/Tools)**: `Δ +1.7k -161 │ 82.04 credits │ ⏱ 2h47m │ ◐ Edit: parser.js  ✓ Read ×3  ✓ Grep ×2` (全空自动隐藏)；其中 `82.04 credits` 为 `--status` 演示样本，真实宿主 payload `cost` 不含 `credits`。
 
 ### Line 2 三态渲染 (`contextStatus`)
 - `fresh`：完整展示进度条与 `out`。
@@ -254,9 +254,9 @@ export function renderToolActivity(activity: ToolActivity, glyphs: GlyphSet): st
 
 ---
 
-## 8. `runtime/model-info.js` — 推理强度归一化与额度回退
+## 8. `runtime/model-info.js` — 推理强度归一化与 Credits 解析
 
-**职责：** 对会话推理强度（effort）做白名单归一化与多级解析，为 Line 1 的 effort 图标提供取值；并从 payload 提取明示的实际 Credits 消费。
+**职责：** 对会话推理强度（effort）做白名单归一化与多级解析，为 Line 1 的 effort 图标提供取值；Credits 仅取 transcript 增量（宿主 payload `cost` 固定 5 键且不含 `credits`，`resolveCreditSpend()` 对真实宿主 dead-in-value）。
 
 ### 接口定义
 ```typescript
@@ -268,7 +268,7 @@ export function resetModelInfoCache(): void;
 ### 关键机制
 - **白名单归一化**：仅接受 `low` / `medium` / `high` / `xhigh` / `max` / `ultracode`（含 `med`、`extra-high`、`maximum`、`ultra` 等别名映射）；未知值视为不可信输入，沿解析链下探。
 - **effort 解析链**：`cbData.reasoning_effort` → `cbData.model.reasoning_effort` → `cbData.model.effort` → transcript 会话信号（按 transcript 哈希持久化于会话状态目录，采用 `.tmp-<pid>-<time>` + `rename` 原子写）→ `settings.json` 的 `reasoningEffort`（仅进程内缓存）→ 模型名推断 → `config.defaultEffortLevel`。
-- **Credits 回退**：仅提取 payload `cost.credits` 明示的实际消费；缺失返回 `null`，不基于模型费率元数据推算。
+- **Credits 解析**：仅取 transcript 增量；payload `cost.credits` 只存在于 `--status` 演示样本，真实宿主 `cost` 固定 5 键不含 `credits`，`resolveCreditSpend()` 对真实宿主恒 `null`，不基于模型费率元数据推算。
 
 ---
 

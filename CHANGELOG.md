@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation (宿主契约复核)
+
+- **宿主契约实测复核至 v2.181.0**：独立复核确认 statusLine 契约与 v2.179.2 一致（stdout 前 3 行、10240 UTF-16 字符上限、五类事件 300ms 去抖、5000ms 硬超时）；v2.181.0 仅为等价转译重构，无语义变化；同步更新文档版本引用、Credits 口径与刷新表述。
+
 ## [v0.4.0] - 2026-11-02
 
 ### Added (新增特性)
@@ -83,7 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation (宿主兼容性复核与文档对齐)
 - **全面对齐 CodeBuddy Code v2.167.0 逆向确证**：
-  - 深入逆向确证 CodeBuddy Code v2.167.0 模块 254030：输出前 3 行截断（`eT=3`）、10240 个 UTF-16 字符 stdout 捕获上限（`eD=10240`，先判长度再追加）、5000ms 硬超时、5 类离散事件触发 300ms 去抖刷新、空闲与只读工具静默等运行机制；
+  - 深入逆向确证 CodeBuddy Code v2.167.0 模块 254030：输出前 3 行截断（`eT=3`）、10240 个 UTF-16 字符 stdout 捕获上限（`eD=10240`，先判长度再追加）、5000ms 硬超时、5 类离散事件触发 300ms 去抖刷新、空闲与只读工具静默等运行机制；（注：模块号与常量名随构建变化；v2.181.0 现为模块 `870126`、`eT=10240`/`eD=3`，上述 `254030`/`eT=3`/`eD=10240` 仅对 v2.167.0 有效。）
   - 双语 README、`docs/architecture.md`、`docs/architecture_zh.md`、`docs/module-reference.md` 与 `AGENTS.md` 全量校准对齐。
 
 ### Tests (测试与验证工程)
@@ -124,7 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **E2E 隔离验证扩展**：`scripts/verify-install.js` 新增 `skill-installed-and-readable` 与 `skill-uninstalled-cleanly` 两项端到端生命周期断言；全量单元测试用例扩充至 417 个（415 passed, 2 skipped, 0 failed）。
 
 ### Documentation (文档对齐)
-- **宿主刷新机制与局限说明**：双语 README 新增独立章节，AGENTS.md 同步对齐 CodeBuddy Code v2.157.0 模块 54030/83451 逆向确证（短命子进程模型、5 个离散事件触发 300ms 防抖、空闲与只读工具静默）。
+- **宿主刷新机制与局限说明**：双语 README 新增独立章节，AGENTS.md 同步对齐 CodeBuddy Code v2.157.0 模块 54030/83451 逆向确证（短命子进程模型、5 个离散事件触发 300ms 防抖、空闲与只读工具静默）。（注：模块号随构建变化；v2.181.0 现为 `870126`，上述 `54030`/`83451` 仅对 v2.157.0 有效。）
 - **GBK 终端 ASCII 降级对照**：双语 README 补充 Windows 代码页 936 等非 UTF-8 终端下的纯 ASCII 降级显示对照示例。
 
 ## [v0.3.7] - 2026-09-22
