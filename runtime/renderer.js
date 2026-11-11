@@ -120,9 +120,11 @@ function renderHUD(cbData, config) {
 
   lines.push(line1Parts.join(divider));
 
-  // Line 2: Context Window & Tokens (Hollow Progress Bar + Dimmed Breakdown)
+  // Line 2: Context Window & Tokens (Hollow Progress Bar + Dimmed Breakdown).
+  // The cache badge is gated by showCacheHitRate alone: disabling the token
+  // bar used to drop the badge from the HUD entirely.
+  const line2Parts = [];
   if (tokenData && disp.showTokenBar !== false) {
-    const line2Parts = [];
     const dot = color(` ${glyphs.dot} `, 'gray');
     const { t } = getI18n(useUnicode ? config : { language: 'en' });
     const usage = cbData.context_window.current_usage;
@@ -155,32 +157,34 @@ function renderHUD(cbData, config) {
     if (contextStatus !== 'stale') {
       line2Parts.push(`${color('out ', 'gray')}${color(hasOutput ? formatTokens(tokenData.outTokens) : '--', themeAccent)}`);
     }
+  }
 
-    if (disp.showCacheHitRate !== false) {
-      // Real cache telemetry lives in the transcript's providerData. Two
-      // shapes exist there: rawUsage (authoritative, hit + miss ===
-      // prompt_tokens) and the hard-zero cache_read_input_tokens trap field.
-      // The badge answers "is the cache warm right now": it aggregates the
-      // calls inside the transcript scan window — at most the most recent
-      // 200 records / 256KiB before EOF. Early in a turn that window is the
-      // whole turn; once a turn outgrows the budget the window slides to the
-      // newest calls. The contract is a RECENT hit rate — never a single
-      // call (the payload's newest-call figure swings ~0%↔99%) and never a
-      // claimed whole-turn average.
-      // No payload fallback: echoing the statusLine payload's cache fields
-      // would present one call as the window. With no usable transcript
-      // telemetry the badge degrades to `cache --`.
-      let cacheMetrics = turnUsage
-        ? metricsFromPromptCache(turnUsage.hitTokens, turnUsage.promptTokens)
-        : null;
-      if (cacheMetrics === null) {
-        cacheMetrics = { available: false };
-      }
-      const cacheThresholds = config.cacheHitThresholds || {};
-      const cacheBadge = formatTurnCacheBadge(cacheMetrics, 'cache', false, cacheThresholds);
-      line2Parts.push(cacheBadge);
+  if (tokenData && disp.showCacheHitRate !== false) {
+    // Real cache telemetry lives in the transcript's providerData. Two
+    // shapes exist there: rawUsage (authoritative, hit + miss ===
+    // prompt_tokens) and the hard-zero cache_read_input_tokens trap field.
+    // The badge answers "is the cache warm right now": it aggregates the
+    // calls inside the transcript scan window — at most the most recent
+    // 200 records / 256KiB before EOF. Early in a turn that window is the
+    // whole turn; once a turn outgrows the budget the window slides to the
+    // newest calls. The contract is a RECENT hit rate — never a single
+    // call (the payload's newest-call figure swings ~0%↔99%) and never a
+    // claimed whole-turn average.
+    // No payload fallback: echoing the statusLine payload's cache fields
+    // would present one call as the window. With no usable transcript
+    // telemetry the badge degrades to `cache --`.
+    let cacheMetrics = turnUsage
+      ? metricsFromPromptCache(turnUsage.hitTokens, turnUsage.promptTokens)
+      : null;
+    if (cacheMetrics === null) {
+      cacheMetrics = { available: false };
     }
+    const cacheThresholds = config.cacheHitThresholds || {};
+    const cacheBadge = formatTurnCacheBadge(cacheMetrics, 'cache', false, cacheThresholds);
+    line2Parts.push(cacheBadge);
+  }
 
+  if (line2Parts.length > 0) {
     lines.push(line2Parts.join(divider));
   }
 
@@ -219,7 +223,11 @@ function renderHUD(cbData, config) {
   const line3 = renderDiffSegment(diffStats, costData, config, glyphs, creditSpend, toolSegment);
   if (line3) lines.push(line3);
 
-  const maxLines = disp.maxLines || 3;
+  // Invalid values must not blank the HUD: slice(0, 'abc') is slice(0, NaN),
+  // i.e. zero lines and an empty statusLine.
+  const requestedMaxLines = Math.floor(Number(disp.maxLines));
+  const maxLines = Number.isFinite(requestedMaxLines) && requestedMaxLines >= 1
+    ? Math.min(3, requestedMaxLines) : 3;
   return lines.slice(0, maxLines).join('\n');
 }
 

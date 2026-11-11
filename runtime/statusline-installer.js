@@ -147,6 +147,15 @@ function deploySkill(options, hudBin, platform) {
 // writing a generated shim beside the checked-out source.
 function setup(options) {
   const opts = options || {};
+  // Validate the theme before touching any file: saveUserTheme() (called
+  // later) throws on an unknown name, and validating there left a settings
+  // backup behind for a setup that never completed.
+  if (opts.theme !== undefined && opts.theme !== null) {
+    const { THEME_PRESETS, isPresetName } = require('./config');
+    if (!isPresetName(opts.theme)) {
+      throw new Error(`Unknown theme "${sanitizeTerminalText(opts.theme, 64)}". Available themes: ${Object.keys(THEME_PRESETS).join(', ')}`);
+    }
+  }
   const settingsPath = opts.settingsPath || getSettingsPath();
   const hudBin = opts.hudBin || path.join(opts.runtimeDir || __dirname, 'bin', 'codebuddy-hud.js');
   const nodeExe = opts.nodeExe || process.execPath;

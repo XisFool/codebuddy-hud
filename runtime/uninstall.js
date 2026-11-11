@@ -25,10 +25,79 @@ const { removeManagedSkill } = require('./statusline-installer');
 // checkout path, the generated `.cmd` shim, and a bare `codebuddy-hud`
 // resolved through PATH (the npm global shim created by `npm link`), where no
 // directory ever appears in the string.
+// Used only to vet a backup's statusLine: a snapshot that already contains
+// any HUD command must never be restored, or uninstalling one checkout would
+// leave another checkout's HUD configured.
 function isHudStatusLine(statusLine) {
   return !!(statusLine && typeof statusLine === 'object'
     && typeof statusLine.command === 'string'
     && statusLine.command.includes('codebuddy-hud'));
+}
+
+// Strict check for the *current* statusLine: does the command actually invoke
+// this checkout's entrypoint (or its `.cmd` shim, or a bare `codebuddy-hud`
+// that PATH resolves to this checkout)? The substring test above let
+// `--uninstall` from a second checkout restore the first one's backup and
+// delete the live install.
+function shellTokenCandidates(token) {
+  if (process.platform === 'win32') return [token];
+  const unescaped = token.replace(/\\(["\\`$])/g, '$1');
+  return unescaped === token ? [token] : [token, unescaped];
+}
+
+function tokenizeStatusLineCommand(command) {
+  const tokens = [];
+  const tokenRe = /"((?:\\.|[^"\\])*)"|(\S+)/g;
+  let match;
+  while ((match = tokenRe.exec(command)) !== null) {
+    tokens.push(match[1] !== undefined ? match[1] : match[2]);
+  }
+  return tokens;
+}
+
+function findCommandInPath(name) {
+  const dirs = String(process.env.PATH || '').split(path.delimiter);
+  const exts = process.platform === 'win32' ? ['', '.cmd', '.bat', '.exe'] : [''];
+  for (const dir of dirs) {
+    if (!dir) continue;
+    for (const ext of exts) {
+      const candidate = path.join(dir, name + ext);
+      try {
+        if (fs.statSync(candidate).isFile()) return candidate;
+      } catch {
+        // keep scanning
+      }
+    }
+  }
+  return null;
+}
+
+function statusLineTargetsThisHud(statusLine, hudBin) {
+  if (!statusLine || typeof statusLine !== 'object' || typeof statusLine.command !== 'string') {
+    return false;
+  }
+  const resolved = new Set();
+  for (const target of [hudBin, hudBin.replace(/\.js$/, '.cmd')]) {
+    try { resolved.add(path.resolve(target)); } catch { /* ignore */ }
+  }
+  for (const token of tokenizeStatusLineCommand(statusLine.command)) {
+    for (const candidate of shellTokenCandidates(token)) {
+      if (/[\\/]/.test(candidate)) {
+        try {
+          if (resolved.has(path.resolve(candidate))) return true;
+        } catch { /* ignore */ }
+      } else if (candidate === 'codebuddy-hud' || candidate === 'codebuddy-hud.js'
+          || candidate === 'codebuddy-hud.cmd') {
+        const found = findCommandInPath(candidate);
+        if (found) {
+          try {
+            if (resolved.has(path.resolve(found))) return true;
+          } catch { /* ignore */ }
+        }
+      }
+    }
+  }
+  return false;
 }
 
 function pathEntryKey(entry) {
@@ -69,6 +138,10 @@ function uninstall(options) {
   const platform = opts.platform || process.platform;
 
   let cleaned = [];
+  // Settings existed but could not be processed (unreadable, invalid JSON or
+  // non-object root). Nothing in settings.json was changed in that case, so
+  // the run must not claim a successful uninstall.
+  let settingsBroken = false;
 
   // Restore backup or remove statusLine precisely. `settingsCleaned` records
   // whether settings.json is confirmed free of a statusLine reference
@@ -95,9 +168,11 @@ function uninstall(options) {
             settings = parsed;
           } else {
             cleaned.push('Warning: settings.json root is not an object, aborting modification');
+            settingsBroken = true;
           }
         } catch (err) {
           cleaned.push(`Warning: could not parse settings.json, aborting modification: ${sanitizeTerminalText(err && err.message, 160)}`);
+          settingsBroken = true;
         }
       } else if (rawSettings.trim().length === 0) {
         settings = {};
@@ -115,7 +190,14 @@ function uninstall(options) {
         let restoredStatusLine;
         let restoredSettings;
 
-        if (fs.existsSync(backupPath)) {
+        const ours = statusLineTargetsThisHud(settings.statusLine, hudBin);
+        if (!ours) {
+          // The entry belongs to another checkout (or a hand-written command):
+          // leave settings.json and its install-time backup untouched.
+          if (settings.statusLine) {
+            cleaned.push('Warning: statusLine is not managed by this HUD; settings.json left unchanged');
+          }
+        } else if (fs.existsSync(backupPath)) {
           try {
             const backupRaw = fs.readFileSync(backupPath, 'utf8');
             const backup = parseSettingsJson(backupRaw);
@@ -158,7 +240,7 @@ function uninstall(options) {
               modified = true;
             }
           }
-        } else if (isHudStatusLine(settings.statusLine)) {
+        } else {
           delete settings.statusLine;
           removedStatusLine = true;
           modified = true;
@@ -198,6 +280,7 @@ function uninstall(options) {
     }
   } catch {
     cleaned.push('Warning: could not modify settings.json');
+    settingsBroken = true;
   }
 
   // A POSIX install never creates a .cmd shim. Avoid deleting an unrelated
@@ -346,14 +429,21 @@ function uninstall(options) {
     }
   }
 
+  // Separate what was actually done from warnings: a warning-only run must
+  // not claim "codebuddy-hud uninstalled:" (the old header did exactly that
+  // when settings.json failed to parse and nothing was changed).
+  const actions = cleaned.filter(msg => !msg.startsWith('Warning: '));
   if (cleaned.length === 0) {
     console.log('Nothing to uninstall.');
-  } else {
-    console.log('codebuddy-hud uninstalled:');
-    for (const msg of cleaned) {
-      console.log(`  - ${msg}`);
-    }
+    return true;
   }
+  console.log(settingsBroken || actions.length === 0
+    ? 'codebuddy-hud uninstall incomplete:'
+    : 'codebuddy-hud uninstalled:');
+  for (const msg of cleaned) {
+    console.log(`  - ${msg}`);
+  }
+  return !settingsBroken && actions.length > 0;
 }
 
 module.exports = { uninstall, stripBinDirFromUserPath };
