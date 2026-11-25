@@ -44,7 +44,7 @@ Context Token 249k/1M [###-------] 25%  |  out 1.1k  |  cache 96.8%
 - **Line 2 (resources)**: current context input usage, context window bar and percentage (numerator aligned with the host's `used_percentage`), output tokens and recent prompt cache hit rate (sliding window aggregation); after compact, stale host data is marked as waiting for a fresh usage report.
 - **Line 3 (session activity)**: diff stats `Δ +N -M` (falls back to `[D]` on ASCII terminals), actual session spend (credits, falling back to `$USD` when unavailable), session duration, current AI action, and completed tool-call counts (up to 3). Δ / credits / ⏱ are session-baseline totals (reset only by `/clear`), while tool counts are scanned from the current turn's transcript.
 
-3 lines is a hard cap, aligned with CodeBuddy Code host limits (verified up to v2.181.0+ to truncate stdout at the first three lines); data-less lines are omitted entirely, while an empty individual field shows a `--` placeholder (e.g. `cache --`).
+3 lines is a hard cap, aligned with CodeBuddy Code host limits (verified up to v2.186.0+ to truncate stdout at the first three non-empty lines); data-less lines are omitted entirely, while an empty individual field shows a `--` placeholder (e.g. `cache --`).
 
 ---
 
@@ -218,7 +218,7 @@ HUD configs use strict JSON (no comments or trailing commas). A file larger than
 - `language`: UI language, `zh` or `en` (default `en`; any other value auto-detects from the system locale).
 - `defaultEffortLevel`: fallback reasoning effort when none is captured; options: `low`, `medium`, `high`, `xhigh`, `max`, `ultracode`.
 - `thresholds`: warning/critical thresholds for the context bar; `cacheHitThresholds`: color-grading thresholds for cache hit rate.
-- `display.*`: per-segment switches and display parameters. The host hard-truncates output at 3 lines, so a `maxLines` above 3 shows nothing extra — keep the default; `toolActivityTailBytes` is the reverse-scan byte budget for tool activity; `unicode` accepts `auto` / `true` / `false`.
+- `display.*`: per-segment switches and display parameters. The host hard-truncates output at 3 lines, so a `maxLines` above 3 shows nothing extra — keep the default; `toolActivityTailBytes` is the reverse-scan byte budget for tool activity (values below `64` reset to `16384`, capped at `262144`); `unicode` accepts `auto` / `true` / `false`.
 
 ### Environment variables
 
@@ -270,10 +270,10 @@ Usage of the mirror and fork variables is covered in [docs/install-advanced.md](
 **Why doesn't the ⏱ duration tick like a stopwatch, and why doesn't tool activity update in real time during long-running commands?** This is the architectural contract of CodeBuddy Code, not a HUD bug:
 
 - The host spawns a one-off child process per refresh, pipes JSON via stdin, and captures stdout, with a **5000ms wall-clock hard timeout** that kills the process and clears the statusLine.
-- The host has no periodic timers; it invokes the statusLine only after **session / result / permission / settings / cost** events, with a **300ms debounce**. stdout capture is capped at 10240 UTF-16 characters and only the first 3 lines are kept.
-- The host does not poll periodically; during long-running tools, streaming generation, or idle input it does not trigger extra refreshes — refreshes remain driven only by the five discrete event streams (session / result / permission / settings / cost).
+- The host has no periodic timers; it invokes the statusLine only after **session / result / permission / settings / cost / runtimeModelChanged** events, with a **300ms debounce**. stdout capture is capped at 10240 UTF-16 characters and only the first 3 non-empty lines are kept.
+- The host does not poll periodically; during long-running tools, streaming generation, or idle input it does not trigger extra refreshes — refreshes remain driven only by the six discrete event streams (session / result / permission / settings / cost / runtimeModelChanged).
 
-Verified up to CodeBuddy Code **v2.181.0** (re-verified 2026-11-10); this mechanism is unchanged. HUD rendering is ~200ms p50 (0.15–0.32s through the `.cmd` shim). See [docs/architecture.md](docs/architecture.md) §4 and §7 for the full host contract and failure matrix.
+Verified up to CodeBuddy Code **v2.186.0** (re-verified 2026-11-25; `v2.186.0` added `runtimeModelChanged` for immediate refresh on runtime model switches). HUD rendering is ~200ms p50 (0.15–0.32s through the `.cmd` shim). See [docs/architecture.md](docs/architecture.md) §4 and §7 for the full host contract and failure matrix.
 
 ---
 

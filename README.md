@@ -44,7 +44,7 @@ Context Token 249k/1M [###-------] 25%  |  out 1.1k  |  cache 96.8%
 - **Line 2（资源）**：当前上下文输入占用、窗口进度条与百分比（分子口径与宿主 `used_percentage` 一致）、输出 Token 与近期 Prompt Cache 命中率（滑动窗口聚合）；压缩后宿主尚未提供新 usage 时显示 `--` 和等待提示。
 - **Line 3（会话活动）**：代码变更行数 `Δ +N -M`（ASCII 终端降级为 `[D]`）、会话实际消费（credits；不可得时回退 `$USD`）、会话耗时、AI 当前动作、本轮已完成工具调用频次（最多 3 项）。Δ / credits / ⏱ 为会话基线累计（仅 `/clear` 重置），工具计数按当前轮 transcript 扫描。
 
-3 行为硬上限，对齐宿主 CodeBuddy Code（实测至 v2.181.0+ 均按 stdout 前 3 行截断）；无数据的行整体隐藏，单个字段无数据时显示 `--` 占位（如 `cache --`）。
+3 行为硬上限，对齐宿主 CodeBuddy Code（实测至 v2.186.0+ 均按 stdout 前 3 个非空行截断）；无数据的行整体隐藏，单个字段无数据时显示 `--` 占位（如 `cache --`）。
 
 ---
 
@@ -185,7 +185,7 @@ HUD 配置使用严格 JSON（不含注释或尾逗号）；单个文件超过 2
 {
   "theme": "ocean",
   "themeMode": "auto",
-  "language": "zh",
+  "language": "en",
   "defaultEffortLevel": "medium",
   "thresholds": {
     "warning": 0.7,
@@ -218,7 +218,7 @@ HUD 配置使用严格 JSON（不含注释或尾逗号）；单个文件超过 2
 - `language`：界面语言 `zh` / `en`（内置默认 `en`；设为其他值时按系统 locale 判定）。
 - `defaultEffortLevel`：未捕获到推理强度时的回退档位，可选 `low`、`medium`、`high`、`xhigh`、`max`、`ultracode`。
 - `thresholds`：上下文进度条的警告 / 危险阈值；`cacheHitThresholds`：缓存命中率配色分级阈值。
-- `display.*`：各片段开关与显示参数。`maxLines` 超过宿主硬截断的 3 行不会多显示，建议保持默认；`toolActivityTailBytes` 是工具活动的尾读字节数；`unicode` 取值 `auto` / `true` / `false`。
+- `display.*`：各片段开关与显示参数。`maxLines` 超过宿主硬截断的 3 行不会多显示，建议保持默认；`toolActivityTailBytes` 是工具活动的尾读字节数（低于 `64` 重置为 `16384`，上限 `262144`）；`unicode` 取值 `auto` / `true` / `false`。
 
 ### 环境变量
 
@@ -269,11 +269,11 @@ HUD 配置使用严格 JSON（不含注释或尾逗号）；单个文件超过 2
 
 **为什么 ⏱ 耗时不能像秒表一样走字？为什么长时间工具执行期间工具活动不实时跳动？** 这是 CodeBuddy Code 宿主的架构契约，并非 HUD 缺陷：
 
-- 宿主为每次刷新派生一次性子进程，经 stdin 喂入 JSON 并读取 stdout，单次执行有 **5000ms 硬超时**，超时即 kill 并清空状态栏。
-- 宿主没有周期性定时器，仅在 session / result / permission / settings / cost 五类离散事件后以 **300ms 防抖**触发；stdout 捕获上限 10240 个 UTF-16 字符，只取前 3 行。
-- 宿主不周期轮询；长时间工具执行、模型流式生成与终端空闲期间不额外触发，刷新仍只由 session / result / permission / settings / cost 五类离散事件驱动。
+- **宿主为每次刷新派生一次性子进程**，经 stdin 喂入 JSON 并读取 stdout，单次执行有 **5000ms 硬超时**，超时即 kill 并清空状态栏。
+- 宿主没有周期性定时器，仅在 session / result / permission / settings / cost / runtimeModelChanged 六类离散事件后以 **300ms 防抖**触发；stdout 捕获上限 10240 个 UTF-16 字符，只取前 3 个非空行。
+- 宿主不周期轮询；长时间工具执行、模型流式生成与终端空闲期间不额外触发，刷新仍只由 session / result / permission / settings / cost / runtimeModelChanged 六类离散事件驱动。
 
-实测至 CodeBuddy Code **v2.181.0**（2026-11-10 复核）该机制不变。HUD 单次渲染 p50 约 200ms（经 `.cmd` shim 约 0.15–0.32s）。完整宿主契约与故障矩阵见 [docs/architecture_zh.md](docs/architecture_zh.md) §4 与 §7。
+实测至 CodeBuddy Code **v2.186.0**（2026-11-25 复核）上述契约成立（`v2.186.0` 新增 `runtimeModelChanged` 运行时切模型立即刷新）。HUD 单次渲染 p50 约 200ms（经 `.cmd` shim 约 0.15–0.32s）。完整宿主契约与故障矩阵见 [docs/architecture_zh.md](docs/architecture_zh.md) §4 与 §7。
 
 ---
 

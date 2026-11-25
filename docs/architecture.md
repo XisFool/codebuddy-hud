@@ -1,14 +1,14 @@
 # CodeBuddy HUD System Architecture
 
 > **Target Version:** `v0.4.0+`  
-> **Host Compatibility:** CodeBuddy Code CLI (including latest v2.181.0+; subject to the Windows quoting and three-line display contracts below)
+> **Host Compatibility:** CodeBuddy Code CLI (including latest v2.186.0+; subject to the Windows quoting and three-line display contracts below)
 > **Engine Baseline:** Pure Node.js Standard Library (`>= 18.0.0`, Zero npm dependencies)
 
 ---
 
 ## 1. Overview & Core Philosophy
 
-`codebuddy-hud` is a high-performance terminal statusline HUD plugin designed for the **CodeBuddy Code** AI pair-programming assistant. It renders compact, high-density telemetry only when the host fires session events; it does not poll periodically, and is triggered only by the host's five discrete event streams after debounce.
+`codebuddy-hud` is a high-performance terminal statusline HUD plugin designed for the **CodeBuddy Code** AI pair-programming assistant. It renders compact, high-density telemetry only when the host fires session events; it does not poll periodically, and is triggered only by the host's six discrete event streams after debounce.
 
 ### Core Architectural Invariants:
 1. **Zero External Dependencies**: Implemented strictly using Node.js built-in standard libraries (`fs`, `path`, `os`, `crypto`, `child_process`, `readline`, `https`, `http`). No `node_modules` installation is required.
@@ -38,7 +38,7 @@
 │   parser.js · config.js · paths.js · encoding.js · git.js · sanitize.js  │
 │   lang.js · model-info.js · settings-file.js · statusline-installer.js   │
 │   theme-selector.js · doctor.js · session-stats.js                       │
-│   transcript.js (sliding-window telemetry & SHA-256 checkpoint) · uninstall│
+│   transcript.js (sliding-window telemetry & SHA-256 checkpoint) · uninstall.js│
 │   update-checker.js (--update version resolution & self-upgrade)          │
 │   renderer.js (3-line layout engine) ──> renderer/ (format, diff, agents) │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -81,6 +81,9 @@ graph TD
     Renderer --> Format["runtime/renderer/format.js"]
     Renderer --> DiffRender["runtime/renderer/diff-render.js"]
     Renderer --> AgentsRender["runtime/renderer/agents-render.js"]
+    DiffRender --> Format
+    AgentsRender --> Format
+    AgentsRender --> Sanitize
     Renderer --> Encoding["runtime/encoding.js"]
     Renderer --> Git["runtime/git.js"]
     Renderer --> Sanitize
@@ -102,6 +105,7 @@ graph TD
     ThemeSelector --> Sanitize
     ThemeSelector --> Lang
     ThemeSelector --> Format
+    ThemeSelector --> SettingsFile
     Installer --> Paths
     Installer --> SettingsFile
     Installer --> Sanitize
@@ -109,13 +113,14 @@ graph TD
     Uninstall --> Paths
     Uninstall --> SettingsFile
     Uninstall --> Sanitize
+    Uninstall --> Installer
 ```
 
 ---
 
 ## 4. Execution Lifecycle & Timing
 
-The host (verified up to latest v2.181.0) debounces statusline invocations by ~300ms across **session / result / permission / settings / cost** event streams. Each execution has a **5000ms wall-clock hard timeout**; stdout capture is capped at **10240 UTF-16 characters** (length checked before appending) and only the first 3 lines are retained. Idle sessions and read-only tool executions do not poll; failed executions clear the statusline without automatic retry.
+The host (verified up to latest v2.186.0) debounces statusline invocations by ~300ms across **session / result / permission / settings / cost / runtimeModelChanged** event streams (`runtimeModelChanged` added in `v2.186.0` for immediate refresh on session runtime model switches). Each execution has a **5000ms wall-clock hard timeout**; stdout capture is capped at **10240 UTF-16 characters** (length checked before appending) and only the first 3 non-empty lines are retained. Idle sessions and read-only tool executions do not poll; failed executions clear the statusline without automatic retry.
 
 ```mermaid
 sequenceDiagram
@@ -213,7 +218,7 @@ The host (verified as a hard constant) retains only the first three stdout lines
    - Batch percent characters (`%`) in paths are automatically escaped as `%%` to avoid `cmd.exe` variable substitution corruption.
    - When paths contain non-ASCII characters, `resolveShortPath()` resolves Windows 8.3 short paths and prepends `@chcp 65001 >nul` to prevent `cmd.exe` parse crashes.
    - The shim is UTF-8, with `chcp 65001` when needed; UTF-16LE batch files are not supported by the tested cmd.exe invocation.
-   - Windows host launcher double-escapes literal quotes across versions. Safe ASCII shim paths are left unquoted; paths requiring quotes retain them and remain subject to the host limitation.
+   - On Windows, the host launches commands via `child_process.spawn(..., { shell: true })` through `cmd.exe /d /s /c`, whose outer-quote stripping breaks commands with multiple literal quotes. Safe ASCII shim paths are left unquoted; paths requiring quotes (spaces or non-ASCII) retain them and remain subject to this `cmd.exe` quoting constraint.
 2. **Terminal UTF-8 Auto-Detection**: On Windows the code page is probed by spawning `chcp.com` directly without a shell; success and failure use different cache lifetimes so a transient spike cannot pin ASCII degradation for an hour. `CODEBUDDY_HUD_FORCE_ASCII`/`UNICODE` takes precedence. Terminals without UTF-8 fall back to ASCII glyphs (`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`, `[t]`, `[T]`). TTLs and timeouts are in [module-reference.md §13](module-reference.md#13-runtimeencodingjs--终端字符集探测与编码缓存).
 3. **Natural Event Loop Drain**: The rendering path never calls `process.exit()`; it releases stdin and timer handles and lets libuv drain, so stdout buffers are not truncated into half an ANSI sequence. Stdout `EPIPE` is likewise swallowed silently (see §7).
 4. **Settings Writes & Uninstall Cleanup**: Settings writes preserve string content, permissions and symlinks and reject multi-hardlink targets ([§16](module-reference.md#16-runtimesettings-filejs--jsonc-安全解析与配置原子写入)); uninstall restores only a non-HUD `statusLine` and symmetrically cleans the skill deployment, shim, caches and system PATH registration, skipping PATH cleanup in sandbox testing (`CODEBUDDY_HOME` set) ([§20](module-reference.md#20-runtimeuninstalljs--卸载还原与深度清理)); `setup` skill deployment is in [§17](module-reference.md#17-runtimestatusline-installerjs--状态栏注册与-shim-烘焙器).

@@ -1,12 +1,12 @@
 # CodeBuddy HUD (codebuddy-hud) — AGENTS.md
 
-CodeBuddy Code 的 statusLine HUD：宿主在 **session / result / permission / settings / cost** 五类离散事件后约 300ms 去抖，将 JSON 从 stdin 喂入；HUD 同步输出 ≤3 行 ANSI 看板后退出。CommonJS，Node >=18。
+CodeBuddy Code 的 statusLine HUD：宿主在 **session / result / permission / settings / cost / runtimeModelChanged** 六类离散事件后约 300ms 去抖，将 JSON 从 stdin 喂入；HUD 同步输出 ≤3 行 ANSI 看板后退出。CommonJS，Node >=18。
 
 ## 硬约束
 
 1. **零 npm 依赖**：仅用 Node 内置模块（`fs`/`path`/`readline`/`crypto`/`os`/`child_process`/`https`/`http`）。
 2. **恒 `exit(0)` 且极速**：预算 <1500ms（p50 ~200ms），stdin 保底 800ms；内部异常静默降级，监听 stdout/stderr error 防 EPIPE；用 `process.exitCode = 0` + 自然排空，禁用 `process.exit()`。
-3. **严格 ≤3 行**：宿主 v2.181.0 取 stdout 前 3 行、捕获上限 10240 个 UTF-16 字符（先判长度再追加）；`display.maxLines` 结构上限 3；无数据行隐藏，字段缺失用 `--`。
+3. **严格 ≤3 行**：宿主 v2.186.0 取 stdout 前 3 个非空行、捕获上限 10240 个 UTF-16 字符（先判长度再追加）；`display.maxLines` 结构上限 3；无数据行隐藏，字段缺失用 `--`。
 4. **终端安全**：所有外部文本经 `sanitizeTerminalText()`（ANSI/OSC/DCS/APC/PM/SOS、C0/C1、Bidi）；`effort` 白名单；主题值经 `resolveTheme` 的 SGR 白名单。
 5. **数据真实**：Cache 严格取自 transcript（无 payload 兜底，缺失 `cache --`）；Credits 仅取 transcript 增量（宿主 payload `cost` 固定 5 键且不含 `credits`；`resolveCreditSpend()` 对真实宿主 dead-in-value，`cost.credits` 仅来自 `--status` 演示样本）；扫描未完成时隐藏、不回退。绝不伪造。
 
@@ -43,7 +43,7 @@ node runtime/bin/codebuddy-hud.js --status
 ## 关键陷阱
 
 1. **测试隔离**：改动后必须 `npm test` + 2 个 verify 全绿；测试同时隔离 `CODEBUDDY_HOME`、`CODEBUDDY_SETTINGS_PATH` 与 runtime 副本。
-2. **Windows `.cmd`**：烘焙 `process.execPath`；`%`→`%%`；非 ASCII 路径用 8.3 短路径并前置 `@chcp 65001 >nul`；安全 ASCII 路径省略引号、含空格保留；UTF-8，严禁 UTF-16LE。
+2. **Windows `.cmd`**：烘焙 `process.execPath`；`%`→`%%`；非 ASCII 路径用 8.3 短路径并前置 `@chcp 65001 >nul`；安全 ASCII 路径省略引号、含空格/非 ASCII 保留（受宿主 `spawn(..., { shell: true })` 经 `cmd.exe /d /s /c` 解析多层引号的兼容限制）；UTF-8，严禁 UTF-16LE。
 3. **编码探测**：`spawnSync('chcp.com')` 免 shell、超时 300ms；成功缓存 1h，失败当帧 ASCII 且仅缓存 60s（`probeTtlMs`）；`FORCE_ASCII/UNICODE` 优先。
 4. **错误日志**：`~/.codebuddy/codebuddy-hud-error.log` 超 1MB 自动重置。
 5. **Cache 口径**：仅 transcript `providerData.rawUsage`（避开 `cache_read_input_tokens: 0` 陷阱）；从 EOF 回扫至多 200 条/256KiB，超窗滑至最近调用，口径为「近期调用命中率」`sum(hit)/sum(prompt)`，非整轮平均；三态 `null` / `{available:false}` / `{available:true}`。

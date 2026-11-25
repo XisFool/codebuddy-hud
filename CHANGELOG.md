@@ -10,9 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Documentation (宿主契约复核)
+### Documentation (宿主契约复核与文档勘误)
 
-- **宿主契约实测复核至 v2.181.0**：独立复核确认 statusLine 契约与 v2.179.2 一致（stdout 前 3 行、10240 UTF-16 字符上限、五类事件 300ms 去抖、5000ms 硬超时）；v2.181.0 仅为等价转译重构，无语义变化；同步更新文档版本引用、Credits 口径与刷新表述。
+- **宿主契约实测复核至 v2.186.0（2026-11-25）**：逆向核查 `@tencent-ai/codebuddy-code` `v2.186.0`（`StatusManager` / `StatusService` / `UsageUtils`），确认核心契约不变（`300ms` 去抖、无周期轮询、`5000ms` 硬超时与事件循环阻塞竞态、`10240` UTF-16 字符捕获上限、stdout 前 3 个非空行截断、`cost` 固定 5 键不含 `credits`、`/compact` 后旧 usage 延迟刷新、`/clear` 切换新 transcript）；同时记录 `v2.186.0` 新增的第 6 类触发事件 `runtimeModelChanged`（会话运行时切换模型立即刷新 statusLine）以及 Windows 宿主通过 `child_process.spawn(..., { shell: true })` 经 `cmd.exe /d /s /c` 解析引号的实际机制。
+- **文档与代码对齐勘误**：修正 `README.md` 配置示例默认 `language` 为 `"en"`、`docs/module-reference.md` 中 `effort` 解析链顺序（`model.effort` 优先于 `model.reasoning_effort`）及 `codebuddy-hud-usage-state` 的 `identity.dev`/`ino` 字符串类型，并补全架构图依赖边与 `toolActivityTailBytes` 上限钳制说明。
+- **历史复核（v2.181.0，2026-11-10）**：独立复核确认 statusLine 契约与 v2.179.2 一致，v2.181.0 仅为等价转译重构，无语义变化。
 
 ## [v0.4.0] - 2026-11-02
 

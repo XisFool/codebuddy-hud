@@ -133,7 +133,7 @@ export function num(val: any): number;
     total_api_duration_ms?: number,
     total_lines_added?: number,
     total_lines_removed?: number,
-    credits?: number
+    credits?: number // 仅 --status 演示样本提供；真实宿主 cost 固定 5 键不含此字段
   }
 }
 ```
@@ -160,7 +160,7 @@ export const THEME_PRESETS: Record<string, ThemePreset>;
 - `emerald`: 翡翠绿清新护眼 (dark: `brightGreen`（256 色 `114` 柔和浅绿）/`gray`, light: `green`/`gray`)
 - `cyberpunk`: 赛博朋克炫酷粉紫 (dark: `brightMagenta`（256 色 `183` 柔和粉紫）/`gray`, light: `magenta`/`gray`；模型、分支、项目名及 out Token 使用同一主题主色)
 - `amber`: 琥珀金耀眼质感 (dark/light: `gold`（标准 16 色高亮金 `\x1b[93m`）/`gray`)
-- `monochrome`: 黑白极简经典终端 (dark: `white`/`gray`, light: `gray`/`gray`)
+- `monochrome`: 黑白极简经典终端 (dark: `brightWhite`/`white`/`gray`, light: `gray`/`gray`)
 
 ### 安全机制
 设计动机见 [architecture §5.5](architecture_zh.md#55-多层级配置合并与主题引擎-configjs)。HUD 配置文件每次加载前检查大小，超过 256 KiB 或不是普通文件时跳过该层，保留其他层配置；`--theme <name>` 写入用户配置，不是运行时覆盖层；`resolveTheme` 是后处理而非合并层。
@@ -267,7 +267,7 @@ export function resetModelInfoCache(): void;
 
 ### 关键机制
 - **白名单归一化**：仅接受 `low` / `medium` / `high` / `xhigh` / `max` / `ultracode`（含 `med`、`extra-high`、`maximum`、`ultra` 等别名映射）；未知值视为不可信输入，沿解析链下探。
-- **effort 解析链**：`cbData.reasoning_effort` → `cbData.model.reasoning_effort` → `cbData.model.effort` → transcript 会话信号（按 transcript 哈希持久化于会话状态目录，采用 `.tmp-<pid>-<time>` + `rename` 原子写）→ `settings.json` 的 `reasoningEffort`（仅进程内缓存）→ 模型名推断 → `config.defaultEffortLevel`。
+- **effort 解析链**：`cbData.reasoning_effort` → `cbData.model.effort` → `cbData.model.reasoning_effort` → transcript 会话信号（按 transcript 哈希持久化于会话状态目录，采用 `.tmp-<pid>-<time>` + `rename` 原子写）→ `settings.json` 的 `reasoningEffort`（仅进程内缓存）→ 模型名推断 → `config.defaultEffortLevel`。
 - **Credits 解析**：仅取 transcript 增量；payload `cost.credits` 只存在于 `--status` 演示样本，真实宿主 `cost` 固定 5 键不含 `credits`，`resolveCreditSpend()` 对真实宿主恒 `null`，不基于模型费率元数据推算。
 
 ---
@@ -345,8 +345,8 @@ export function getTurnMetricsAndActivity(
 - `contextStatus`：`/compact` 产生压缩摘要而宿主尚未返回新 usage 时为 `stale`；判据见下。
 
 ### 核心状态机与双向遥测匹配机制（内部辅助实现，未在 module.exports 导出）
-- `createContextTracker(contextWindow)`（内部辅助函数，未在 module.exports 导出）：沿消息 `parentId` 逆向回溯历史链。检测到完成的 compact 压缩摘要（`isCompacted: true` 且 `isSummary: true` 或 `isCompactInternal: true`）即置 `stale`；检测到普通活跃 API usage 时，通过 `resolveReportedInputs(usage)` 进行双向遥测比对（`matchesInput = reportedInput === input || rawReportedInput === input`），并且只有同时满足 `!sawUsage`、输入/输出均为有限非负数、`reportedOutput === output` 时才置 `fresh`；一旦本链已发现更早的普通 usage，则不再用旧 payload 反证。
-- `getCompactContextStatus(transcriptPath, contextWindow, opts)`（内部辅助函数，未在 module.exports 导出）：当宿主未在边界完整保留 parent 关联时的尾窗回退——压缩摘要位于最新普通 usage 之后则为 `stale`。
+- `createContextTracker(contextWindow)`（内部辅助函数，未在 module.exports 导出）：沿消息 `parentId` 逆向回溯历史链。检测到非失败/取消的已完成 compact 压缩摘要（`type === 'message'`、`role` 为 `'user' | 'assistant'`、`isCompacted === true`、`isSummary === true || isCompactInternal === true`，且 `agent === 'compact'` 或非空 `compactType`）即置 `stale`；检测到普通活跃 API usage 时，通过 `resolveReportedInputs(usage)` 进行双向遥测比对（`matchesInput = reportedInput === input || rawReportedInput === input`），并且只有同时满足 `!sawUsage`、输入/输出均为有限非负数、`reportedOutput === output` 时才置 `fresh`；一旦本链已发现更早的普通 usage，则不再用旧 payload 反证。
+- `getCompactContextStatus(transcriptPath, contextWindow, opts)`（内部辅助函数，未在 module.exports 导出）：当宿主未在边界完整保留 parent 关联时的尾窗回退——当压缩摘要与匹配当前 payload 的普通 usage 均出现且压缩摘要序号严格位于其后（`compactAt >= 0 && usageAt >= 0 && compactAt > usageAt`）时返回 `stale`，否则返回 `unknown`。
 - `resolveReportedInputs(usage)`（内部辅助函数，未在 module.exports 导出）：提取 `{ combined, raw }`，统一还原基准（`combined = input_tokens + cache_read_input_tokens + cache_creation_input_tokens`）。
 
 ### 辅助导出与常数
@@ -506,7 +506,7 @@ export function sanitizeTerminalText(text: any, maxLen?: number): string;
 {
   "version": 5,
   "path": "absolute transcript path",
-  "identity": { "dev": 0, "ino": 0, "birthtimeMs": 0 },
+  "identity": { "dev": "0", "ino": "0", "birthtimeMs": 0 },
   "headHash": "sha256",
   "offset": 0,
   "credits": 0,

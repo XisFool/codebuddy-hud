@@ -1,14 +1,14 @@
 # CodeBuddy HUD 系统架构设计全景文档
 
 > **目标版本：** `v0.4.0+`  
-> **宿主兼容性：** CodeBuddy Code CLI（涵盖最新 v2.181.0+；受下文说明的 Windows 引号兼容与三行显示契约约束）
+> **宿主兼容性：** CodeBuddy Code CLI（涵盖最新 v2.186.0+；受下文说明的 Windows 引号兼容与三行显示契约约束）
 > **底层运行环境：** 纯 Node.js 标准库 (`>= 18.0.0`，绝对零外部 npm 依赖)
 
 ---
 
 ## 1. 架构总览与核心设计哲学
 
-`codebuddy-hud` 是专为 **CodeBuddy Code** AI 结对编程终端助手量身打造的高性能状态栏看板插件。它在宿主触发会话事件时以极低的系统开销渲染紧凑、高信息密度的 ANSI 彩色状态看板；不作周期轮询刷新，仅在宿主五类离散事件后去抖触发。
+`codebuddy-hud` 是专为 **CodeBuddy Code** AI 结对编程终端助手量身打造的高性能状态栏看板插件。它在宿主触发会话事件时以极低的系统开销渲染紧凑、高信息密度的 ANSI 彩色状态看板；不作周期轮询刷新，仅在宿主六类离散事件后去抖触发。
 
 ### 核心架构不变量（不可动摇的设计红线）：
 1. **绝对零外部依赖 (Zero npm dependencies)**：
@@ -83,6 +83,9 @@ graph TD
     Renderer --> Format["runtime/renderer/format.js"]
     Renderer --> DiffRender["runtime/renderer/diff-render.js"]
     Renderer --> AgentsRender["runtime/renderer/agents-render.js"]
+    DiffRender --> Format
+    AgentsRender --> Format
+    AgentsRender --> Sanitize
     Renderer --> Encoding["runtime/encoding.js"]
     Renderer --> Git["runtime/git.js"]
     Renderer --> Sanitize
@@ -104,6 +107,7 @@ graph TD
     ThemeSelector --> Sanitize
     ThemeSelector --> Lang
     ThemeSelector --> Format
+    ThemeSelector --> SettingsFile
     Installer --> Paths
     Installer --> SettingsFile
     Installer --> Sanitize
@@ -111,13 +115,14 @@ graph TD
     Uninstall --> Paths
     Uninstall --> SettingsFile
     Uninstall --> Sanitize
+    Uninstall --> Installer
 ```
 
 ---
 
 ## 4. 单次交互执行流与生命周期时序 (Execution Flow)
 
-宿主（实测至最新 v2.181.0）在 **session / result / permission / settings / cost** 五类离散事件后约 **300ms** 去抖触发 HUD。单次执行有 **5000ms wall-clock 硬超时**；stdout 捕获上限为 **10240 个 UTF-16 字符**（先判长度再追加），最终只取前 3 行。空闲与只读工具执行时不周期刷新；命令失败会清空 HUD，且不会自动定时重试。
+宿主（实测至最新 v2.186.0）在 **session / result / permission / settings / cost / runtimeModelChanged** 六类离散事件后约 **300ms** 去抖触发 HUD（`runtimeModelChanged` 为 `v2.186.0` 新增，切换当前会话运行时模型立即触发）。单次执行有 **5000ms wall-clock 硬超时**；stdout 捕获上限为 **10240 个 UTF-16 字符**（先判长度再追加），最终只取前 3 个非空行。空闲与只读工具执行时不周期刷新；命令失败会清空 HUD，且不会自动定时重试。
 
 ```mermaid
 sequenceDiagram
@@ -215,7 +220,7 @@ Prompt Cache 命中、实际 Credits 与工具调用序列只存在于可达数�
    - 自动将路径中的 `%` 批量转义为 `%%`，免疫 `cmd.exe` 变量误展开。
    - 当路径包含非 ASCII 字符时，通过 `resolveShortPath()` 解析 Windows 8.3 短路径并强制注入 `@chcp 65001 >nul`，彻底规避批处理对非 ASCII 路径解析崩溃。
    - shim 为 UTF-8，必要时先 `chcp 65001`；实测 cmd.exe 不支持 UTF-16LE 批处理文件。
-   - 针对 Windows 宿主启动器可能二次转义字面引号的兼容限制，安全 ASCII shim 路径省略引号；需要引号的路径保留引号，仍受宿主兼容限制。
+   - Windows 宿主通过 `child_process.spawn(..., { shell: true })` 经 `cmd.exe /d /s /c` 解析启动命令，多重字面引号会受 `cmd.exe` 引号剥离规则影响；因此安全 ASCII shim 路径省略引号，需要引号（含空格或非 ASCII）的路径保留引号，仍受此兼容限制。
 2. **终端编码自动探测与缓存**：Windows 下免壳直连 `chcp.com` 探测代码页，成功与失败采用不同缓存时长，避免偶发尖刺把 ASCII 降级锁死一小时；`CODEBUDDY_HUD_FORCE_ASCII`/`UNICODE` 优先。不支持 UTF-8 的终端自动回退纯 ASCII 字符集（`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`, `[t]`, `[T]`）。TTL 与超时见 [module-reference.md §13](module-reference.md#13-runtimeencodingjs--终端字符集探测与编码缓存)。
 3. **事件循环自然排空退出 (Natural Drain)**：渲染完成后主动释放 Stdin 句柄与定时器，依靠事件循环自然排空退出，杜绝 `process.exit()` 截断异步 stdout 缓冲区而输出半截 ANSI；stdout `EPIPE` 同理静默捕获（见 §7）。
 4. **配置写入与卸载清理**：settings 写入保留字符串内容、权限与符号链接，拒绝多硬链接目标（[§16](module-reference.md#16-runtimesettings-filejs--jsonc-安全解析与配置原子写入)）；卸载只还原非本 HUD 的 `statusLine`，并对称清理技能挂载、shim、缓存与系统 PATH 注册，测试沙箱（`CODEBUDDY_HOME` 已设）下跳过 PATH 清理（[§20](module-reference.md#20-runtimeuninstalljs--卸载还原与深度清理)）；`setup` 的技能挂载见 [§17](module-reference.md#17-runtimestatusline-installerjs--状态栏注册与-shim-烘焙器)。
