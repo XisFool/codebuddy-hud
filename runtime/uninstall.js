@@ -19,6 +19,7 @@ const {
   getSettingsProperty, editSettingsProperty, writePrivateFileIfAbsent,
 } = require('./settings-file');
 const { removeManagedSkill } = require('./statusline-installer');
+const { FOOTER_MODES, detectFooterMode, editTuiStatusLineProperty, restoreTuiStatusLineOnUninstall } = require('./footer-mode');
 
 // A statusLine belongs to this HUD when its command mentions `codebuddy-hud`.
 // The literal name covers every install shape: an absolute or relative
@@ -104,14 +105,18 @@ function uninstall(options) {
       }
 
       if (settings !== null) {
+        const hadHudStatusLine = isHudStatusLine(settings.statusLine);
         let modified = false;
         // Reported only after a successful write, so a failed write cannot
         // claim the entry was removed.
         let removedStatusLine = false;
+        let restoredTuiStatusLine = false;
         // Describes how the on-disk backup was consumed; also drives its
         // deletion. Null means no backup was present.
         let backupAction = null;
         let backupContent = null;
+        let backupObj = null;
+        let backupParseFailed = false;
         let restoredStatusLine;
         let restoredSettings;
 
@@ -123,18 +128,41 @@ function uninstall(options) {
               throw new Error('backup root is not a JSON object');
             }
             backupContent = backupRaw;
+            backupObj = backup;
             // Restore exact whitespace too, but only when a text comparison
-            // proves that nothing outside statusLine changed after setup.
-            if (isHudStatusLine(settings.statusLine) && !isHudStatusLine(backup.statusLine)
-                && editSettingsProperty(backupRaw, 'statusLine', getSettingsProperty(rawSettings, 'statusLine')) === rawSettings) {
-              restoredSettings = backupRaw;
+            // proves that nothing outside statusLine (and HUD-managed tui) changed after setup.
+            if (hadHudStatusLine && !isHudStatusLine(backup.statusLine)) {
+              const currentFooterMode = detectFooterMode(settings);
+              const backupFooterMode = detectFooterMode(backup);
+              const canRestoreTui = (currentFooterMode === 'clean' || currentFooterMode === 'off')
+                && currentFooterMode !== backupFooterMode;
+              const rawHudStatusLine = getSettingsProperty(rawSettings, 'statusLine');
+              const withStatusLine = editSettingsProperty(backupRaw, 'statusLine', rawHudStatusLine);
+              let matchesBackup = withStatusLine === rawSettings;
+              if (!matchesBackup && canRestoreTui) {
+                const rawTui = getSettingsProperty(rawSettings, 'tui');
+                const expectedTui = isSettingsObject(backup.tui)
+                  ? editSettingsProperty(getSettingsProperty(backupRaw, 'tui'), 'statusLine', getSettingsProperty(rawTui, 'statusLine'))
+                  : null;
+                if (expectedTui !== null) {
+                  matchesBackup = editSettingsProperty(withStatusLine, 'tui', expectedTui) === rawSettings
+                    || editSettingsProperty(editSettingsProperty(backupRaw, 'tui', expectedTui), 'statusLine', rawHudStatusLine) === rawSettings;
+                } else if (!Object.hasOwn(backup, 'tui')) {
+                  const segs = FOOTER_MODES[currentFooterMode].segments;
+                  matchesBackup = editTuiStatusLineProperty(withStatusLine, segs) === rawSettings
+                    || editSettingsProperty(editTuiStatusLineProperty(backupRaw, segs), 'statusLine', rawHudStatusLine) === rawSettings;
+                }
+              }
+              if (matchesBackup) {
+                restoredSettings = backupRaw;
+              }
             }
             // Restore only a statusLine that is not this HUD. The backup may
             // itself have been taken over an earlier HUD install (another
             // checkout, or the `npm link` global shim); reinstating it would
             // report a successful uninstall while leaving the HUD configured.
             if (Object.hasOwn(backup, 'statusLine') && !isHudStatusLine(backup.statusLine)) {
-              if (isHudStatusLine(settings.statusLine)) {
+              if (hadHudStatusLine) {
                 settings.statusLine = backup.statusLine;
                 restoredStatusLine = getSettingsProperty(backupRaw, 'statusLine');
                 backupAction = 'Restored settings from backup';
@@ -145,33 +173,51 @@ function uninstall(options) {
                 backupAction = 'Discarded backup (statusLine changed after install)';
               }
             } else {
-              if (isHudStatusLine(settings.statusLine)) {
+              if (hadHudStatusLine) {
                 delete settings.statusLine;
                 modified = true;
               }
               backupAction = 'Consumed backup without restoring a statusLine';
             }
           } catch (err) {
+            backupParseFailed = true;
             cleaned.push(`Warning: could not parse backup, retaining it: ${sanitizeTerminalText(err && err.message, 160)}`);
-            if (isHudStatusLine(settings.statusLine)) {
+            if (hadHudStatusLine) {
               delete settings.statusLine;
               modified = true;
             }
           }
-        } else if (isHudStatusLine(settings.statusLine)) {
+        } else if (hadHudStatusLine) {
           delete settings.statusLine;
           removedStatusLine = true;
           modified = true;
         }
 
+        if (restoredSettings !== undefined) {
+          rawSettings = restoredSettings;
+        } else {
+          if (modified) {
+            rawSettings = editSettingsProperty(rawSettings, 'statusLine', restoredStatusLine);
+          }
+          if (hadHudStatusLine && !backupParseFailed) {
+            const afterTui = restoreTuiStatusLineOnUninstall(rawSettings, settings, backupContent, backupObj);
+            if (afterTui !== rawSettings) {
+              rawSettings = afterTui;
+              modified = true;
+              restoredTuiStatusLine = true;
+            }
+          }
+        }
+
         if (modified) {
-          rawSettings = restoredSettings === undefined
-            ? editSettingsProperty(rawSettings, 'statusLine', restoredStatusLine) : restoredSettings;
           atomicWriteSettingsFile(settingsPath, rawSettings);
         }
 
         if (removedStatusLine) {
           cleaned.push('Removed statusLine from settings.json');
+        }
+        if (restoredTuiStatusLine) {
+          cleaned.push('Restored tui.statusLine in settings.json');
         }
 
         if (backupAction) {

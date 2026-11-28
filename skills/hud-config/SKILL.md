@@ -1,6 +1,6 @@
 ---
 name: hud-config
-description: 当用户想要配置、美化或自定义 codebuddy-hud 状态栏的显示设置（主题、图标、显示项开关、字符集等）时触发。
+description: 当用户想要配置、美化或自定义 codebuddy-hud 状态栏的显示设置（主题、图标、显示项开关、字符集、官方第 4 行底栏模式等）时触发。
 ---
 
 # 交互式配置 codebuddy-hud 状态栏
@@ -9,7 +9,11 @@ description: 当用户想要配置、美化或自定义 codebuddy-hud 状态栏�
 
 1. **发起交互选择**：
    通过向用户发起交互提问或提供选项（若当前环境支持特定交互提问工具则调用相应机制，否则在回复中清晰列出选项），引导用户确认需求：
-   - **保存范围**：局部项目配置 (`./codebuddy-hud.config.json`) 还是 全局默认配置 (`~/.codebuddy/codebuddy-hud.config.json`)
+   - **官方第 4 行底栏模式（写入 `~/.codebuddy/settings.json` 的 `tui.statusLine`，支持 CodeBuddy Code v2.182.0+）**：
+     - `full`（默认，4 行）：3 行 HUD + 完整官方第 4 行（移除 `tui.statusLine`；若 `tui` 变为空对象 `{}` 则一并移除）
+     - `clean`（推荐去重，4 行）：隐藏重复的 `model` 与 `reasoning`，保留 `["agents", "shortcuts", "permission", "thinking", "shells", "context-remaining", "tokens"]`
+     - `off`（纯 3 行 HUD）：设置 `"tui": { "statusLine": [] }`，隐藏全部可配置官方底栏片段
+   - **保存范围**：局部项目配置 (`./codebuddy-hud.config.json`) 还是 全局默认配置 (`~/.codebuddy/codebuddy-hud.config.json`)（注：上述官方底栏模式 `tui.statusLine` 仅存于 `~/.codebuddy/settings.json`，不可写入 `codebuddy-hud.config.json`）
    - **颜色主题**：深海青蓝 (`ocean`，默认科技风)、翡翠绿 (`emerald`，清新护眼薄荷绿)、赛博朋克 (`cyberpunk`，统一粉紫色)、琥珀金 (`amber`，耀眼高亮金黄)、黑白极简 (`monochrome`，经典终端灰白)
    - **外观模式 (`themeMode`)**：`auto`（跟随终端背景自动感知，默认）、`dark`（强制暗色）、`light`（强制亮色）
    - **界面语言 (`language`)**：`zh`（中文）或 `en`（英文，默认）
@@ -73,4 +77,6 @@ description: 当用户想要配置、美化或自定义 codebuddy-hud 状态栏�
    }
    ```
 
-   > **提示**：若仅需快速切换主题，也可以告知用户直接在终端运行 `codebuddy-hud --theme <名称>`。
+   > **提示**：
+   > - 快速切换主题：在终端运行 `codebuddy-hud --theme <名称>`。
+   > - 快速切换官方第 4 行底栏模式：在终端运行 `codebuddy-hud --footer <full|clean|off>`（建议通过 CLI 修改 `~/.codebuddy/settings.json`，自动保留 JSONC 注释与原有配置；卸载时也会安全还原 HUD 管理的 `tui.statusLine`）。

@@ -37,7 +37,7 @@
 │   codebuddy-hud.config.json (built-in config template; presets in config.js)│
 │   parser.js · config.js · paths.js · encoding.js · git.js · sanitize.js  │
 │   lang.js · model-info.js · settings-file.js · statusline-installer.js   │
-│   theme-selector.js · doctor.js · session-stats.js                       │
+│   theme-selector.js · footer-mode.js · doctor.js · session-stats.js      │
 │   transcript.js (sliding-window telemetry & SHA-256 checkpoint) · uninstall.js│
 │   update-checker.js (--update version resolution & self-upgrade)          │
 │   renderer.js (3-line layout engine) ──> renderer/ (format, diff, agents) │
@@ -60,6 +60,7 @@ graph TD
     Entry --> Renderer["runtime/renderer.js"]
     Entry --> Doctor["runtime/doctor.js"]
     Entry --> ThemeSelector["runtime/theme-selector.js"]
+    Entry --> FooterMode["runtime/footer-mode.js"]
     Entry --> Installer["runtime/statusline-installer.js"]
     Entry --> Uninstall["runtime/uninstall.js"]
     Entry --> UpdateChecker["runtime/update-checker.js (--update)"]
@@ -100,20 +101,29 @@ graph TD
     Doctor --> Config
     Doctor --> Sanitize
     Doctor --> SettingsFile
+    Doctor --> FooterMode
     ThemeSelector --> Config
     ThemeSelector --> Paths
     ThemeSelector --> Sanitize
     ThemeSelector --> Lang
     ThemeSelector --> Format
     ThemeSelector --> SettingsFile
+    FooterMode --> Paths
+    FooterMode --> Lang
+    FooterMode --> SettingsFile
+    FooterMode --> Config
+    FooterMode --> ThemeSelector
+    FooterMode --> Format
     Installer --> Paths
     Installer --> SettingsFile
     Installer --> Sanitize
     Installer -.->|lazy| ThemeSelector
+    Installer -.->|lazy| FooterMode
     Uninstall --> Paths
     Uninstall --> SettingsFile
     Uninstall --> Sanitize
     Uninstall --> Installer
+    Uninstall --> FooterMode
 ```
 
 ---
@@ -221,5 +231,5 @@ The host (verified as a hard constant) retains only the first three stdout lines
    - On Windows, the host launches commands via `child_process.spawn(..., { shell: true })` through `cmd.exe /d /s /c`, whose outer-quote stripping breaks commands with multiple literal quotes. Safe ASCII shim paths are left unquoted; paths requiring quotes (spaces or non-ASCII) retain them and remain subject to this `cmd.exe` quoting constraint.
 2. **Terminal UTF-8 Auto-Detection**: On Windows the code page is probed by spawning `chcp.com` directly without a shell; success and failure use different cache lifetimes so a transient spike cannot pin ASCII degradation for an hour. `CODEBUDDY_HUD_FORCE_ASCII`/`UNICODE` takes precedence. Terminals without UTF-8 fall back to ASCII glyphs (`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`, `[t]`, `[T]`). TTLs and timeouts are in [module-reference.md §13](module-reference.md#13-runtimeencodingjs--终端字符集探测与编码缓存).
 3. **Natural Event Loop Drain**: The rendering path never calls `process.exit()`; it releases stdin and timer handles and lets libuv drain, so stdout buffers are not truncated into half an ANSI sequence. Stdout `EPIPE` is likewise swallowed silently (see §7).
-4. **Settings Writes & Uninstall Cleanup**: Settings writes preserve string content, permissions and symlinks and reject multi-hardlink targets ([§16](module-reference.md#16-runtimesettings-filejs--jsonc-安全解析与配置原子写入)); uninstall restores only a non-HUD `statusLine` and symmetrically cleans the skill deployment, shim, caches and system PATH registration, skipping PATH cleanup in sandbox testing (`CODEBUDDY_HOME` set) ([§20](module-reference.md#20-runtimeuninstalljs--卸载还原与深度清理)); `setup` skill deployment is in [§17](module-reference.md#17-runtimestatusline-installerjs--状态栏注册与-shim-烘焙器).
+4. **Settings Writes & Uninstall Cleanup**: Settings writes preserve string content, permissions and symlinks and reject multi-hardlink targets ([§16](module-reference.md#16-runtimesettings-filejs--jsonc-安全解析与配置原子写入)); `--footer` and `--setup --footer` manage the host's 4th-line `tui.statusLine` surgically via `footer-mode.js` (supported since v2.182.0, [§28](module-reference.md#28-runtimefooter-modejs--官方第-4-行底栏模式控制器)); uninstall restores only a non-HUD `statusLine` and HUD-managed `tui.statusLine`, and symmetrically cleans the skill deployment, shim, caches and system PATH registration, skipping PATH cleanup in sandbox testing (`CODEBUDDY_HOME` set) ([§20](module-reference.md#20-runtimeuninstalljs--卸载还原与深度清理)); `setup` skill deployment is in [§17](module-reference.md#17-runtimestatusline-installerjs--状态栏注册与-shim-烘焙器).
 5. **Verification Isolation**: Setup/uninstall tests must isolate runtime, settings and user state together; `CODEBUDDY_HOME` alone cannot protect the checkout's generated shim (see [§25](module-reference.md#25-scriptsverify-installjs--隔离宿主生命周期验证)).

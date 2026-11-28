@@ -87,8 +87,8 @@ function handleRender(rawStdin, unavailableReason) {
 // with a non-zero exit (a bare throw here used to escape as exit code 1).
 const args = process.argv.slice(2);
 const wantsHelp = args.includes('--help') || args.includes('-h');
-// Information flags must win over commands with side effects. Theme help keeps
-// its preset-list behavior, except when --theme belongs to --setup.
+// Information flags must win over commands with side effects. Theme/footer help
+// keeps its preset-list behavior, except when --setup is present.
 if (args.includes('--version') || args.includes('-v')) {
   try {
     const { getLocalVersion } = require('../update-checker');
@@ -98,21 +98,22 @@ if (args.includes('--version') || args.includes('-v')) {
     console.log('codebuddy-hud');
   }
   process.exitCode = 0;
-} else if (wantsHelp && (!args.includes('--theme') || args.includes('--setup'))) {
+} else if (wantsHelp && ((!args.includes('--theme') && !args.includes('--footer')) || args.includes('--setup'))) {
   try {
     const { getLocalVersion } = require('../update-checker');
     const ver = getLocalVersion() || '0.0.0';
     console.log(`codebuddy-hud v${ver} — Compact 3-line ANSI statusLine HUD for CodeBuddy Code\n\n` +
       `Usage:\n` +
-      `  codebuddy-hud                           Run as statusLine renderer (reads JSON from stdin)\n` +
-      `  codebuddy-hud --status                  Render HUD once from sample data and exit\n` +
-      `  codebuddy-hud --theme [name|list]       Interactive theme selector or direct preset switch\n` +
-      `  codebuddy-hud --setup [--theme <name>]  Configure statusLine in settings.json and install skill\n` +
-      `  codebuddy-hud --uninstall               Restore statusLine, clean up skills, cache, shim and PATH\n` +
-      `  codebuddy-hud --doctor, -d [--json]     Run full environment and configuration diagnostics\n` +
-      `  codebuddy-hud --update                  Check for updates and bootstrap self-upgrade\n` +
-      `  codebuddy-hud --version, -v             Print version and exit\n` +
-      `  codebuddy-hud --help, -h                Print this help message and exit`);
+      `  codebuddy-hud                                           Run as statusLine renderer (reads JSON from stdin)\n` +
+      `  codebuddy-hud --status                                  Render HUD once from sample data and exit\n` +
+      `  codebuddy-hud --theme [name|list]                       Interactive theme selector or direct preset switch\n` +
+      `  codebuddy-hud --footer [mode|list]                      Configure official host 4th-line footer (full|clean|off)\n` +
+      `  codebuddy-hud --setup [--theme <name>] [--footer <mode>]  Configure statusLine in settings.json and install skill\n` +
+      `  codebuddy-hud --uninstall                               Restore statusLine, clean up skills, cache, shim and PATH\n` +
+      `  codebuddy-hud --doctor, -d [--json]                     Run full environment and configuration diagnostics\n` +
+      `  codebuddy-hud --update                                  Check for updates and bootstrap self-upgrade\n` +
+      `  codebuddy-hud --version, -v                             Print version and exit\n` +
+      `  codebuddy-hud --help, -h                                Print this help message and exit`);
   } catch (err) {
     logError(err);
   }
@@ -120,15 +121,49 @@ if (args.includes('--version') || args.includes('-v')) {
 } else if (args.includes('--setup')) {
   (async () => {
     try {
-      let selectedTheme = null;
+      const { isPresetName, resolveTheme } = require('../config');
+      const { isFooterModeName, selectFooterInteractive } = require('../footer-mode');
+
       const themeIdx = args.indexOf('--theme');
-      if (themeIdx !== -1 && args[themeIdx + 1] && !args[themeIdx + 1].startsWith('--')) {
-        selectedTheme = args[themeIdx + 1];
-      } else if (process.stdin.isTTY && process.stdout.isTTY) {
+      const hasThemeArg = themeIdx !== -1 && args[themeIdx + 1] !== undefined && !args[themeIdx + 1].startsWith('--');
+      const explicitTheme = hasThemeArg ? args[themeIdx + 1] : null;
+      const footerIdx = args.indexOf('--footer');
+      const hasFooterArg = footerIdx !== -1 && args[footerIdx + 1] !== undefined && !args[footerIdx + 1].startsWith('--');
+      const explicitFooter = hasFooterArg ? args[footerIdx + 1] : null;
+
+      if (themeIdx !== -1 && !hasThemeArg) {
+        throw new Error('Missing theme name for --theme');
+      }
+      if (footerIdx !== -1 && !hasFooterArg) {
+        throw new Error('Missing footer mode for --footer');
+      }
+      if (explicitTheme !== null && !isPresetName(explicitTheme)) {
+        throw new Error(`Invalid theme name: "${sanitizeTerminalText(explicitTheme, 64)}"`);
+      }
+      if (explicitFooter !== null && !isFooterModeName(explicitFooter)) {
+        throw new Error(`Invalid footer mode: "${sanitizeTerminalText(explicitFooter, 64)}"`);
+      }
+
+      const isTTY = process.stdin.isTTY && process.stdout.isTTY;
+      let selectedTheme = explicitTheme;
+      if (selectedTheme === null && isTTY) {
         const { selectThemeInteractive } = require('../theme-selector');
         selectedTheme = await selectThemeInteractive({ config: loadConfig() });
       }
-      require('../statusline-installer').setup(selectedTheme ? { theme: selectedTheme } : undefined);
+
+      let selectedFooter = explicitFooter;
+      if (selectedFooter === null && isTTY) {
+        const previewConfig = loadConfig();
+        if (selectedTheme) {
+          previewConfig.theme = resolveTheme({ ...previewConfig, theme: selectedTheme });
+        }
+        selectedFooter = await selectFooterInteractive({ config: previewConfig });
+      }
+
+      const setupOpts = {};
+      if (selectedTheme) setupOpts.theme = selectedTheme;
+      if (selectedFooter) setupOpts.footer = selectedFooter;
+      require('../statusline-installer').setup(Object.keys(setupOpts).length > 0 ? setupOpts : undefined);
     } catch (err) {
       logError(err);
       console.error('setup failed (see codebuddy-hud-error.log)');
@@ -144,11 +179,11 @@ if (args.includes('--version') || args.includes('-v')) {
       const config = loadConfig(process.cwd());
       const { t } = getI18n(config);
       const themeIdx = args.indexOf('--theme');
-      const themeArg = (themeIdx !== -1 && args[themeIdx + 1] && !args[themeIdx + 1].startsWith('--')) ? args[themeIdx + 1] : null;
+      const themeArg = (themeIdx !== -1 && args[themeIdx + 1] !== undefined && !args[themeIdx + 1].startsWith('--')) ? args[themeIdx + 1] : null;
 
       if (wantsHelp || themeArg === 'list') {
         printThemesList(config);
-      } else if (themeArg) {
+      } else if (themeArg !== null) {
         if (isPresetName(themeArg)) {
           const savedPath = saveUserTheme(themeArg);
           console.log(`\x1b[32m✔\x1b[0m ${t('themeSetSuccess')} '\x1b[1m${themeArg}\x1b[0m' (${t('themeSavedTo')} ${sanitizeTerminalText(savedPath, 512)})`);
@@ -167,6 +202,46 @@ if (args.includes('--version') || args.includes('-v')) {
     } catch (err) {
       logError(err);
       console.error('theme configuration failed (see codebuddy-hud-error.log)');
+    }
+    process.exitCode = 0;
+  })();
+} else if (args.includes('--footer')) {
+  (async () => {
+    try {
+      const {
+        FOOTER_MODES,
+        isFooterModeName,
+        saveFooterMode,
+        printFooterModesList,
+        selectFooterInteractive,
+      } = require('../footer-mode');
+      const { getI18n } = require('../lang');
+      const config = loadConfig();
+      const { t } = getI18n(config);
+      const footerIdx = args.indexOf('--footer');
+      const footerArg = (footerIdx !== -1 && args[footerIdx + 1] !== undefined && !args[footerIdx + 1].startsWith('--')) ? args[footerIdx + 1] : null;
+
+      if (wantsHelp || footerArg === 'list') {
+        printFooterModesList(config);
+      } else if (footerArg !== null) {
+        if (isFooterModeName(footerArg)) {
+          const savedPath = saveFooterMode(footerArg);
+          console.log(`\x1b[32m✔\x1b[0m ${t('footerSetSuccess')} '\x1b[1m${footerArg}\x1b[0m' (${t('footerSavedTo')} ${sanitizeTerminalText(savedPath, 512)})`);
+        } else {
+          console.error(`${t('unknownFooterMode')}: "${sanitizeTerminalText(footerArg, 64)}". ${t('availableFooterModes')}: ${Object.keys(FOOTER_MODES).join(', ')}`);
+        }
+      } else if (process.stdin.isTTY && process.stdout.isTTY) {
+        const selected = await selectFooterInteractive({ config });
+        if (selected) {
+          const savedPath = saveFooterMode(selected);
+          console.log(`\x1b[32m✔\x1b[0m ${t('footerSetSuccess')} '\x1b[1m${selected}\x1b[0m' (${t('footerSavedTo')} ${sanitizeTerminalText(savedPath, 512)})\n`);
+        }
+      } else {
+        printFooterModesList(config);
+      }
+    } catch (err) {
+      logError(err);
+      console.error('footer configuration failed (see codebuddy-hud-error.log)');
     }
     process.exitCode = 0;
   })();

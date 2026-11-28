@@ -154,6 +154,23 @@ async function main() {
     failed++;
   }
 
+  // CLI smoke: --footer list
+  const footerListResult = await spawnHud(null, ['--footer', 'list']);
+  const footerListErrors = [];
+  if (footerListResult.code !== 0) footerListErrors.push(`exit code ${footerListResult.code}`);
+  if (footerListResult.elapsed > MAX_TIME_MS) footerListErrors.push(`took ${footerListResult.elapsed}ms (>${MAX_TIME_MS}ms)`);
+  if (!footerListResult.stdout.includes('clean') || !footerListResult.stdout.includes('off')) {
+    footerListErrors.push('missing footer mode options');
+  }
+  if (footerListResult.stderr.trim()) footerListErrors.push(`stderr: ${footerListResult.stderr.trim().slice(0, 100)}`);
+  if (footerListErrors.length === 0) {
+    console.log(`  PASS  cli-footer-list (${footerListResult.elapsed}ms, footer modes listed)`);
+    passed++;
+  } else {
+    console.log(`  FAIL  cli-footer-list: ${footerListErrors.join(', ')}`);
+    failed++;
+  }
+
   // Boundary: empty stdin
   const emptyResult = await spawnHud(null);
   const emptyErrors = [];

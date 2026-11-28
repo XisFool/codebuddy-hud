@@ -34,6 +34,7 @@
 25. [`scripts/verify-install.js` — 隔离宿主生命周期验证](#25-scriptsverify-installjs--隔离宿主生命周期验证)
 26. [`scripts/install.ps1` & `install.sh` — 一键在线安装脚本](#26-scriptsinstallps1--installsh--一键在线安装脚本)
 27. [`skills/hud-config/SKILL.md` — HUD 配置技能](#27-skillshud-configskillmd--hud-配置技能)
+28. [`runtime/footer-mode.js` — 官方第 4 行底栏模式控制器](#28-runtimefooter-modejs--官方第-4-行底栏模式控制器)
 
 ---
 
@@ -42,16 +43,17 @@
 **职责：** 状态栏执行入口，注册为 `statusLine.command`。负责命令行参数分发、stdin 管道超时竞争与异常诊断日志记录、顶层错误捕获与自然 Drain 退出。
 
 ### 命令行参数支持 (CLI Flags)
-- `--setup [--theme <name>]`: 执行安装，写入 `settings.json`、生成 Windows `.cmd` shim 并自动挂载 `hud-config` 技能至 `~/.codebuddy/skills/`（在 TTY 终端运行自动唤起交互主题选择器，也可带 `--theme <name>` 直接指定跳过交互；PATH 注册由一键安装脚本完成，`--setup` 不修改 PATH）。
-- `--uninstall`: 仅当当前 `statusLine` 仍指向本 HUD 时按备份还原或移除；清理技能挂载、缓存、PATH 注册及 shim，保留其他 settings 与用户主题配置（详见 §20）。
+- `--setup [--theme <name>] [--footer <mode>]`: 执行安装，写入 `settings.json`、生成 Windows `.cmd` shim 并自动挂载 `hud-config` 技能至 `~/.codebuddy/skills/`（在 TTY 终端运行依次唤起交互主题选择器与官方底栏模式选择器，也可带 `--theme <name>` / `--footer <mode>` 直接指定；PATH 注册由一键安装脚本完成，`--setup` 不修改 PATH）。
+- `--uninstall`: 仅当当前 `statusLine` 仍指向本 HUD 时按备份还原或移除 `statusLine` 与 HUD 托管的 `tui.statusLine`；清理技能挂载、缓存、PATH 注册及 shim，保留其他 settings 与用户主题配置（详见 §20）。
 - `--theme [name|list]`: 交互式切换、指定主题或列出主题（如 `--theme cyberpunk`、`--theme list`）。
+- `--footer [mode|list]`: 交互式切换、指定官方第 4 行底栏模式（`full` | `clean` | `off`）或列出模式（如 `--footer clean`、`--footer list`）。
 - `--doctor [--json]`, `-d`: 运行全面诊断体检报告（`-d` 为短参数别名，支持 `--json` 输出结构化数据）。
 - `--status`: 冒烟探测当前状态栏能否正常渲染（3 行输出与 exit 0）。
 - `--update`: 用户主动更新（检查 + 升级二合一）；解析最新 Release tag，落后时下载该 tag 的 bootstrap 并派生后台自举进程，渲染路径零网络契约不受影响。
 - `--version, -v`: 输出当前 HUD 版本号并退出。
 - `--help, -h`: 输出命令行全部子命令与参数选项帮助信息并退出。
 
-分发顺序：`--version`/`-v` → `--help`/`-h` → 其余子命令，查询不读取 stdin、不会执行安装或卸载。`--theme --help` 或 `--theme -h` 只列出预设（TTY 下也不交互）；与 `--setup` 同用时显示全局帮助。
+分发顺序：`--version`/`-v` → `--help`/`-h` → 其余子命令，查询不读取 stdin、不会执行安装或卸载。`--theme --help` / `--footer --help`（或 `-h`）只列出对应预设（TTY 下也不交互）；与 `--setup` 同用时显示全局帮助。
 
 ### 内部常数配置
 ```javascript
@@ -564,6 +566,7 @@ export function setup(options?: {
   platform?: string;
   nodeExe?: string;
   theme?: string;
+  footer?: 'full' | 'clean' | 'off';
   rootDir?: string;
   sourceSkillDir?: string;
   targetSkillDir?: string;
@@ -586,7 +589,7 @@ export function isSettingsObject(val: unknown): val is Record<string, unknown>;
 - **技能自动挂载**：`setup()` 时通过 `deploySkill()` 将 `skills/hud-config/` 挂载至 `~/.codebuddy/skills/hud-config/`（Windows 优先 Junction，POSIX 优先目录软链接，失败时降级递归复制）。仅替换/卸载指向本次源目录的链接或含 `.codebuddy-hud-managed` 标记（内容为 `codebuddy-hud\n`）的复制目录；未知目录与链接警告并保留，旧版无标记副本也按未知目录处理。标记仅写入复制目录，不写入链接目标；源目录本身禁止删除。
 - **Windows Shim**：烘焙 `process.execPath`、`%`→`%%`、非 ASCII 路径的 8.3 短路径与 `@chcp 65001 >nul`、宿主引号兼容规则见 [architecture §8.1](architecture_zh.md#8-跨平台与零依赖设计保障)。
 - **settings.statusLine 形状**：局部更新 `type: 'command'` 与 `command`，保留已有 padding 和额外字段；padding 缺失时才补 0。Windows `.cmd` shim 以 `"%~dp0codebuddy-hud.js"` 转发同目录入口，`doctor` 按该转发约定校验健康度。
-- **无损配置恢复保障**：首次安装前将原始 `settings.json` 备份为 `settings.json.bak.codebuddy-hud`（同一安装周期只备份一次），通过 `settings-file.js` 局部编辑后原子写回，不重新序列化整份 JSONC。`--setup --theme` 遇到换肤失败时中止，不继续写入 statusLine。
+- **无损配置恢复保障**：首次安装前将原始 `settings.json` 备份为 `settings.json.bak.codebuddy-hud`（同一安装周期只备份一次），通过 `settings-file.js` 局部编辑后原子写回，不重新序列化整份 JSONC。`--setup` 会在创建备份与 shim 前先行校验 `theme` 与 `footer` 参数；`--setup --theme` 遇到换肤失败时中止，不继续写入 statusLine。传入 `footer` 时先验证 `tui` 为 JSON 对象并局部应用 `editTuiStatusLineProperty()`；省略或无预存 `tui` 的 `full` 模式保持原写入字节不变。
 
 ---
 
@@ -602,7 +605,7 @@ export function printDoctorReport(report: DoctorReport, isJson?: boolean, option
 
 ### 诊断项分类 (Checks Categories)
 1. `node`: Node.js 版本（$\ge 18$）、架构与可执行文件路径。
-2. `codebuddy`: `CODEBUDDY_HOME`、`settings.json` 与 `statusLine.command` 指向的目标物理文件存在性校验（含 shim 转发路径）。
+2. `codebuddy`: `CODEBUDDY_HOME`、`settings.json`、`statusLine.command` 指向的目标物理文件存在性校验（含 shim 转发路径），以及宿主第 4 行底栏模式（`hostFooterMode`，展示 `tui.statusLine` 所处的 `full`/`clean`/`off`/`custom` 状态并校验 `tui`/`tui.statusLine` 类型合法性）。
 3. `codebuddy / hostRefreshProtocol`: 宿主事件驱动刷新架构契约说明（长任务期间宿主不派发更新属正常现象）。
 4. `terminal`: Windows 代码页（`chcp 65001`）、Unicode 支持与明暗色调。
 5. `terminal / windowsPathNormalization`: Windows 路径大小写规范化检查。
@@ -636,9 +639,9 @@ export const THEMES: Array<{ name: string; label: string }>;
 
 ## 20. `runtime/uninstall.js` — 卸载还原与深度清理
 
-**职责：** 从首次备份局部还原非本 HUD 的 `statusLine`（且仅当当前 `statusLine` 仍指向本 HUD；用户装后替换或删除的项保留）——备份记录的命令含 `codebuddy-hud` 时改为移除该项；保留其他 settings 原文及用户主题配置，仅清理可确认归属的技能部署（见 §17）；移除对应 runtime 的 Windows shim 与用户缓存；清理系统级 PATH 注册（`CODEBUDDY_HOME` 已设置时跳过）。成功处理后，若当前文件与备份原文不同，先以私有权限留存 `settings.json.bak.codebuddy-hud.retained-<time>-<pid>`，再回收活动备份，避免后续安装误用旧快照；解析、写入或留存失败时保留活动备份。
+**职责：** 从首次备份局部还原非本 HUD 的 `statusLine`（且仅当当前 `statusLine` 仍指向本 HUD；用户装后替换或删除的项保留）——备份记录的命令含 `codebuddy-hud` 时改为移除该项；同时当 `statusLine` 属于本 HUD 时，通过 `restoreTuiStatusLineOnUninstall()` 安全还原或清理 HUD 托管的 `tui.statusLine`（仅作用于 `clean`/`off`，保留自定义数组与兄弟键）；保留其他 settings 原文及用户主题配置，仅清理可确认归属的技能部署（见 §17）；移除对应 runtime 的 Windows shim 与用户缓存；清理系统级 PATH 注册（`CODEBUDDY_HOME` 已设置时跳过）。成功处理后，若当前文件与备份原文不同，先以私有权限留存 `settings.json.bak.codebuddy-hud.retained-<time>-<pid>`，再回收活动备份，避免后续安装误用旧快照；解析、写入或留存失败时保留活动备份。
 
-仅当逐字比对确认 `statusLine` 以外的原文未变，且备份不指向旧 HUD 时，直接恢复备份原文，使新增/删除该字段也能精确往返；其他情况只修改该字段，不覆盖安装后的其他修改。
+仅当逐字比对确认 `statusLine` 及可还原的 HUD 托管 `tui` 以外的原文未变，且备份不指向旧 HUD 时，直接恢复备份原文，使新增/删除该字段也能精确往返；其他情况只修改相关字段，不覆盖安装后的其他修改。
 
 ### 接口定义
 ```typescript
@@ -701,7 +704,7 @@ export async function runUpdate(options?: object): Promise<{ ok: boolean, messag
 
 ## 24. `scripts/verify-display.js` — 看板端到端验证
 
-**职责：** 执行 `npm run verify` 的 10 个 CLI、payload 与边界场景，验证看板行数（严格 $\le 3$ 行）、命令形态与容错契约。
+**职责：** 执行 `npm run verify` 的 11 个 CLI、payload 与边界场景，验证看板行数（严格 $\le 3$ 行）、命令形态与容错契约。
 
 ---
 
@@ -721,4 +724,37 @@ export async function runUpdate(options?: object): Promise<{ ok: boolean, messag
 
 ## 27. `skills/hud-config/SKILL.md` — HUD 配置技能
 
-**职责：** 为 AI Agent 提供主题、图标与显示项配置的交互式引导，并将选择写入项目或全局 `codebuddy-hud.config.json`。
+**职责：** 为 AI Agent 提供主题、图标、显示项及官方第 4 行底栏模式（`settings.json` `tui.statusLine`）的交互式引导，并将 HUD 配置写入项目或全局 `codebuddy-hud.config.json`。
+
+---
+
+## 28. `runtime/footer-mode.js` — 官方第 4 行底栏模式控制器
+
+**职责：** 管理 CodeBuddy Code（v2.182.0+ 支持，v2.187.0 复核）在 `settings.json` 中配置的官方第 4 行底栏 `tui.statusLine` 三档模式，不修改 HUD 自身的 ≤3 行输出。
+
+### 三档模式与接口定义
+```typescript
+export const CLEAN_FOOTER_SEGMENTS: readonly string[]; // ['agents', 'shortcuts', 'permission', 'thinking', 'shells', 'context-remaining', 'tokens']
+export const FOOTER_MODES: Record<'full' | 'clean' | 'off', { name: string; segments: readonly string[] | null }>;
+
+export function isFooterModeName(name: unknown): name is 'full' | 'clean' | 'off';
+export function detectFooterMode(settings: unknown): 'full' | 'clean' | 'off' | 'custom';
+export function editTuiStatusLineProperty(rawSettings: string, segments: readonly string[] | null): string;
+export function saveFooterMode(mode: 'full' | 'clean' | 'off', options?: { settingsPath?: string }): string;
+export function getActiveFooterMode(options?: { settingsPath?: string }): 'full' | 'clean' | 'off' | 'custom';
+export function restoreTuiStatusLineOnUninstall(
+  rawSettings: string,
+  settings: object,
+  backupRaw?: string | null,
+  backup?: object | null
+): string;
+export function renderFooterPreview(mode: string, config?: ResolvedConfig): string[];
+export function printFooterModesList(config?: ResolvedConfig, options?: { settingsPath?: string }): void;
+export function selectFooterInteractive(opts?: { initialMode?: string; config?: ResolvedConfig; settingsPath?: string }): Promise<string | null>;
+```
+
+### 关键安全与无损契约
+- **原型链隔离**：`isFooterModeName()` 使用 `Object.hasOwn(FOOTER_MODES, name)` 拒绝 `__proto__`、`constructor`、`toString` 等原型键。
+- **JSONC 局部编辑**：`editTuiStatusLineProperty()` 借助 `settings-file.js` 局部修改 `tui.statusLine`，保留 BOM、注释、换行与 `tui` 兄弟键；若 `tui` 已存在且非 JSON 对象则直接报错中止。`segments === null`（`full`）时移除 `tui.statusLine`（空 `{}` 时一并移除 `tui`；无 `tui` 时原样返回）。
+- **卸载还原条件**：`restoreTuiStatusLineOnUninstall()` 仅在当前为 `clean` 或 `off` 时动作（`custom` 或 `full` 不动 `tui`）；若安装前备份已是同模式同样不动 `tui`；否则从备份恢复 `tui.statusLine` 或移除它（仅当 `tui` 变空且备份原本无 `tui` 时移除 `tui` 本身，保留安装后新增的兄弟键）。
+- **交互选择器**：`selectFooterInteractive()` 在 TTY Raw 模式下提供 `↑`/`↓`/`j`/`k`、`1`–`3`、`Enter`、`Esc`/`q`/`Ctrl+C`、光标恢复与信号清理、CJK 双列宽对齐，并实时预览 3 行 HUD + 第 4 行状态。

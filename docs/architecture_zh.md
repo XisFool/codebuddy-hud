@@ -39,7 +39,7 @@
 │   codebuddy-hud.config.json (内置默认配置模板；主题预设在 config.js)     │
 │   parser.js · config.js · paths.js · encoding.js · git.js · sanitize.js  │
 │   lang.js · model-info.js · settings-file.js · statusline-installer.js   │
-│   theme-selector.js · doctor.js · session-stats.js                       │
+│   theme-selector.js · footer-mode.js · doctor.js · session-stats.js      │
 │   transcript.js (逆向滑窗扫描与 SHA-256 增量遥测状态机) · uninstall.js   │
 │   update-checker.js (--update 版本解析与自举升级)                        │
 │   renderer.js (3 行看板装配引擎) ──> renderer/ (format, diff, agents)    │
@@ -62,6 +62,7 @@ graph TD
     Entry --> Renderer["runtime/renderer.js"]
     Entry --> Doctor["runtime/doctor.js"]
     Entry --> ThemeSelector["runtime/theme-selector.js"]
+    Entry --> FooterMode["runtime/footer-mode.js"]
     Entry --> Installer["runtime/statusline-installer.js"]
     Entry --> Uninstall["runtime/uninstall.js"]
     Entry --> UpdateChecker["runtime/update-checker.js (--update)"]
@@ -102,20 +103,29 @@ graph TD
     Doctor --> Config
     Doctor --> Sanitize
     Doctor --> SettingsFile
+    Doctor --> FooterMode
     ThemeSelector --> Config
     ThemeSelector --> Paths
     ThemeSelector --> Sanitize
     ThemeSelector --> Lang
     ThemeSelector --> Format
     ThemeSelector --> SettingsFile
+    FooterMode --> Paths
+    FooterMode --> Lang
+    FooterMode --> SettingsFile
+    FooterMode --> Config
+    FooterMode --> ThemeSelector
+    FooterMode --> Format
     Installer --> Paths
     Installer --> SettingsFile
     Installer --> Sanitize
     Installer -.->|lazy| ThemeSelector
+    Installer -.->|lazy| FooterMode
     Uninstall --> Paths
     Uninstall --> SettingsFile
     Uninstall --> Sanitize
     Uninstall --> Installer
+    Uninstall --> FooterMode
 ```
 
 ---
@@ -223,5 +233,5 @@ Prompt Cache 命中、实际 Credits 与工具调用序列只存在于可达数�
    - Windows 宿主通过 `child_process.spawn(..., { shell: true })` 经 `cmd.exe /d /s /c` 解析启动命令，多重字面引号会受 `cmd.exe` 引号剥离规则影响；因此安全 ASCII shim 路径省略引号，需要引号（含空格或非 ASCII）的路径保留引号，仍受此兼容限制。
 2. **终端编码自动探测与缓存**：Windows 下免壳直连 `chcp.com` 探测代码页，成功与失败采用不同缓存时长，避免偶发尖刺把 ASCII 降级锁死一小时；`CODEBUDDY_HUD_FORCE_ASCII`/`UNICODE` 优先。不支持 UTF-8 的终端自动回退纯 ASCII 字符集（`#`, `-`, `|`, `[A]`, `[Q]`, `[D]`, `[t]`, `[T]`）。TTL 与超时见 [module-reference.md §13](module-reference.md#13-runtimeencodingjs--终端字符集探测与编码缓存)。
 3. **事件循环自然排空退出 (Natural Drain)**：渲染完成后主动释放 Stdin 句柄与定时器，依靠事件循环自然排空退出，杜绝 `process.exit()` 截断异步 stdout 缓冲区而输出半截 ANSI；stdout `EPIPE` 同理静默捕获（见 §7）。
-4. **配置写入与卸载清理**：settings 写入保留字符串内容、权限与符号链接，拒绝多硬链接目标（[§16](module-reference.md#16-runtimesettings-filejs--jsonc-安全解析与配置原子写入)）；卸载只还原非本 HUD 的 `statusLine`，并对称清理技能挂载、shim、缓存与系统 PATH 注册，测试沙箱（`CODEBUDDY_HOME` 已设）下跳过 PATH 清理（[§20](module-reference.md#20-runtimeuninstalljs--卸载还原与深度清理)）；`setup` 的技能挂载见 [§17](module-reference.md#17-runtimestatusline-installerjs--状态栏注册与-shim-烘焙器)。
+4. **配置写入与卸载清理**：settings 写入保留字符串内容、权限与符号链接，拒绝多硬链接目标（[§16](module-reference.md#16-runtimesettings-filejs--jsonc-安全解析与配置原子写入)）；`--footer` 与 `--setup --footer` 经 `footer-mode.js` 局部维护宿主第 4 行底栏 `tui.statusLine`（v2.182.0+ 支持，[§28](module-reference.md#28-runtimefooter-modejs--官方第-4-行底栏模式控制器)）；卸载只还原非本 HUD 的 `statusLine` 与 HUD 托管的 `tui.statusLine`，并对称清理技能挂载、shim、缓存与系统 PATH 注册，测试沙箱（`CODEBUDDY_HOME` 已设）下跳过 PATH 清理（[§20](module-reference.md#20-runtimeuninstalljs--卸载还原与深度清理)）；`setup` 的技能挂载见 [§17](module-reference.md#17-runtimestatusline-installerjs--状态栏注册与-shim-烘焙器)。
 5. **验证隔离**：安装卸载测试必须同时隔离 runtime、settings 和用户目录；仅设置 `CODEBUDDY_HOME` 不能保护真实 shim（见 [§25](module-reference.md#25-scriptsverify-installjs--隔离宿主生命周期验证)）。

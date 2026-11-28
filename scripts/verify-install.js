@@ -256,6 +256,34 @@ async function main() {
       && fs.readFileSync(settingsPath, 'utf8') === settingsBeforeFailure
       && fs.readFileSync(configPath, 'utf8') === invalidConfig, 'setup ignored a theme failure or modified user settings');
 
+    // End-to-end --setup --footer clean -> --footer off -> --footer invalid -> --uninstall cycle
+    fs.rmSync(configPath, { force: true });
+    fs.writeFileSync(settingsPath, originalSettings);
+    const setupFooterRes = await runProcess(process.execPath, [HUD_BIN, '--setup', '--footer', 'clean'], { env: isolatedEnv });
+    const afterSetupClean = parseSettingsJson(fs.readFileSync(settingsPath, 'utf8'));
+    record('setup-footer-clean', setupFooterRes.code === 0
+      && afterSetupClean.userCustomSetting === 'preserved'
+      && Array.isArray(afterSetupClean.tui && afterSetupClean.tui.statusLine)
+      && afterSetupClean.tui.statusLine.includes('agents')
+      && !afterSetupClean.tui.statusLine.includes('model'), 'setup --footer clean did not write deduplicated tui.statusLine');
+
+    const footerOffRes = await runProcess(process.execPath, [HUD_BIN, '--footer', 'off'], { env: isolatedEnv });
+    const afterFooterOffRaw = fs.readFileSync(settingsPath, 'utf8');
+    const afterFooterOff = parseSettingsJson(afterFooterOffRaw);
+    record('footer-switch-off', footerOffRes.code === 0
+      && Array.isArray(afterFooterOff.tui && afterFooterOff.tui.statusLine)
+      && afterFooterOff.tui.statusLine.length === 0, '--footer off did not set tui.statusLine to []');
+
+    const footerInvalidRes = await runProcess(process.execPath, [HUD_BIN, '--footer', 'nonexistent_mode'], { env: isolatedEnv });
+    record('footer-invalid-preserves-settings', footerInvalidRes.code === 0
+      && footerInvalidRes.stderr.includes('Unknown footer mode')
+      && fs.readFileSync(settingsPath, 'utf8') === afterFooterOffRaw, 'invalid --footer modified settings');
+
+    const uninstFooterRes = await runProcess(process.execPath, [HUD_BIN, '--uninstall'], { env: isolatedEnv });
+    record('uninstall-restores-after-footer', uninstFooterRes.code === 0
+      && fs.readFileSync(settingsPath, 'utf8') === originalSettings
+      && !fs.existsSync(settingsPath + '.bak.codebuddy-hud'), 'uninstall did not restore original JSONC after --footer');
+
   } finally {
     try {
       fs.rmSync(tmpHome, { recursive: true, force: true });

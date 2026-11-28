@@ -215,4 +215,66 @@ describe('doctor diagnosis tool', () => {
       assert.equal(getStatusLineCheck(runDoctor({ cwd: process.cwd() })).status, 'ok');
     });
   });
+
+  test('reports Host Footer Mode check after statusLine without breaking statusLine lookup', () => {
+    withIsolatedSettings(({ writeSettings }) => {
+      const getFooterCheck = (report) => report.checks.find(c =>
+        c.category === 'codebuddy' && (c.name === 'Host Footer Mode' || c.name === '宿主底栏模式'));
+
+      writeSettings(JSON.stringify({ statusLine: { command: `"${process.execPath}"` } }));
+      let report = runDoctor({ cwd: process.cwd() });
+      let slIdx = report.checks.findIndex(c => c.category === 'codebuddy' && c.name.includes('statusLine'));
+      let footerIdx = report.checks.findIndex(c => c === getFooterCheck(report));
+      assert.ok(slIdx >= 0 && footerIdx === slIdx + 1);
+      assert.ok(!report.checks[footerIdx].name.includes('statusLine'));
+      assert.equal(report.checks[footerIdx].status, 'ok');
+      assert.match(report.checks[footerIdx].detail, /^full /);
+      assert.match(report.checks[footerIdx].detail, /tui\.statusLine/);
+
+      writeSettings(JSON.stringify({
+        statusLine: { command: `"${process.execPath}"` },
+        tui: { statusLine: ['agents', 'shortcuts', 'permission', 'thinking', 'shells', 'context-remaining', 'tokens'] },
+      }));
+      let check = getFooterCheck(runDoctor({ cwd: process.cwd() }));
+      assert.equal(check.status, 'ok');
+      assert.match(check.detail, /^clean /);
+
+      writeSettings(JSON.stringify({
+        statusLine: { command: `"${process.execPath}"` },
+        tui: { statusLine: [] },
+      }));
+      check = getFooterCheck(runDoctor({ cwd: process.cwd() }));
+      assert.equal(check.status, 'ok');
+      assert.match(check.detail, /^off /);
+
+      writeSettings(JSON.stringify({
+        statusLine: { command: `"${process.execPath}"` },
+        tui: { statusLine: ['agents', 'tokens'] },
+      }));
+      check = getFooterCheck(runDoctor({ cwd: process.cwd() }));
+      assert.equal(check.status, 'ok');
+      assert.match(check.detail, /^custom /);
+
+      writeSettings(JSON.stringify({
+        statusLine: { command: `"${process.execPath}"` },
+        tui: 'not-an-object',
+      }));
+      check = getFooterCheck(runDoctor({ cwd: process.cwd() }));
+      assert.equal(check.status, 'warn');
+
+      writeSettings(JSON.stringify({
+        statusLine: { command: `"${process.execPath}"` },
+        tui: { statusLine: 'not-an-array' },
+      }));
+      check = getFooterCheck(runDoctor({ cwd: process.cwd() }));
+      assert.equal(check.status, 'warn');
+
+      writeSettings(JSON.stringify({
+        statusLine: { command: `"${process.execPath}"` },
+        tui: { statusLine: ['agents', 123] },
+      }));
+      check = getFooterCheck(runDoctor({ cwd: process.cwd() }));
+      assert.equal(check.status, 'warn');
+    });
+  });
 });

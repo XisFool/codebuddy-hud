@@ -141,11 +141,11 @@ codebuddy-hud --uninstall
 
 卸载程序会：
 
-- 仅当当前 `statusLine` 仍指向本 HUD 时，从安装时的备份还原；若备份里的命令本身也指向 codebuddy-hud，则直接移除 `statusLine` 项。安装后你自行替换或删除的 `statusLine` 保持不变。
+- 仅当当前 `statusLine` 仍指向本 HUD 时，从安装时的备份还原；若备份里的命令本身也指向 codebuddy-hud，则直接移除 `statusLine` 项。安装后你自行替换或删除的 `statusLine` 保持不变。同时仅在 `tui.statusLine` 处于 HUD 托管的 `clean`/`off` 模式时按备份安全还原或清理（保留你在 `tui` 下的其他字段及自定义数组）。
 - 删除 Windows `.cmd` shim，清理 HUD 自身的缓存与状态文件；技能只清理指向本 HUD 源目录的链接或带归属标记的复制目录，未知同名目录会保留。
 - 清理 PATH 注册：移除 Windows 用户级注册表 PATH 中的 runtime bin 目录；macOS / Linux 上删除 `~/.local/bin/codebuddy-hud` 软链接（设置了 `CODEBUDDY_HOME` 时自动跳过）。
 
-用户主题配置（`codebuddy-hud.config.json`）与 `~/.codebuddy/codebuddy-hud-runtime/` 运行时目录会被保留（可手动删除）；除 `statusLine` 外不会改动 `settings.json` 的其他配置项。
+用户主题配置（`codebuddy-hud.config.json`）与 `~/.codebuddy/codebuddy-hud-runtime/` 运行时目录会被保留（可手动删除）；除 `statusLine` 与 HUD 托管的 `tui.statusLine` 外不会改动 `settings.json` 的其他配置项。
 
 安装与卸载保留 `settings.json` 未涉及的注释、BOM 和格式。卸载后若文件与安装前备份不同，原文另存为旁边的 `.bak.codebuddy-hud.retained-<time>-<pid>`，路径会在卸载输出中显示；也可用 `codebuddy-hud --doctor` 查看残留副本（只列出、不自动删除）。
 
@@ -172,6 +172,26 @@ codebuddy-hud --theme list      # 仅列出全部主题
 也可以在 CodeBuddy Code 会话中直接描述需求（内置 `hud-config` Skill 会写入配置），例如：“把 HUD 主题换成 cyberpunk”。
 
 `themeMode` 默认 `auto`，结合终端背景信号（如 `COLORFGBG`）自动切换深 / 浅配色，也可强制 `dark` 或 `light`。
+
+---
+
+## 官方第 4 行底栏模式 (`--footer`)
+
+CodeBuddy Code（v2.182.0 起支持，实测至 v2.187.0）在 3 行 HUD 下方渲染宿主自带的第 4 行底栏，可通过 `~/.codebuddy/settings.json` 中的 `tui.statusLine` 控制：
+
+| 模式 | 效果 | 写入 `settings.json` 的 `tui.statusLine` |
+| :--- | :--- | :--- |
+| `full`（默认） | 4 行（3 行 HUD + 完整官方第 4 行） | 移除 `tui.statusLine`（若 `tui` 为 `{}` 则一并移除） |
+| `clean`（推荐去重） | 4 行（隐藏重复的 `model`/`reasoning`，保留快捷键、`agents`、权限提示等） | `["agents", "shortcuts", "permission", "thinking", "shells", "context-remaining", "tokens"]` |
+| `off`（纯 3 行） | 仅 3 行 HUD（隐藏全部可配置官方底栏片段） | `[]` |
+
+```bash
+codebuddy-hud --footer          # 交互式选择：↑/↓ 实时预览第 4 行状态，1-3 快选，Enter 确认，Esc 取消
+codebuddy-hud --footer clean    # 直接切换为推荐去重模式
+codebuddy-hud --footer list     # 列出全部模式及当前激活状态
+```
+
+安装时也可直接指定：`codebuddy-hud --setup --footer clean`（TTY 下交互安装会在选完主题后继续提示选择底栏模式；非 TTY 保持默认 `full`）。
 
 ---
 
@@ -244,16 +264,17 @@ HUD 配置使用严格 JSON（不含注释或尾逗号）；单个文件超过 2
 
 | 命令 | 说明 |
 | :--- | :--- |
-| `--setup [--theme <name>]` | 将 `statusLine` 写入 `settings.json`、生成 Windows `.cmd` shim 并挂载 `hud-config` 技能（TTY 下自动唤起交互主题选择器，也可带 `--theme <name>` 直接指定；供源码本地安装使用，PATH 注册由一键安装脚本完成） |
+| `--setup [--theme <name>] [--footer <mode>]` | 将 `statusLine` 写入 `settings.json`、生成 Windows `.cmd` shim 并挂载 `hud-config` 技能（TTY 下交互引导主题与底栏模式，也可显式指定；供源码本地安装使用，PATH 注册由一键安装脚本完成） |
 | `--status` | 以演示数据渲染一次看板并退出 |
 | `--theme [name\|list]` | 交互式主题选择器；`list` 列出主题；带名称时直接切换 |
+| `--footer [mode\|list]` | 交互式官方第 4 行底栏模式选择器；`list` 列出模式；支持 `full\|clean\|off` 直接切换 |
 | `--doctor` / `-d` `[--json]` | 输出环境诊断报告（`--json` 输出结构化数据） |
 | `--update` | 检查最新 Release 并在落后时下载 bootstrap 完成自举升级（仅用户主动调用） |
-| `--uninstall` | 卸载并在当前 `statusLine` 仍指向本 HUD 时从备份还原配置，清理已挂载技能与 PATH 注册 |
+| `--uninstall` | 卸载并在当前 `statusLine` 仍指向本 HUD 时从备份还原 `statusLine` 与 HUD 托管的 `tui.statusLine`，清理已挂载技能与 PATH 注册 |
 | `--version` / `-v` | 输出当前版本号并退出 |
 | `--help` / `-h` | 输出命令行选项帮助信息并退出 |
 
-`--version`/`-v`、`--help`/`-h` 优先于安装、卸载等操作，且不读取 stdin。`--theme --help`（或 `--theme -h`）只列出主题，TTY 下也不交互；与 `--setup` 组合时显示全局帮助。
+`--version`/`-v`、`--help`/`-h` 优先于安装、卸载等操作，且不读取 stdin。`--theme --help` / `--footer --help`（或 `-h`）只列出对应选项，TTY 下也不交互；与 `--setup` 组合时显示全局帮助。
 
 ---
 

@@ -35,6 +35,7 @@ const RUNTIME_FILES = [
   'runtime/config.js',
   'runtime/doctor.js',
   'runtime/encoding.js',
+  'runtime/footer-mode.js',
   'runtime/git.js',
   'runtime/lang.js',
   'runtime/model-info.js',

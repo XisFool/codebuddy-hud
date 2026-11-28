@@ -9,7 +9,8 @@ const { detectThemeMode, loadConfig } = require('./config');
 const { getGitStatus } = require('./git');
 const { getI18n } = require('./lang');
 const { sanitizeTerminalText } = require('./sanitize');
-const { parseSettingsJson } = require('./settings-file');
+const { parseSettingsJson, isSettingsObject } = require('./settings-file');
+const { detectFooterMode } = require('./footer-mode');
 
 function getConsoleCodePage() {
   if (process.platform !== 'win32') return null;
@@ -108,6 +109,7 @@ function checkCodeBuddyConfig(i18n) {
   let statusLineCmd = null;
   let statusLineMsg = null;
   let parsedSettings = null;
+  let settingsParseError = false;
 
   if (settingsExists) {
     try {
@@ -129,10 +131,50 @@ function checkCodeBuddyConfig(i18n) {
         statusLineMsg = i18n.t('doctorStatusLineMissing');
       }
     } catch {
+      settingsParseError = true;
       statusLineMsg = 'Invalid settings.json (JSON parse error)';
     }
   } else {
     statusLineMsg = i18n.t('doctorSettingsMissing');
+  }
+
+  let footerStatus = 'ok';
+  let footerDetail = 'full (tui.statusLine unset; 4 lines: 3-line HUD + full host 4th line)';
+  let footerMessage = null;
+  if (!settingsExists) {
+    footerDetail = 'full (default; settings.json not found)';
+  } else if (settingsParseError) {
+    footerStatus = 'warn';
+    footerDetail = 'unknown (invalid settings.json)';
+    footerMessage = 'Invalid settings.json (JSON parse error)';
+  } else if (!isSettingsObject(parsedSettings)) {
+    footerStatus = 'warn';
+    footerDetail = 'unknown (settings.json root is not an object)';
+    footerMessage = 'settings.json root must be a JSON object';
+  } else if (Object.hasOwn(parsedSettings, 'tui') && !isSettingsObject(parsedSettings.tui)) {
+    footerStatus = 'warn';
+    footerDetail = 'invalid (tui is not a JSON object)';
+    footerMessage = i18n.t('doctorFooterInvalidTui');
+  } else {
+    const mode = detectFooterMode(parsedSettings);
+    if (mode === 'clean') {
+      footerDetail = 'clean (tui.statusLine deduplicated; 4 lines: 3-line HUD + clean host 4th line)';
+    } else if (mode === 'off') {
+      footerDetail = 'off (tui.statusLine = []; 3-line pure HUD)';
+    } else if (mode === 'custom') {
+      const sl = parsedSettings.tui.statusLine;
+      if (Array.isArray(sl) && sl.every(s => typeof s === 'string')) {
+        const items = sl.map(s => sanitizeTerminalText(s, 32));
+        const preview = items.slice(0, 8).join(', ') + (items.length > 8 ? `, +${items.length - 8} more` : '');
+        footerDetail = `custom (tui.statusLine = [${preview}])`;
+      } else {
+        footerStatus = 'warn';
+        footerDetail = Array.isArray(sl)
+          ? 'invalid (tui.statusLine contains non-string items)'
+          : 'invalid (tui.statusLine is not an array)';
+        footerMessage = i18n.t('doctorFooterInvalidStatusLine');
+      }
+    }
   }
 
   return [
@@ -156,6 +198,13 @@ function checkCodeBuddyConfig(i18n) {
       status: statusLineOk ? 'ok' : 'warn',
       detail: statusLineCmd || '(not configured)',
       message: statusLineMsg,
+    },
+    {
+      category: 'codebuddy',
+      name: i18n.t('hostFooterMode'),
+      status: footerStatus,
+      detail: footerDetail,
+      message: footerMessage,
     },
   ];
 }

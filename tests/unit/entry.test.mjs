@@ -259,6 +259,8 @@ test('prints help with --help and -h and exits 0', async () => {
   const r1 = await run({ args: ['--help'] });
   assert.equal(r1.code, 0);
   assert.match(r1.out, /Usage:/);
+  assert.match(r1.out, /--footer \[mode\|list\]/);
+  assert.match(r1.out, /--setup \[--theme <name>\] \[--footer <mode>\]/);
   assert.match(r1.out, /--version, -v/);
   assert.equal(r1.err, '');
 
@@ -292,8 +294,8 @@ for (const flag of ['--help', '-h', '--version', '-v']) {
       fs.writeFileSync(path.join(home, 'codebuddy-hud.config.json'), JSON.stringify({ theme: 'ocean' }));
       const before = snapshot(tempRoot);
       for (const command of [
-        ['--setup'], ['--setup', '--theme', 'emerald'], ['--uninstall'],
-        ['--doctor'], ['-d'], ['--status'], ['--update'], ['--theme', 'emerald'],
+        ['--setup'], ['--setup', '--theme', 'emerald'], ['--setup', '--footer', 'clean'], ['--uninstall'],
+        ['--doctor'], ['-d'], ['--status'], ['--update'], ['--theme', 'emerald'], ['--footer', 'clean'],
       ]) {
         for (const args of [[...command, flag], [flag, ...command]]) {
           const label = args.join(' ');
@@ -301,9 +303,10 @@ for (const flag of ['--help', '-h', '--version', '-v']) {
           assert.equal(r.code, 0, label);
           assert.equal(r.err, '', label);
           assert.deepEqual(snapshot(tempRoot), before, `${label} modified the installation`);
-          assert.match(r.out, isHelp
-            ? (command[0] === '--theme' ? /Available themes/ : /Usage:/)
-            : /^codebuddy-hud v\d+\.\d+\.\d+\r?\n$/, label);
+          const helpRegex = command[0] === '--theme'
+            ? /Available themes/
+            : (command[0] === '--footer' ? /Available footer modes/ : /Usage:/);
+          assert.match(r.out, isHelp ? helpRegex : /^codebuddy-hud v\d+\.\d+\.\d+\r?\n$/, label);
         }
       }
     } finally {
@@ -336,6 +339,169 @@ test('--theme help lists themes without invoking the selector on a TTY', async (
       assert.match(r.out, /Available themes/);
       assert.doesNotMatch(r.out, /--setup/);
     }
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('--footer CLI supports list, valid modes, invalid/sanitized modes, and help on TTY without selector', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-entry-footer-'));
+  const copiedRuntime = path.join(tempRoot, 'runtime');
+  const copiedBin = path.join(copiedRuntime, 'bin', 'codebuddy-hud.js');
+  const settingsPath = path.join(tempRoot, 'settings.json');
+  const env = { ...process.env, CODEBUDDY_HOME: tempRoot, CODEBUDDY_SETTINGS_PATH: settingsPath };
+  try {
+    fs.cpSync(path.dirname(path.dirname(BIN)), copiedRuntime, { recursive: true });
+
+    const listRes = await run({ args: ['--footer', 'list'], env, bin: copiedBin });
+    assert.equal(listRes.code, 0);
+    assert.equal(listRes.err, '');
+    assert.match(listRes.out, /Available footer modes/);
+
+    // Non-TTY --footer with no argument falls back to listing
+    const nonTtyRes = await run({ args: ['--footer'], env, bin: copiedBin });
+    assert.equal(nonTtyRes.code, 0);
+    assert.match(nonTtyRes.out, /Available footer modes/);
+
+    const cleanRes = await run({ args: ['--footer', 'clean'], env, bin: copiedBin });
+    assert.equal(cleanRes.code, 0);
+    assert.equal(cleanRes.err, '');
+    assert.match(cleanRes.out.replace(/\x1b\[[0-9;]*m/g, ''), /Host footer mode set to 'clean'/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).tui.statusLine, [
+      'agents', 'shortcuts', 'permission', 'thinking', 'shells', 'context-remaining', 'tokens',
+    ]);
+
+    const offRes = await run({ args: ['--footer', 'off'], env, bin: copiedBin });
+    assert.equal(offRes.code, 0);
+    assert.deepEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).tui.statusLine, []);
+
+    const fullRes = await run({ args: ['--footer', 'full'], env, bin: copiedBin });
+    assert.equal(fullRes.code, 0);
+    assert.equal(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).tui, undefined);
+
+    // Invalid and prototype/injection inputs exit 0, sanitize stderr, and leave settings untouched
+    const beforeInvalid = fs.readFileSync(settingsPath, 'utf8');
+    const evil = '\x1b]52;c;ZXZpbA==\x07\x1b[2J';
+    for (const bad of ['nonexistent_footer', '__proto__', 'constructor', 'toString', '', evil]) {
+      const badRes = await run({ args: ['--footer', bad], env, bin: copiedBin });
+      assert.equal(badRes.code, 0);
+      assert.match(badRes.err, /Unknown footer mode/);
+      assert.ok(!badRes.err.includes('\x1b]52'));
+      assert.ok(!badRes.err.includes('\x1b[2J'));
+      assert.equal(fs.readFileSync(settingsPath, 'utf8'), beforeInvalid);
+    }
+
+    // --footer --help / -h on TTY lists modes without calling selectFooterInteractive
+    for (const flag of ['--help', '-h']) {
+      const script = `
+        Object.defineProperty(process.stdin, 'isTTY', { value: true });
+        Object.defineProperty(process.stdout, 'isTTY', { value: true });
+        require(${JSON.stringify(path.join(copiedRuntime, 'footer-mode.js'))}).selectFooterInteractive = async () => {
+          console.error('interactive footer selector must not run');
+          return null;
+        };
+        process.argv = [process.execPath, ${JSON.stringify(copiedBin)}, '--footer', ${JSON.stringify(flag)}];
+        require(${JSON.stringify(copiedBin)});
+      `;
+      const r = await run({ bin: '-e', args: [script], env });
+      assert.equal(r.code, 0);
+      assert.equal(r.err, '');
+      assert.match(r.out, /Available footer modes/);
+      assert.doesNotMatch(r.out, /--setup/);
+    }
+
+    // TTY --footer without args invokes selectFooterInteractive and saves selection (or no-ops on null)
+    const beforeTtyCancel = fs.readFileSync(settingsPath, 'utf8');
+    const ttyCancelScript = `
+      Object.defineProperty(process.stdin, 'isTTY', { value: true });
+      Object.defineProperty(process.stdout, 'isTTY', { value: true });
+      require(${JSON.stringify(path.join(copiedRuntime, 'footer-mode.js'))}).selectFooterInteractive = async () => null;
+      process.argv = [process.execPath, ${JSON.stringify(copiedBin)}, '--footer'];
+      require(${JSON.stringify(copiedBin)});
+    `;
+    const ttyCancelRes = await run({ bin: '-e', args: [ttyCancelScript], env });
+    assert.equal(ttyCancelRes.code, 0, ttyCancelRes.err);
+    assert.equal(fs.readFileSync(settingsPath, 'utf8'), beforeTtyCancel);
+
+    const ttyPickScript = `
+      Object.defineProperty(process.stdin, 'isTTY', { value: true });
+      Object.defineProperty(process.stdout, 'isTTY', { value: true });
+      require(${JSON.stringify(path.join(copiedRuntime, 'footer-mode.js'))}).selectFooterInteractive = async () => 'clean';
+      process.argv = [process.execPath, ${JSON.stringify(copiedBin)}, '--footer'];
+      require(${JSON.stringify(copiedBin)});
+    `;
+    const ttyPickRes = await run({ bin: '-e', args: [ttyPickScript], env });
+    assert.equal(ttyPickRes.code, 0, ttyPickRes.err);
+    assert.match(ttyPickRes.out.replace(/\x1b\[[0-9;]*m/g, ''), /Host footer mode set to 'clean'/);
+    assert.equal(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).tui.statusLine.length, 7);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('--setup parses --footer, validates upfront, and prompts interactive footer selector in TTY', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cbhud-entry-setup-footer-'));
+  const copiedRuntime = path.join(tempRoot, 'runtime');
+  const copiedBin = path.join(copiedRuntime, 'bin', 'codebuddy-hud.js');
+  const settingsPath = path.join(tempRoot, 'settings.json');
+  const env = { ...process.env, CODEBUDDY_HOME: tempRoot, CODEBUDDY_SETTINGS_PATH: settingsPath };
+  try {
+    fs.cpSync(path.dirname(path.dirname(BIN)), copiedRuntime, { recursive: true });
+
+    // Non-TTY --setup --footer clean configures both statusLine and tui.statusLine
+    const setupClean = await run({ args: ['--setup', '--footer', 'clean'], env, bin: copiedBin });
+    assert.equal(setupClean.code, 0);
+    assert.equal(setupClean.err, '');
+    const parsedClean = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    assert.ok(parsedClean.statusLine && parsedClean.statusLine.command);
+    assert.ok(Array.isArray(parsedClean.tui && parsedClean.tui.statusLine));
+
+    // Invalid, empty, or dangling --setup --footer aborts without modifying settings
+    const beforeInvalid = fs.readFileSync(settingsPath, 'utf8');
+    for (const badArgs of [['--setup', '--footer', 'bogus'], ['--setup', '--footer', ''], ['--setup', '--footer']]) {
+      const setupInvalid = await run({ args: badArgs, env, bin: copiedBin });
+      assert.equal(setupInvalid.code, 0);
+      assert.match(setupInvalid.err, /setup failed/);
+      assert.equal(fs.readFileSync(settingsPath, 'utf8'), beforeInvalid);
+    }
+
+    // TTY --setup prompts selectFooterInteractive after selectThemeInteractive; null keeps tui untouched
+    fs.writeFileSync(settingsPath, '{"model":"keep"}');
+    const cancelScript = `
+      Object.defineProperty(process.stdin, 'isTTY', { value: true });
+      Object.defineProperty(process.stdout, 'isTTY', { value: true });
+      const calls = [];
+      require(${JSON.stringify(path.join(copiedRuntime, 'theme-selector.js'))}).selectThemeInteractive = async () => {
+        calls.push('theme');
+        return 'emerald';
+      };
+      require(${JSON.stringify(path.join(copiedRuntime, 'footer-mode.js'))}).selectFooterInteractive = async () => {
+        calls.push('footer');
+        return null;
+      };
+      process.argv = [process.execPath, ${JSON.stringify(copiedBin)}, '--setup'];
+      require(${JSON.stringify(copiedBin)});
+      process.on('beforeExit', () => console.log('CALLS=' + JSON.stringify(calls)));
+    `;
+    const cancelRes = await run({ bin: '-e', args: [cancelScript], env });
+    assert.equal(cancelRes.code, 0, cancelRes.err);
+    assert.match(cancelRes.out, /CALLS=\["theme","footer"\]/);
+    const afterCancel = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    assert.equal(afterCancel.tui, undefined);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(tempRoot, 'codebuddy-hud.config.json'), 'utf8')).theme, 'emerald');
+
+    // TTY --setup selecting footer 'off' persists tui.statusLine = []
+    const selectScript = `
+      Object.defineProperty(process.stdin, 'isTTY', { value: true });
+      Object.defineProperty(process.stdout, 'isTTY', { value: true });
+      require(${JSON.stringify(path.join(copiedRuntime, 'theme-selector.js'))}).selectThemeInteractive = async () => null;
+      require(${JSON.stringify(path.join(copiedRuntime, 'footer-mode.js'))}).selectFooterInteractive = async () => 'off';
+      process.argv = [process.execPath, ${JSON.stringify(copiedBin)}, '--setup'];
+      require(${JSON.stringify(copiedBin)});
+    `;
+    const selectRes = await run({ bin: '-e', args: [selectScript], env });
+    assert.equal(selectRes.code, 0, selectRes.err);
+    assert.deepEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).tui.statusLine, []);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

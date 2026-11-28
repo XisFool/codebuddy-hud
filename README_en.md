@@ -141,11 +141,11 @@ codebuddy-hud --uninstall
 
 The uninstaller:
 
-- Restores the `statusLine` from the backup taken at install time, only while the current `statusLine` still points at this HUD; if the command in the backup itself points to codebuddy-hud, the `statusLine` entry is removed instead. Replacements or removals you made after installation are preserved.
+- Restores the `statusLine` from the backup taken at install time, only while the current `statusLine` still points at this HUD; if the command in the backup itself points to codebuddy-hud, the `statusLine` entry is removed instead. Replacements or removals you made after installation are preserved. HUD-managed `tui.statusLine` (`clean` / `off`) is also restored or cleaned from backup while preserving sibling `tui` keys and custom arrays.
 - Removes the Windows `.cmd` shim and HUD-owned cache and state files. Skills are removed only when the link points to this HUD's source directory or the copied directory has its ownership marker; unknown directories with the same name are preserved.
 - Cleans up PATH registration: removes the runtime bin directory from the Windows user registry PATH, and unlinks `~/.local/bin/codebuddy-hud` on macOS/Linux (skipped automatically when `CODEBUDDY_HOME` is set).
 
-Your theme config (`codebuddy-hud.config.json`) and the installed runtime directory (`~/.codebuddy/codebuddy-hud-runtime/`) are preserved — delete them manually if desired. Nothing else in `settings.json` is touched.
+Your theme config (`codebuddy-hud.config.json`) and the installed runtime directory (`~/.codebuddy/codebuddy-hud-runtime/`) are preserved — delete them manually if desired. Nothing else in `settings.json` is touched outside `statusLine` and HUD-managed `tui.statusLine`.
 
 Setup and uninstall preserve untouched comments, BOM and formatting in `settings.json`. If the restored file differs from the original backup, uninstall retains the original beside it as `.bak.codebuddy-hud.retained-<time>-<pid>` and prints its path. Run `codebuddy-hud --doctor` to list retained copies (listed only, never auto-deleted).
 
@@ -172,6 +172,26 @@ codebuddy-hud --theme list      # List all themes
 You can also describe the change inside a CodeBuddy Code session (the bundled `hud-config` Skill writes the config), e.g. "switch the HUD theme to cyberpunk".
 
 `themeMode` defaults to `auto`, combining terminal background signals (e.g. `COLORFGBG`) to pick dark/light; it can be forced to `dark` or `light`.
+
+---
+
+## Official 4th-Line Footer Mode (`--footer`)
+
+CodeBuddy Code (supported since v2.182.0, verified in v2.187.0) renders its own 4th-line footer beneath the 3-line HUD, configurable via `tui.statusLine` in `~/.codebuddy/settings.json`:
+
+| Mode | Effect | `tui.statusLine` in `settings.json` |
+| :--- | :--- | :--- |
+| `full` (default) | 4 lines (3-line HUD + full official 4th line) | Removes `tui.statusLine` (and removes `tui` if it becomes `{}`) |
+| `clean` (recommended) | 4 lines (hides duplicate `model`/`reasoning`, keeps shortcuts, `agents`, permission hints, etc.) | `["agents", "shortcuts", "permission", "thinking", "shells", "context-remaining", "tokens"]` |
+| `off` (pure 3-line) | 3-line HUD only (hides all configurable official footer segments) | `[]` |
+
+```bash
+codebuddy-hud --footer          # Interactive: ↑/↓ live preview of 4th-line state, 1-3 to jump, Enter to confirm, Esc to cancel
+codebuddy-hud --footer clean    # Switch directly to recommended clean mode
+codebuddy-hud --footer list     # List all modes and the active state
+```
+
+You can also pass `--setup --footer clean` during installation (on a TTY, `--setup` prompts for footer mode after theme selection; non-TTY keeps the `full` default).
 
 ---
 
@@ -244,16 +264,17 @@ Usage of the mirror and fork variables is covered in [docs/install-advanced.md](
 
 | Command | Description |
 | :--- | :--- |
-| `--setup [--theme <name>]` | Write `statusLine` into `settings.json`, generate the Windows `.cmd` shim, and deploy the `hud-config` skill (interactive theme picker opens in TTY, or pass `--theme <name>` to skip; for source checkouts — PATH registration is handled by the one-command install scripts) |
+| `--setup [--theme <name>] [--footer <mode>]` | Write `statusLine` into `settings.json`, generate the Windows `.cmd` shim, and deploy the `hud-config` skill (interactive theme and footer pickers open in TTY, or pass `--theme` / `--footer` directly; for source checkouts — PATH registration is handled by the one-command install scripts) |
 | `--status` | Render the HUD once from demo data and exit |
 | `--theme [name\|list]` | Interactive theme picker; `list` prints themes; a name switches directly |
+| `--footer [mode\|list]` | Interactive official 4th-line footer picker; `list` prints modes; `full\|clean\|off` switches directly |
 | `--doctor` / `-d` `[--json]` | Print the environment diagnostic report (`--json` for machine consumption) |
 | `--update` | Check the latest release and, when outdated, download bootstrap to self-upgrade (user-invoked only) |
-| `--uninstall` | Uninstall and restore config from backup while the current `statusLine` still points at this HUD, removing deployed skills and PATH registration |
+| `--uninstall` | Uninstall and restore `statusLine` and HUD-managed `tui.statusLine` from backup while `statusLine` still points at this HUD, removing deployed skills and PATH registration |
 | `--version` / `-v` | Print current version and exit |
 | `--help` / `-h` | Print CLI command options and exit |
 
-`--version`/`-v` and `--help`/`-h` take precedence over setup, uninstall and other operations without reading stdin. `--theme --help` (or `--theme -h`) only lists themes, including on a TTY; combining it with `--setup` shows global help.
+`--version`/`-v` and `--help`/`-h` take precedence over setup, uninstall and other operations without reading stdin. `--theme --help` / `--footer --help` (or `-h`) only list options, including on a TTY; combining with `--setup` shows global help.
 
 ---
 

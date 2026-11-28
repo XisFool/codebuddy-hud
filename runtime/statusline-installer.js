@@ -151,6 +151,20 @@ function setup(options) {
   const hudBin = opts.hudBin || path.join(opts.runtimeDir || __dirname, 'bin', 'codebuddy-hud.js');
   const nodeExe = opts.nodeExe || process.execPath;
   const platform = opts.platform || process.platform;
+  const hasFooter = opts.footer !== undefined && opts.footer !== null;
+
+  if (opts.theme !== undefined && opts.theme !== null) {
+    const { isPresetName } = require('./config');
+    if (!isPresetName(opts.theme)) {
+      throw new Error(`Invalid theme name: "${opts.theme}"`);
+    }
+  }
+  if (hasFooter) {
+    const { isFooterModeName } = require('./footer-mode');
+    if (!isFooterModeName(opts.footer)) {
+      throw new Error(`Invalid footer mode: "${opts.footer}"`);
+    }
+  }
 
   let settings = {};
   let rawSettings = '';
@@ -175,6 +189,10 @@ function setup(options) {
         console.error('Setup aborted to prevent overwriting invalid configuration.');
         throw err;
       }
+    }
+
+    if (hasFooter && Object.hasOwn(settings, 'tui') && !isSettingsObject(settings.tui)) {
+      throw new Error('settings.json "tui" property must be a JSON object');
     }
 
     // Preserve the exact pre-install content only after it has been validated.
@@ -226,9 +244,17 @@ function setup(options) {
   if (!isSettingsObject(settings.statusLine) || !Object.hasOwn(settings.statusLine, 'padding')) {
     statusLine = editSettingsProperty(statusLine, 'padding', '0');
   }
-  atomicWriteSettingsFile(settingsPath, editSettingsProperty(rawSettings, 'statusLine', statusLine));
+  let nextRawSettings = editSettingsProperty(rawSettings, 'statusLine', statusLine);
+  if (hasFooter) {
+    const { FOOTER_MODES, editTuiStatusLineProperty } = require('./footer-mode');
+    nextRawSettings = editTuiStatusLineProperty(nextRawSettings, FOOTER_MODES[opts.footer].segments);
+  }
+  atomicWriteSettingsFile(settingsPath, nextRawSettings);
   console.log(`\nStatusLine configured in: ${sanitizeTerminalText(settingsPath, 512)}`);
   console.log(`Command: ${sanitizeTerminalText(command, 1024)}`);
+  if (hasFooter) {
+    console.log(`Footer mode: ${sanitizeTerminalText(opts.footer, 32)}`);
+  }
   deploySkill(opts, hudBin, platform);
   console.log('\ncodebuddy-hud setup complete.');
 }

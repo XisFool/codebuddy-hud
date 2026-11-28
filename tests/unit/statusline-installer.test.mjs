@@ -8,6 +8,7 @@ import { execSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
 const { buildStatusLineCommand, buildCmdShimContent, setup, deploySkill, parseSettingsJson } = require('../../runtime/statusline-installer.js');
+const { editSettingsProperty } = require('../../runtime/settings-file.js');
 const { uninstall } = require('../../runtime/uninstall.js');
 const { getSessionStatsStateDir, getUpdateStatusPath } = require('../../runtime/paths.js');
 
@@ -899,4 +900,152 @@ test('setup ignores deployment when sourceDir and targetDir resolve to the same 
     else process.env.CODEBUDDY_HOME = originalCodeBuddyHome;
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+});
+
+test('setup with footer clean/off/full preserves JSONC and round-trips cleanly on uninstall', () => {
+  const { CLEAN_FOOTER_SEGMENTS } = require('../../runtime/footer-mode.js');
+  for (const mode of ['clean', 'off']) {
+    withInstallerFixture(options => {
+      const raw = '\ufeff{\r\n\t// user note\r\n\t"model": "original",\r\n\t"statusLine": {"command": "old-command", "padding": 3},\r\n}\r\n';
+      fs.writeFileSync(options.settingsPath, raw);
+      setup({ ...options, footer: mode });
+      const installedRaw = fs.readFileSync(options.settingsPath, 'utf8');
+      const installed = parseSettingsJson(installedRaw);
+      assert.deepEqual(
+        installed.tui.statusLine,
+        mode === 'clean' ? [...CLEAN_FOOTER_SEGMENTS] : [],
+      );
+      setup({ ...options, footer: mode });
+      assert.equal(fs.readFileSync(options.settingsPath, 'utf8'), installedRaw, 'repeat setup with footer must be byte-idempotent');
+
+      uninstall(options);
+      assert.equal(fs.readFileSync(options.settingsPath, 'utf8'), raw, `uninstall must restore exact JSONC after footer=${mode}`);
+      assert.equal(fs.existsSync(options.settingsPath + '.bak.codebuddy-hud'), false);
+    });
+  }
+
+  withInstallerFixture(options => {
+    const raw = '{"model":"original"}';
+    fs.writeFileSync(options.settingsPath, raw);
+    setup(options);
+    const withoutFooter = fs.readFileSync(options.settingsPath, 'utf8');
+    fs.writeFileSync(options.settingsPath, raw);
+    fs.rmSync(options.settingsPath + '.bak.codebuddy-hud', { force: true });
+    setup({ ...options, footer: 'full' });
+    assert.equal(fs.readFileSync(options.settingsPath, 'utf8'), withoutFooter, 'footer=full without pre-existing tui must match omitted footer bytes');
+
+    // Pre-existing tui.statusLine: [] should be removed when explicitly switching to full
+    setup({ ...options, footer: 'off' });
+    assert.deepEqual(parseSettingsJson(fs.readFileSync(options.settingsPath, 'utf8')).tui.statusLine, []);
+    setup({ ...options, footer: 'full' });
+    assert.equal(parseSettingsJson(fs.readFileSync(options.settingsPath, 'utf8')).tui, undefined);
+  });
+});
+
+test('setup validates footer upfront and aborts before creating backups, shims, or modifying config/settings', () => {
+  withInstallerFixture(options => {
+    const raw = '{"model":"keep"}';
+    fs.writeFileSync(options.settingsPath, raw);
+    for (const badFooter of ['invalid_mode', '__proto__', 'constructor', '']) {
+      assert.throws(() => setup({ ...options, theme: 'amber', footer: badFooter }), /Invalid footer mode/);
+      assert.equal(fs.readFileSync(options.settingsPath, 'utf8'), raw);
+      assert.equal(fs.existsSync(options.settingsPath + '.bak.codebuddy-hud'), false);
+      assert.equal(fs.existsSync(options.hudBin.replace(/\.js$/, '.cmd')), false);
+      assert.equal(fs.existsSync(path.join(process.env.CODEBUDDY_HOME, 'codebuddy-hud.config.json')), false);
+    }
+
+    fs.writeFileSync(options.settingsPath, '{"tui":"not-an-object"}');
+    assert.throws(() => setup({ ...options, theme: 'amber', footer: 'clean' }), /"tui" property must be a JSON object/);
+    assert.equal(fs.readFileSync(options.settingsPath, 'utf8'), '{"tui":"not-an-object"}');
+    assert.equal(fs.existsSync(options.settingsPath + '.bak.codebuddy-hud'), false);
+    assert.equal(fs.existsSync(options.hudBin.replace(/\.js$/, '.cmd')), false);
+  });
+});
+
+test('uninstall restores pre-existing custom tui.statusLine and leaves post-install custom tui untouched', () => {
+  withInstallerFixture((options, root) => {
+    // 1a. Pre-existing custom tui.statusLine with no unrelated edits restores exact original bytes
+    const rawWithCustom = '{\n  // user note\n  "model": "before",\n  "tui": {\n    "theme": "dark",\n    "statusLine": ["model", "tokens"]\n  }\n}\n';
+    fs.writeFileSync(options.settingsPath, rawWithCustom);
+    setup({ ...options, footer: 'clean' });
+    uninstall(options);
+    assert.equal(fs.readFileSync(options.settingsPath, 'utf8'), rawWithCustom);
+    assert.equal(fs.existsSync(options.settingsPath + '.bak.codebuddy-hud'), false);
+
+    // 1b. Pre-existing custom tui.statusLine with post-install edit restores tui.statusLine surgically
+    fs.writeFileSync(options.settingsPath, rawWithCustom);
+    setup({ ...options, footer: 'clean' });
+    fs.writeFileSync(options.settingsPath, fs.readFileSync(options.settingsPath, 'utf8').replace('"before"', '"after"'));
+    uninstall(options);
+    const afterPostEdit = fs.readFileSync(options.settingsPath, 'utf8');
+    assert.deepEqual(parseSettingsJson(afterPostEdit), {
+      model: 'after',
+      tui: { theme: 'dark', statusLine: ['model', 'tokens'] },
+    });
+    assert.ok(afterPostEdit.includes('// user note'));
+    assert.equal(afterPostEdit, editSettingsProperty(
+      editSettingsProperty(rawWithCustom.replace('"before"', '"after"'), 'statusLine', '{}'),
+      'statusLine',
+      undefined,
+    ));
+    const retained = fs.readdirSync(root).filter(n => n.includes('.retained-'));
+    assert.equal(retained.length, 1);
+
+    // 2. Post-install user customization of tui.statusLine survives uninstall
+    fs.rmSync(options.settingsPath + '.bak.codebuddy-hud', { force: true });
+    fs.writeFileSync(options.settingsPath, '{"model":"keep"}');
+    setup({ ...options, footer: 'off' });
+    const installed = parseSettingsJson(fs.readFileSync(options.settingsPath, 'utf8'));
+    installed.tui.statusLine = ['agents', 'model'];
+    fs.writeFileSync(options.settingsPath, JSON.stringify(installed, null, 2));
+    uninstall(options);
+    const afterCustom = parseSettingsJson(fs.readFileSync(options.settingsPath, 'utf8'));
+    assert.equal(afterCustom.statusLine, undefined);
+    assert.deepEqual(afterCustom.tui.statusLine, ['agents', 'model']);
+
+    // 3. Pre-existing off mode stays untouched on uninstall
+    fs.rmSync(options.settingsPath + '.bak.codebuddy-hud', { force: true });
+    const preOff = '{\n  "tui": {\n    "statusLine": []\n  }\n}\n';
+    fs.writeFileSync(options.settingsPath, preOff);
+    setup(options);
+    uninstall(options);
+    assert.equal(fs.readFileSync(options.settingsPath, 'utf8'), preOff);
+  });
+});
+
+test('uninstall preserves post-install edits inside tui and leaves tui untouched on corrupt backup', () => {
+  withInstallerFixture((options, root) => {
+    // 1. Pre-existing tui with sibling key modified after install
+    const rawPreTui = '{\n  "tui": {\n    "theme": "dark"\n  }\n}\n';
+    fs.writeFileSync(options.settingsPath, rawPreTui);
+    setup({ ...options, footer: 'clean' });
+    fs.writeFileSync(options.settingsPath, fs.readFileSync(options.settingsPath, 'utf8').replace('"dark"', '"light"'));
+    uninstall(options);
+    const afterSiblingEdit = parseSettingsJson(fs.readFileSync(options.settingsPath, 'utf8'));
+    assert.deepEqual(afterSiblingEdit, { tui: { theme: 'light' } });
+    assert.equal(fs.readdirSync(root).filter(n => n.includes('.retained-')).length, 1);
+
+    // 2. No pre-existing tui, user adds sibling key inside tui after install
+    fs.rmSync(options.settingsPath + '.bak.codebuddy-hud', { force: true });
+    fs.writeFileSync(options.settingsPath, '{"model":"keep"}');
+    setup({ ...options, footer: 'off' });
+    const added = parseSettingsJson(fs.readFileSync(options.settingsPath, 'utf8'));
+    added.tui.theme = 'light';
+    fs.writeFileSync(options.settingsPath, JSON.stringify(added, null, 2));
+    uninstall(options);
+    assert.deepEqual(parseSettingsJson(fs.readFileSync(options.settingsPath, 'utf8')), {
+      model: 'keep',
+      tui: { theme: 'light' },
+    });
+
+    // 3. Corrupt backup preserves tui.statusLine instead of treating as missing backup
+    fs.rmSync(options.settingsPath + '.bak.codebuddy-hud', { force: true });
+    fs.writeFileSync(options.settingsPath, '{"model":"keep"}');
+    setup({ ...options, footer: 'off' });
+    fs.writeFileSync(options.settingsPath + '.bak.codebuddy-hud', '{ broken backup');
+    uninstall(options);
+    const afterCorrupt = parseSettingsJson(fs.readFileSync(options.settingsPath, 'utf8'));
+    assert.equal(afterCorrupt.statusLine, undefined);
+    assert.deepEqual(afterCorrupt.tui, { statusLine: [] });
+  });
 });

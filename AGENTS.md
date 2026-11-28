@@ -13,7 +13,7 @@ CodeBuddy Code 的 statusLine HUD：宿主在 **session / result / permission / 
 ## 架构
 
 ```
-runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--doctor|-d [--json]/--update/--version|-v/--help|-h
+runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--footer/--doctor|-d [--json]/--update/--version|-v/--help|-h
   ├ parser.js / config.js / model-info.js          payload 解析、配置/主题合并、effort/credits
   ├ renderer.js + renderer/{format,diff-render,agents-render}.js  3 行组装与分段渲染
   ├ transcript.js / session-stats.js               transcript 遥测、/clear 基线与 /compact 新鲜度
@@ -21,10 +21,10 @@ runtime/bin/codebuddy-hud.js   入口；--setup/--status/--uninstall/--theme/--d
   ├ paths.js / lang.js                             状态路径与 i18n
   ├ statusline-installer.js / settings-file.js     settings.json 原子写入、shim、技能挂载
   ├ uninstall.js / update-checker.js               卸载清理、主动更新
-  ├ doctor.js / theme-selector.js                  诊断、交互换肤
+  ├ doctor.js / theme-selector.js / footer-mode.js 诊断、换肤、官方第 4 行底栏模式
   └ codebuddy-hud.config.json                      内置默认配置（theme/display/thresholds）
 tests/fixtures/*.json      3 个 payload fixture
-tests/unit/*.test.mjs      25 个单元测试文件
+tests/unit/*.test.mjs      26 个单元测试文件
 scripts/                   install.ps1/.sh、bootstrap.js、run-tests.js、verify-*.js
 .codebuddy-plugin/plugin.json · skills/hud-config/SKILL.md   插件元数据与伴生技能
 ```
@@ -35,7 +35,7 @@ scripts/                   install.ps1/.sh、bootstrap.js、run-tests.js、verif
 
 ```bash
 npm test                     # 全量单测（run-tests.js 自动喂全量路径，兼容 Node 18~24+）
-npm run verify               # 10 个 E2E 场景
+npm run verify               # 11 个 E2E 场景
 npm run verify:install       # 隔离宿主安装/卸载
 node runtime/bin/codebuddy-hud.js --status
 ```
